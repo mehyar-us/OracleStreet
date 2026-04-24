@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">OracleStreet equation seed</title>
+  <desc id="desc">Black-Scholes partial differential equation: partial V over partial t plus r S partial V over partial S plus one half sigma squared S squared partial squared V over partial S squared minus r V equals zero.</desc>
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      .bg { fill: #020204; }
+      .formula { fill: #f6f4ea; font-family: Georgia, 'Times New Roman', serif; font-size: 48px; filter: url(#glow); }
+      .small { font-size: 34px; }
+      .line { stroke: #f6f4ea; stroke-width: 3; filter: url(#glow); }
+      .sub { font-size: 26px; }
+      .sup { font-size: 26px; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="320"/>
+  <text class="formula" x="70" y="150">∂V</text>
+  <line class="line" x1="68" y1="166" x2="155" y2="166"/>
+  <text class="formula" x="74" y="215">∂t</text>
+
+  <text class="formula" x="175" y="180">+ rS</text>
+  <text class="formula" x="350" y="150">∂V</text>
+  <line class="line" x1="348" y1="166" x2="435" y2="166"/>
+  <text class="formula" x="352" y="215">∂S</text>
+
+  <text class="formula" x="455" y="180">+</text>
+  <text class="formula" x="515" y="150">1</text>
+  <line class="line" x1="500" y1="166" x2="560" y2="166"/>
+  <text class="formula" x="515" y="215">2</text>
+
+  <text class="formula" x="580" y="180">σ</text>
+  <text class="formula sup" x="613" y="130">2</text>
+  <text class="formula" x="638" y="180">S</text>
+  <text class="formula sup" x="672" y="130">2</text>
+
+  <text class="formula" x="720" y="150">∂</text>
+  <text class="formula sup" x="755" y="110">2</text>
+  <text class="formula" x="780" y="150">V</text>
+  <line class="line" x1="712" y1="166" x2="890" y2="166"/>
+  <text class="formula" x="725" y="215">∂S</text>
+  <text class="formula sup" x="805" y="190">2</text>
+
+  <text class="formula" x="930" y="180">− rV = 0</text>
+</svg>
