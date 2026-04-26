@@ -35,3 +35,7 @@ nginx -t
 ## Rollback
 
 The VPS reset backup is stored under `/root/oraclestreet-reset-backup-*`. Deployment backups should be added once releases become non-trivial.
+
+## Auto-secrets and watchdog
+
+Deploy now self-generates missing runtime secrets on the VPS and installs a systemd watchdog timer. See `docs/08-WATCHDOG-AND-AUTOSECRETS.md`.
