@@ -49,3 +49,10 @@ test('unknown route returns JSON 404', async () => {
   assert.equal(res.body.ok, false);
   assert.equal(res.body.error, 'not_found');
 });
+
+
+test('email config endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/email/config');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.provider, 'dry-run');
+});

@@ -21,7 +21,7 @@ export const createHandler = () => {
       });
     }
 
-    if (url.pathname === '/api/email/config') {
+    if (url.pathname === '/api/email/config' || url.pathname === '/email/config') {
       return send(res, 200, {
         ok: true,
         provider: process.env.ORACLESTREET_MAIL_PROVIDER || 'dry-run',
