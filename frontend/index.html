@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OracleStreet CMS</title>
+  <style>
+    :root { color-scheme: dark; --bg:#05070a; --card:#0d1320; --line:#203047; --text:#eef5ff; --muted:#9fb0c8; --accent:#7dd3fc; --gold:#f5c36b; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:radial-gradient(circle at top left,#13223a,var(--bg) 42%); color:var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    main { max-width:1180px; margin:0 auto; padding:54px 24px; }
+    .badge { color:var(--accent); text-transform:uppercase; letter-spacing:.2em; font-size:12px; font-weight:700; }
+    h1 { font-size:clamp(42px,7vw,86px); line-height:.92; margin:14px 0; max-width:900px; }
+    .lead { color:var(--muted); font-size:20px; line-height:1.55; max-width:760px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-top:34px; }
+    .card { background:rgba(13,19,32,.84); border:1px solid var(--line); border-radius:20px; padding:22px; box-shadow:0 20px 70px rgba(0,0,0,.28); }
+    .card h2 { margin:0 0 8px; font-size:18px; }
+    .card p { margin:0; color:var(--muted); line-height:1.5; }
+    code { color:var(--gold); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="badge">OracleStreet private CMS</div>
+    <h1>Affiliate campaigns, contacts, and email operations.</h1>
+    <p class="lead">Baseline deployment is live by VPS IP. The frontend is ready, backend API traffic is reserved at <code>/api/</code>, and the product is scoped toward a Mailchimp/Brevo-style email workflow built on PostgreSQL.</p>
+    <section class="grid">
+      <article class="card"><h2>Contacts</h2><p>Import, sync, segment, and manage recipient records.</p></article>
+      <article class="card"><h2>Campaigns</h2><p>Create affiliate campaign structures with audience, template, and status control.</p></article>
+      <article class="card"><h2>Email Engine</h2><p>Provider-ready queue for sending, retries, suppression, and events.</p></article>
+      <article class="card"><h2>Remote PostgreSQL</h2><p>Pull external records into OracleStreet through controlled sync jobs.</p></article>
+    </section>
+  </main>
+</body>
+</html>
