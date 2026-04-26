@@ -22,6 +22,11 @@ LaTeX:
 
 OracleStreet is currently a seed venture centered on options/math/markets/oracle-style pricing intelligence. No product assumptions have been locked yet.
 
+## Infrastructure
+
+- VPS access variable names are documented in `docs/INFRA.md`.
+- Local secret template is in `.env.example`; real values must remain out of git.
+
 ## Source artifact
 
 - Visual recreation stored at: `assets/oracle-street-equation.svg`
