@@ -51,7 +51,16 @@ systemctl restart oraclestreet-backend
 nginx -t
 systemctl reload nginx
 
-curl -fsS http://127.0.0.1/api/health >/dev/null
+for i in 1 2 3 4 5; do
+  if curl -fsS http://127.0.0.1/api/health >/dev/null; then
+    break
+  fi
+  if [ "$i" = "5" ]; then
+    echo "Backend health check failed after retries" >&2
+    exit 1
+  fi
+  sleep 1
+done
 curl -fsS -I http://127.0.0.1/ >/dev/null
 systemctl is-active --quiet oraclestreet-backend
 systemctl is-active --quiet nginx
