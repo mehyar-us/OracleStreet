@@ -269,3 +269,78 @@ test('email test-send endpoint also works behind nginx stripped api prefix', asy
   const res = await request('/email/test-send', { method: 'POST' });
   assert.equal(res.status, 401);
 });
+
+test('email provider validation requires admin session', async () => {
+  const res = await request('/api/email/provider/validate', { method: 'POST' });
+  assert.equal(res.status, 401);
+});
+
+test('email provider validation accepts dry-run without network delivery', async () => {
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const res = await request('/api/email/provider/validate', {
+      method: 'POST',
+      headers: { cookie: login.headers.get('set-cookie') }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.validation.ok, true);
+    assert.equal(res.body.validation.provider, 'dry-run');
+    assert.equal(res.body.validation.checks.networkProbe, 'not_applicable');
+    assert.equal(res.body.safeDefault, 'network_probe_skipped_no_delivery');
+  });
+});
+
+test('PowerMTA provider validation checks required config without exposing secrets or sending', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MAIL_PROVIDER: 'powermta',
+    ORACLESTREET_POWERMTA_HOST: 'pmta.example.test',
+    ORACLESTREET_POWERMTA_PORT: '2525',
+    ORACLESTREET_POWERMTA_USERNAME: 'pmta-user',
+    ORACLESTREET_POWERMTA_PASSWORD: 'pmta-secret',
+    ORACLESTREET_POWERMTA_SECURE: 'false',
+    ORACLESTREET_DEFAULT_FROM_EMAIL: 'sender@example.test'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const res = await request('/api/email/provider/validate', {
+      method: 'POST',
+      headers: { cookie: login.headers.get('set-cookie') }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.validation.ok, true);
+    assert.equal(res.body.validation.provider, 'powermta');
+    assert.equal(res.body.validation.checks.hostConfigured, true);
+    assert.equal(res.body.validation.checks.authConfigured, true);
+    assert.equal(res.body.validation.checks.networkProbe, 'skipped_safe_default');
+    assert.equal(JSON.stringify(res.body).includes('pmta-secret'), false);
+  });
+});
+
+test('SMTP provider validation rejects missing safe sender config', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MAIL_PROVIDER: 'smtp',
+    ORACLESTREET_SMTP_HOST: 'smtp.example.test',
+    ORACLESTREET_SMTP_USERNAME: 'smtp-user',
+    ORACLESTREET_SMTP_PASSWORD: 'smtp-secret',
+    ORACLESTREET_DEFAULT_FROM_EMAIL: undefined
+  }, async () => {
+    const login = await loginAsAdmin();
+    const res = await request('/api/email/provider/validate', {
+      method: 'POST',
+      headers: { cookie: login.headers.get('set-cookie') }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.validation.ok, false);
+    assert.ok(res.body.validation.errors.includes('valid_default_from_email_required'));
+  });
+});
+
+test('email provider validation endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/email/provider/validate', { method: 'POST' });
+  assert.equal(res.status, 401);
+});

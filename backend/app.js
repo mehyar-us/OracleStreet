@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { validateContactImport } from './lib/contacts.js';
-import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig } from './lib/emailProvider.js';
+import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 
 const SESSION_COOKIE = 'oraclestreet_session';
@@ -197,6 +197,17 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = dryRunSend(body);
       return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/email/provider/validate' || url.pathname === '/email/provider/validate') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, {
+        ok: true,
+        validation: validateSelectedProviderConfig(),
+        safeDefault: 'network_probe_skipped_no_delivery'
+      });
     }
 
     return jsonResponse(res, 404, {

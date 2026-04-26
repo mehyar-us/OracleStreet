@@ -67,6 +67,7 @@ npm test --prefix backend
 - Contact import validation: `POST /api/contacts/import/validate` must return `401` without a session and reject rows missing valid email, explicit consent, source metadata, or with duplicate emails.
 - Frontend login/dashboard card: served from `/`, calls the auth, dashboard, and migration APIs through the Nginx `/api/` proxy.
 - Email config remains safe-test-only at `GET /api/email/config`; real sending stays disabled unless future safety gates pass.
+- SMTP/PowerMTA provider validation: `POST /api/email/provider/validate` must require admin auth, report redacted readiness, skip network probes by default, and never expose passwords.
 
 ## Domain readiness checklist
 

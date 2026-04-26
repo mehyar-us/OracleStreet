@@ -91,12 +91,18 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 
 ## Build sequence
 
-1. Dry-run provider with full database event records.
-2. Generic SMTP provider using same adapter interface.
-3. PowerMTA provider config + validation.
-4. Rate limiting/warm-up controls.
-5. Bounce ingestion.
-6. Dashboard reporting.
+1. [x] Dry-run provider with safe controlled test-send response.
+2. [x] Generic SMTP provider config validation using the same safe adapter interface.
+3. [x] PowerMTA provider config validation with no network probe or real delivery by default.
+4. [ ] Rate limiting/warm-up controls.
+5. [ ] Bounce ingestion.
+6. [ ] Dashboard reporting.
+
+## Current validation endpoints
+
+- `GET /api/email/config` exposes redacted provider readiness only.
+- `POST /api/email/provider/validate` requires an admin session and validates selected provider configuration without sending mail or opening a network connection.
+- `POST /api/email/test-send` requires an admin session and is dry-run only.
 
 ## PMTA-first development priority
 

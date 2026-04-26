@@ -30,8 +30,8 @@
 - [x] Dry-run email provider baseline
 - [x] PowerMTA config validation baseline
 - [x] Controlled test-send dry-run endpoint
-- [ ] SMTP/provider adapter
-- [ ] PowerMTA SMTP adapter
+- [x] SMTP/provider adapter config validation
+- [x] PowerMTA SMTP adapter config validation
 - [ ] Send queue
 - [ ] Suppression/unsubscribe handling
 - [ ] Rate limits and warm-up controls
