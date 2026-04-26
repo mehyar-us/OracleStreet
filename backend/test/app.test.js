@@ -111,6 +111,34 @@ test('logout clears the session cookie', async () => {
   assert.match(res.headers.get('set-cookie'), /Max-Age=0/);
 });
 
+test('dashboard route requires an admin session', async () => {
+  const res = await request('/api/dashboard');
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'unauthorized');
+});
+
+test('dashboard route returns protected safe-test summary for admin session', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+  }, async () => {
+    const login = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@example.test', password: 'correct-horse-battery-staple' })
+    });
+    const dashboard = await request('/api/dashboard', {
+      headers: { cookie: login.headers.get('set-cookie') }
+    });
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.body.user.email, 'admin@example.test');
+    assert.equal(dashboard.body.summary.emailProvider, 'dry-run');
+    assert.equal(dashboard.body.summary.sendMode, 'safe-test-only');
+    assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
+  });
+});
+
 test('unknown route returns JSON 404', async () => {
   const res = await request('/missing');
   assert.equal(res.status, 404);
@@ -129,4 +157,10 @@ test('auth endpoints also work behind nginx stripped api prefix', async () => {
   const res = await request('/auth/session');
   assert.equal(res.status, 200);
   assert.equal(res.body.authenticated, false);
+});
+
+test('dashboard endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/dashboard');
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'unauthorized');
 });

@@ -62,7 +62,8 @@ npm test --prefix backend
 ## Current verified feature paths
 
 - Admin auth/session: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout` with bootstrap credentials from `/etc/oraclestreet/initial-admin.env`.
-- Frontend login card: served from `/`, calls the auth API through the Nginx `/api/` proxy.
+- Protected dashboard summary: `GET /api/dashboard` must return `401` without a session and safe-test counters with a valid admin session.
+- Frontend login/dashboard card: served from `/`, calls the auth and dashboard APIs through the Nginx `/api/` proxy.
 - Email config remains safe-test-only at `GET /api/email/config`; real sending stays disabled unless future safety gates pass.
 
 ## Domain readiness checklist

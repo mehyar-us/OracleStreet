@@ -79,6 +79,38 @@ const requireMethod = (req, res, method) => {
   return false;
 };
 
+const requireSession = (req, res) => {
+  const session = getSession(req);
+  if (!session) {
+    jsonResponse(res, 401, { ok: false, error: 'unauthorized' });
+    return null;
+  }
+  return session;
+};
+
+const dashboardSummary = (session) => ({
+  ok: true,
+  user: { email: session.email },
+  summary: {
+    contacts: 0,
+    segments: 0,
+    templates: 0,
+    campaigns: 0,
+    queuedSends: 0,
+    emailProvider: process.env.ORACLESTREET_MAIL_PROVIDER || 'dry-run',
+    sendMode: 'safe-test-only'
+  },
+  safetyGates: {
+    consentTracking: 'planned',
+    suppressions: 'planned',
+    unsubscribe: 'planned',
+    bounceComplaints: 'planned',
+    rateLimits: 'planned',
+    auditLogs: 'planned',
+    realSendingAllowed: false
+  }
+});
+
 export const createHandler = () => {
   return async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -129,6 +161,13 @@ export const createHandler = () => {
       return jsonResponse(res, 200, { ok: true }, {
         'set-cookie': `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`
       });
+    }
+
+    if (url.pathname === '/api/dashboard' || url.pathname === '/dashboard') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, dashboardSummary(session));
     }
 
     return jsonResponse(res, 404, {
