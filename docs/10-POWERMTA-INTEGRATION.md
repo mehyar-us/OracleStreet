@@ -97,3 +97,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 4. Rate limiting/warm-up controls.
 5. Bounce ingestion.
 6. Dashboard reporting.
+
+## PMTA-first development priority
+
+Boss prioritized PMTA/sending capability first. Build order is now: provider config validation, dry-run controlled test-send, SMTP adapter, PowerMTA adapter, receive/bounce testing, then production domain/TLS/DNS. Real outbound mail remains disabled until safety gates pass.

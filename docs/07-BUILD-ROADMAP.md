@@ -25,9 +25,11 @@
 - [ ] Templates
 - [ ] Audit log
 
-## Phase 3 — Email engine
+## Phase 3 — PMTA-first Email Engine
 
-- [ ] Dry-run email provider
+- [x] Dry-run email provider baseline
+- [x] PowerMTA config validation baseline
+- [x] Controlled test-send dry-run endpoint
 - [ ] SMTP/provider adapter
 - [ ] PowerMTA SMTP adapter
 - [ ] Send queue

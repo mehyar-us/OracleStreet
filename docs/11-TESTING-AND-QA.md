@@ -81,3 +81,7 @@ Before connecting a domain:
 - DNS plan documented
 - SPF/DKIM/DMARC plan documented
 - TLS plan documented
+
+## PMTA-first development priority
+
+Boss prioritized PMTA/sending capability first. Build order is now: provider config validation, dry-run controlled test-send, SMTP adapter, PowerMTA adapter, receive/bounce testing, then production domain/TLS/DNS. Real outbound mail remains disabled until safety gates pass.

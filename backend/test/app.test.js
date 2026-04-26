@@ -233,3 +233,39 @@ test('contact import validation endpoint also works behind nginx stripped api pr
   const res = await request('/contacts/import/validate', { method: 'POST' });
   assert.equal(res.status, 401);
 });
+
+
+test('email test-send requires admin session', async () => {
+  const res = await request('/api/email/test-send', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  assert.equal(res.status, 401);
+});
+
+test('email test-send dry-runs compliant controlled message for admin', async () => {
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const res = await request('/api/email/test-send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: login.headers.get('set-cookie') },
+      body: JSON.stringify({
+        to: 'owned-inbox@example.test',
+        subject: 'OracleStreet controlled sending test',
+        html: '<p>Controlled test.</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.mode, 'dry-run');
+    assert.equal(res.body.realDelivery, false);
+  });
+});
+
+test('email test-send endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/email/test-send', { method: 'POST' });
+  assert.equal(res.status, 401);
+});

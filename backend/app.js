@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { validateContactImport } from './lib/contacts.js';
+import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 
 const SESSION_COOKIE = 'oraclestreet_session';
@@ -129,12 +130,11 @@ export const createHandler = () => {
     }
 
     if (url.pathname === '/api/email/config' || url.pathname === '/email/config') {
+      const config = getEmailProviderConfig();
       return jsonResponse(res, 200, {
         ok: true,
-        provider: process.env.ORACLESTREET_MAIL_PROVIDER || 'dry-run',
-        sendMode: 'safe-test-only',
-        powerMtaConfigured: Boolean(process.env.ORACLESTREET_POWERMTA_HOST),
-        realSendingEnabled: process.env.ORACLESTREET_REAL_EMAIL_ENABLED === 'true'
+        ...config,
+        powerMtaValidation: validatePowerMtaConfig()
       });
     }
 
@@ -187,6 +187,16 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = validateContactImport(body.contacts);
       return jsonResponse(res, result.error ? 400 : 200, result);
+    }
+
+    if (url.pathname === '/api/email/test-send' || url.pathname === '/email/test-send') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = dryRunSend(body);
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     return jsonResponse(res, 404, {

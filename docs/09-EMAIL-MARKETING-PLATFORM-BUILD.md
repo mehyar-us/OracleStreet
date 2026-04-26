@@ -85,3 +85,7 @@ PowerMTA or any real mail provider must not send production mail until these exi
 - rate limits per domain/provider
 - audit log for send jobs
 - manual dry-run proof
+
+## PMTA-first development priority
+
+Boss prioritized PMTA/sending capability first. Build order is now: provider config validation, dry-run controlled test-send, SMTP adapter, PowerMTA adapter, receive/bounce testing, then production domain/TLS/DNS. Real outbound mail remains disabled until safety gates pass.
