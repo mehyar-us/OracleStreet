@@ -12,6 +12,10 @@ if [[ -n "$(git status --short)" ]]; then
   exit 1
 fi
 
+if [ -f backend/package.json ]; then
+  npm test --prefix backend
+fi
+
 COMMIT="$(git rev-parse --short HEAD)"
 echo "Deploying OracleStreet commit $COMMIT to $SSH_ALIAS"
 

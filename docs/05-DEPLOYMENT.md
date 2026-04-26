@@ -16,12 +16,13 @@
 The script:
 
 1. Checks repo status.
-2. Copies frontend files to `/var/www/oraclestreet`.
-3. Copies backend files to `/opt/oraclestreet/backend`.
-4. Installs backend production dependencies if needed.
-5. Installs/updates systemd service.
-6. Tests and reloads Nginx.
-7. Runs local VPS smoke checks.
+2. Runs backend tests before shipping.
+3. Copies frontend files to `/var/www/oraclestreet`.
+4. Copies backend files to `/opt/oraclestreet/backend`.
+5. Installs backend production dependencies if needed.
+6. Installs/updates systemd service.
+7. Tests and reloads Nginx.
+8. Runs local VPS smoke checks.
 
 ## VPS commands
 

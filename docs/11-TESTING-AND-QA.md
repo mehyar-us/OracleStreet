@@ -1,0 +1,74 @@
+# OracleStreet Testing and QA
+
+## Rule
+
+Every built feature must include a verification path before it is considered done. The deploy flow should not rely on trust or vibes; it should prove core behavior after every change.
+
+## Required test layers
+
+### 1. Unit tests
+
+Use for pure backend logic:
+
+- campaign validation
+- segment filtering
+- suppression checks
+- template rendering
+- PowerMTA/SMTP provider config validation
+- send safety gates
+
+### 2. Integration tests
+
+Use for backend + PostgreSQL + service boundaries:
+
+- admin bootstrap/auth
+- contact import
+- campaign creation
+- send job creation
+- dry-run email sending
+- event recording
+- remote PostgreSQL pull jobs
+
+### 3. Email send/receive tests
+
+Email must be tested safely before domain/provider launch:
+
+- **Dry-run provider**: records intended mail without external delivery.
+- **Local capture provider**: sends to a controlled mailbox/capture service only.
+- **SMTP/PowerMTA config validation**: checks host, port, auth, TLS mode, and sender identity without blasting mail.
+- **Controlled live send**: one test message to an owned inbox only after unsubscribe/suppression/rate-limit gates exist.
+- **Receiving/bounce path**: parse controlled bounce/complaint/unsubscribe events into `email_events` and suppression tables.
+
+No campaign-scale real sending until the compliance gates in `docs/10-POWERMTA-INTEGRATION.md` pass.
+
+### 4. Deployment smoke tests
+
+After every deploy:
+
+- frontend returns HTTP 200
+- `/api/health` returns OK
+- backend service is active
+- Nginx config passes
+- watchdog timer is active
+- Docker and SSH remain active
+
+## Current baseline command
+
+```bash
+npm test --prefix backend
+./scripts/deploy-vps.sh
+```
+
+## Domain readiness checklist
+
+Before connecting a domain:
+
+- app health checks passing by IP
+- admin auth working
+- email dry-run tests passing
+- SMTP/PowerMTA config validation passing
+- unsubscribe endpoint working
+- suppression table enforced
+- DNS plan documented
+- SPF/DKIM/DMARC plan documented
+- TLS plan documented
