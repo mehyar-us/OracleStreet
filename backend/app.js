@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { validateContactImport } from './lib/contacts.js';
 import { listMigrations } from './lib/migrations.js';
 
 const SESSION_COOKIE = 'oraclestreet_session';
@@ -176,6 +177,16 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, { ok: true, migrations: listMigrations() });
+    }
+
+    if (url.pathname === '/api/contacts/import/validate' || url.pathname === '/contacts/import/validate') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = validateContactImport(body.contacts);
+      return jsonResponse(res, result.error ? 400 : 200, result);
     }
 
     return jsonResponse(res, 404, {

@@ -165,20 +165,24 @@ test('dashboard endpoint also works behind nginx stripped api prefix', async () 
   assert.equal(res.body.error, 'unauthorized');
 });
 
+const loginAsAdmin = async () => request('/api/auth/login', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email: 'admin@example.test', password: 'correct-horse-battery-staple' })
+});
+
+const withAdminEnv = async (fn) => withEnv({
+  ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+  ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+  ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+}, fn);
+
 test('migration manifest is protected and lists initial PostgreSQL schema', async () => {
-  await withEnv({
-    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
-    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
-    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
-  }, async () => {
+  await withAdminEnv(async () => {
     const unauth = await request('/api/schema/migrations');
     assert.equal(unauth.status, 401);
 
-    const login = await request('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@example.test', password: 'correct-horse-battery-staple' })
-    });
+    const login = await loginAsAdmin();
     const res = await request('/api/schema/migrations', {
       headers: { cookie: login.headers.get('set-cookie') }
     });
@@ -187,4 +191,45 @@ test('migration manifest is protected and lists initial PostgreSQL schema', asyn
     assert.match(res.body.migrations[0].description, /PostgreSQL schema/);
     assert.ok(res.body.migrations[0].statements >= 10);
   });
+});
+
+test('contact import validation requires admin session', async () => {
+  const res = await request('/api/contacts/import/validate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contacts: [] })
+  });
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'unauthorized');
+});
+
+test('contact import validation enforces consent source and duplicate gates', async () => {
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const res = await request('/api/contacts/import/validate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: login.headers.get('set-cookie') },
+      body: JSON.stringify({ contacts: [
+        { email: 'Valid@Example.com', consentStatus: 'opt_in', source: 'owned signup form' },
+        { email: 'missing-source@example.com', consentStatus: 'opt_in' },
+        { email: 'bad-email', consentStatus: 'opt_in', source: 'partner import' },
+        { email: 'valid@example.com', consentStatus: 'opt_in', source: 'duplicate' },
+        { email: 'unknown@example.com', consentStatus: 'unknown', source: 'legacy list' }
+      ] })
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, false);
+    assert.equal(res.body.mode, 'validate-only');
+    assert.equal(res.body.acceptedCount, 1);
+    assert.equal(res.body.rejectedCount, 4);
+    assert.equal(res.body.accepted[0].email, 'valid@example.com');
+    assert.deepEqual(res.body.rejected[0].errors, ['source_required']);
+    assert.ok(res.body.rejected.some((row) => row.errors.includes('duplicate_email_in_import')));
+    assert.ok(res.body.rejected.some((row) => row.errors.includes('explicit_consent_required')));
+  });
+});
+
+test('contact import validation endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/contacts/import/validate', { method: 'POST' });
+  assert.equal(res.status, 401);
 });

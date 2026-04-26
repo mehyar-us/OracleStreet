@@ -47,10 +47,11 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 
 ### 3. Contacts and suppressions
 
-- contacts CRUD/import
-- suppression list
-- unsubscribe endpoint
-- source/consent fields required
+- [ ] contacts CRUD/import
+  - [x] validate-only import endpoint requiring admin session, explicit consent, source metadata, valid email, and no duplicate emails
+- [ ] suppression list
+- [ ] unsubscribe endpoint
+- [x] source/consent fields required in import validation
 
 ### 4. Campaign CMS
 
