@@ -22,3 +22,7 @@ Candidate providers later: SMTP, Brevo, Amazon SES, Postmark, SendGrid. Start wi
 - Track source of every contact.
 - Keep audit logs for imports and sends.
 - Add rate limits before real campaigns.
+
+## PowerMTA path
+
+PowerMTA should be implemented only as a compliant SMTP provider adapter after dry-run sending, suppressions, unsubscribe handling, rate limits, and audit logs exist. See `docs/10-POWERMTA-INTEGRATION.md`.

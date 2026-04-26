@@ -29,8 +29,11 @@
 
 - [ ] Dry-run email provider
 - [ ] SMTP/provider adapter
+- [ ] PowerMTA SMTP adapter
 - [ ] Send queue
 - [ ] Suppression/unsubscribe handling
+- [ ] Rate limits and warm-up controls
+- [ ] Bounce/complaint ingestion
 - [ ] Event tracking
 
 ## Phase 4 — Remote PostgreSQL pulls
@@ -49,3 +52,8 @@
 - [ ] Monitoring
 - [ ] Rate limits
 - [ ] Role-based access controls
+
+## Email platform execution docs
+
+- `docs/09-EMAIL-MARKETING-PLATFORM-BUILD.md`
+- `docs/10-POWERMTA-INTEGRATION.md`
