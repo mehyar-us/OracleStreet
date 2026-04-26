@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { listMigrations } from './lib/migrations.js';
 
 const SESSION_COOKIE = 'oraclestreet_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
@@ -168,6 +169,13 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, dashboardSummary(session));
+    }
+
+    if (url.pathname === '/api/schema/migrations' || url.pathname === '/schema/migrations') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, { ok: true, migrations: listMigrations() });
     }
 
     return jsonResponse(res, 404, {

@@ -77,9 +77,12 @@
       if (!res.ok) return;
       const dashboard = await res.json();
       const metrics = dashboard.summary;
+      const migrations = await fetch('/api/schema/migrations', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { migrations: [] });
       dashboardMetrics.innerHTML = ['contacts', 'segments', 'templates', 'campaigns', 'queuedSends']
         .map((key) => `<div class="metric"><strong>${metrics[key]}</strong>${key}</div>`)
-        .join('') + `<div class="metric"><strong>${metrics.emailProvider}</strong>${metrics.sendMode}</div>`;
+        .join('')
+        + `<div class="metric"><strong>${metrics.emailProvider}</strong>${metrics.sendMode}</div>`
+        + `<div class="metric"><strong>${migrations.migrations.length}</strong>schema migrations</div>`;
       dashboardCard.classList.remove('hidden');
     };
 

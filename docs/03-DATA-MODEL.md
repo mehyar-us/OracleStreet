@@ -18,6 +18,10 @@
 - `sync_runs`: remote pull logs and status.
 - `audit_log`: admin actions.
 
+## Migration baseline
+
+The first SQL migration is `backend/migrations/001_initial_schema.sql`. It defines the initial PostgreSQL tables, compliance-critical suppressions, source/consent fields, send jobs, email events, remote data-source records, sync runs, and audit log.
+
 ## Remote PostgreSQL connector principle
 
 OracleStreet should pull records into local normalized tables, not operate directly on remote production tables during user workflows. Remote credentials are secrets and must not be committed.

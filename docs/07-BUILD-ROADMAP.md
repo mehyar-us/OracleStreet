@@ -11,9 +11,9 @@
 ## Phase 1 — Product skeleton
 
 - [ ] Choose frontend framework
-- [ ] Choose backend framework
+- [x] Choose backend framework
 - [ ] Add PostgreSQL app database
-- [ ] Add migrations
+- [x] Add migrations
 - [x] Add auth and first admin login
 - [x] Add dashboard shell
 

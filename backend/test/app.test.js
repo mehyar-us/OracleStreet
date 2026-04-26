@@ -164,3 +164,27 @@ test('dashboard endpoint also works behind nginx stripped api prefix', async () 
   assert.equal(res.status, 401);
   assert.equal(res.body.error, 'unauthorized');
 });
+
+test('migration manifest is protected and lists initial PostgreSQL schema', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+  }, async () => {
+    const unauth = await request('/api/schema/migrations');
+    assert.equal(unauth.status, 401);
+
+    const login = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@example.test', password: 'correct-horse-battery-staple' })
+    });
+    const res = await request('/api/schema/migrations', {
+      headers: { cookie: login.headers.get('set-cookie') }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.migrations[0].id, '001_initial_schema');
+    assert.match(res.body.migrations[0].description, /PostgreSQL schema/);
+    assert.ok(res.body.migrations[0].statements >= 10);
+  });
+});
