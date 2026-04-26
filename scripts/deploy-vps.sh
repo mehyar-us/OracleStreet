@@ -52,7 +52,7 @@ nginx -t
 systemctl reload nginx
 
 for i in 1 2 3 4 5; do
-  if curl -fsS http://127.0.0.1/api/health >/dev/null; then
+  if curl -fsS http://127.0.0.1/api/health >/dev/null 2>&1; then
     break
   fi
   if [ "$i" = "5" ]; then
