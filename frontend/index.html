@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OracleStreet CMS</title>
   <style>
-    :root { color-scheme: dark; --bg:#05070a; --card:#0d1320; --line:#203047; --text:#eef5ff; --muted:#9fb0c8; --accent:#7dd3fc; --gold:#f5c36b; }
+    :root { color-scheme: dark; --bg:#05070a; --card:#0d1320; --line:#203047; --text:#eef5ff; --muted:#9fb0c8; --accent:#7dd3fc; --gold:#f5c36b; --danger:#fb7185; --ok:#86efac; }
     * { box-sizing: border-box; }
     body { margin:0; background:radial-gradient(circle at top left,#13223a,var(--bg) 42%); color:var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
     main { max-width:1180px; margin:0 auto; padding:54px 24px; }
@@ -17,19 +17,93 @@
     .card h2 { margin:0 0 8px; font-size:18px; }
     .card p { margin:0; color:var(--muted); line-height:1.5; }
     code { color:var(--gold); }
+    form { display:grid; gap:12px; margin-top:16px; }
+    label { display:grid; gap:6px; color:var(--muted); font-size:13px; }
+    input { width:100%; border:1px solid var(--line); border-radius:12px; background:#070b12; color:var(--text); padding:12px 14px; font:inherit; }
+    button { border:0; border-radius:12px; background:linear-gradient(135deg,var(--accent),#c084fc); color:#06111f; font-weight:800; padding:12px 16px; cursor:pointer; }
+    button.secondary { background:#182235; color:var(--text); border:1px solid var(--line); }
+    .status { margin-top:14px; color:var(--muted); min-height:22px; }
+    .status.ok { color:var(--ok); }
+    .status.error { color:var(--danger); }
+    .hidden { display:none; }
   </style>
 </head>
 <body>
   <main>
     <div class="badge">OracleStreet private CMS</div>
     <h1>Affiliate campaigns, contacts, and email operations.</h1>
-    <p class="lead">Baseline deployment is live by VPS IP. The frontend is ready, backend API traffic is reserved at <code>/api/</code>, and the product is scoped toward a Mailchimp/Brevo-style email workflow built on PostgreSQL.</p>
+    <p class="lead">Baseline deployment is live by VPS IP. The backend now includes a first-admin session login flow backed by private bootstrap credentials, while email remains locked to safe-test mode.</p>
     <section class="grid">
-      <article class="card"><h2>Contacts</h2><p>Import, sync, segment, and manage recipient records.</p></article>
+      <article class="card">
+        <h2>Admin login</h2>
+        <p id="session-copy">Checking session...</p>
+        <form id="login-form" class="hidden">
+          <label>Email <input name="email" type="email" autocomplete="username" required value="admin@oraclestreet.local" /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit">Sign in</button>
+        </form>
+        <button id="logout-button" class="secondary hidden" type="button">Sign out</button>
+        <div id="auth-status" class="status"></div>
+      </article>
+      <article class="card"><h2>Contacts</h2><p>Import, sync, segment, and manage recipient records with consent/source metadata.</p></article>
       <article class="card"><h2>Campaigns</h2><p>Create affiliate campaign structures with audience, template, and status control.</p></article>
-      <article class="card"><h2>Email Engine</h2><p>Provider-ready queue for sending, retries, suppression, and events.</p></article>
+      <article class="card"><h2>Email Engine</h2><p>Provider-ready queue for sending, retries, suppression, and events. Real sends stay gated.</p></article>
       <article class="card"><h2>Remote PostgreSQL</h2><p>Pull external records into OracleStreet through controlled sync jobs.</p></article>
     </section>
   </main>
+  <script>
+    const form = document.querySelector('#login-form');
+    const logoutButton = document.querySelector('#logout-button');
+    const sessionCopy = document.querySelector('#session-copy');
+    const status = document.querySelector('#auth-status');
+
+    const setStatus = (message, kind = '') => {
+      status.textContent = message;
+      status.className = `status ${kind}`;
+    };
+
+    const renderSession = (session) => {
+      if (session.authenticated) {
+        sessionCopy.textContent = `Signed in as ${session.user.email}.`;
+        form.classList.add('hidden');
+        logoutButton.classList.remove('hidden');
+      } else {
+        sessionCopy.textContent = 'Sign in with the private bootstrap admin credentials.';
+        form.classList.remove('hidden');
+        logoutButton.classList.add('hidden');
+      }
+    };
+
+    const refreshSession = async () => {
+      const res = await fetch('/api/auth/session', { cache: 'no-store' });
+      renderSession(await res.json());
+    };
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setStatus('Signing in...');
+      const data = Object.fromEntries(new FormData(form));
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setStatus(body.error === 'admin_not_bootstrapped' ? 'Admin bootstrap password is missing on the backend.' : 'Invalid credentials.', 'error');
+        return;
+      }
+      setStatus('Signed in.', 'ok');
+      await refreshSession();
+    });
+
+    logoutButton.addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setStatus('Signed out.', 'ok');
+      await refreshSession();
+    });
+
+    refreshSession().catch(() => setStatus('Could not reach auth API.', 'error'));
+  </script>
 </body>
 </html>

@@ -14,8 +14,8 @@
 - [ ] Choose backend framework
 - [ ] Add PostgreSQL app database
 - [ ] Add migrations
-- [ ] Add auth and first admin login
-- [ ] Add dashboard shell
+- [x] Add auth and first admin login
+- [x] Add dashboard shell
 
 ## Phase 2 — CMS core
 

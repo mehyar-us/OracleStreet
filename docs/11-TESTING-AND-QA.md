@@ -59,6 +59,12 @@ npm test --prefix backend
 ./scripts/deploy-vps.sh
 ```
 
+## Current verified feature paths
+
+- Admin auth/session: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout` with bootstrap credentials from `/etc/oraclestreet/initial-admin.env`.
+- Frontend login card: served from `/`, calls the auth API through the Nginx `/api/` proxy.
+- Email config remains safe-test-only at `GET /api/email/config`; real sending stays disabled unless future safety gates pass.
+
 ## Domain readiness checklist
 
 Before connecting a domain:

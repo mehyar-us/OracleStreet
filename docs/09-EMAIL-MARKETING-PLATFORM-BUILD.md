@@ -33,10 +33,10 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 
 ### 1. Auth + admin shell
 
-- login screen
-- first admin bootstrap from `/etc/oraclestreet/initial-admin.env`
-- session handling from `ORACLESTREET_SESSION_SECRET`
-- protected dashboard route
+- [x] login screen
+- [x] first admin bootstrap from `/etc/oraclestreet/initial-admin.env`
+- [x] session handling from `ORACLESTREET_SESSION_SECRET`
+- [ ] protected dashboard route
 
 ### 2. PostgreSQL foundation
 
