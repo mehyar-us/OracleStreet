@@ -109,7 +109,9 @@ const importContactsToPostgres = (accepted) => {
     sqlLiteral(contact.source),
     sqlLiteral(contact.sourceDetail),
     sqlLiteral(contact.firstName),
-    sqlLiteral(contact.lastName)
+    sqlLiteral(contact.lastName),
+    sqlLiteral('active'),
+    'now()'
   ].join(',')})`).join(',');
   const rows = runLocalPgRows(`
     INSERT INTO contacts (email, consent_status, source, source_detail, first_name, last_name, status, updated_at)
