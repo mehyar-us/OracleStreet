@@ -100,9 +100,8 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Wire warm-up/reputation policy runtime repositories to local PostgreSQL with in-memory test fallback.
-2. Controlled one-recipient MTA live-test runbook and gate.
-3. Live remote PostgreSQL read-only probe/query execution behind pg-driver, encrypted creds, timeout/limit, and explicit operator approval.
-4. Controlled one-recipient MTA live-test runbook and gate.
-5. Multi-user/RBAC admin workflow.
-6. Campaign calendar UI over warm-up caps.
+1. Controlled one-recipient MTA live-test runbook and gate.
+2. Live remote PostgreSQL read-only probe/query execution behind pg-driver, encrypted creds, timeout/limit, and explicit operator approval.
+3. Multi-user/RBAC admin workflow.
+4. Campaign calendar UI over warm-up caps.
+5. Contact browser search/filter and source-quality drilldowns.

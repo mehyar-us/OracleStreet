@@ -1,4 +1,5 @@
 import { listEmailEvents } from './emailEvents.js';
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
 
 const DOMAIN_RE = /^(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z]{2,63}$/i;
 const DEFAULT_POLICY = {
@@ -28,14 +29,59 @@ export const resetReputationControlsForTests = () => {
   policy = { ...DEFAULT_POLICY };
 };
 
-export const getReputationPolicy = () => ({
-  ok: true,
-  mode: 'reputation-auto-pause-policy',
-  policy: { ...policy },
-  persistenceMode: 'in-memory-until-postgresql-policy-table-enabled',
-  mutationScope: 'policy_only_no_queue_or_provider_pause',
-  realDeliveryAllowed: false
+const pgRowToPolicy = ([domain, bounceRateThreshold, complaintRateThreshold, deferralRateThreshold, providerErrorRateThreshold, minimumEvents, actionMode]) => ({
+  domain,
+  bounceRateThreshold: Number(bounceRateThreshold),
+  complaintRateThreshold: Number(complaintRateThreshold),
+  deferralRateThreshold: Number(deferralRateThreshold),
+  providerErrorRateThreshold: Number(providerErrorRateThreshold),
+  minimumEvents: Number(minimumEvents),
+  actionMode
 });
+
+const getReputationPolicyFromPostgres = (domain = policy.domain) => {
+  const cleanDomain = normalizeDomain(domain || policy.domain);
+  if (isPgRepositoryEnabled('reputation_policies')) {
+    try {
+      const rows = runLocalPgRows(`
+        SELECT domain, bounce_rate_threshold::text, complaint_rate_threshold::text, deferral_rate_threshold::text, provider_error_rate_threshold::text, minimum_events, action_mode
+        FROM reputation_policies
+        WHERE domain IN (${sqlLiteral(cleanDomain)}, ${sqlLiteral(DEFAULT_POLICY.domain)})
+        ORDER BY CASE WHEN domain = ${sqlLiteral(cleanDomain)} THEN 0 ELSE 1 END
+        LIMIT 1;
+      `);
+      if (rows[0]) return pgRowToPolicy(rows[0]);
+    } catch (error) {
+      // fall through to in-memory/default policy
+    }
+  }
+  return { ...policy };
+};
+
+export const getReputationPolicy = () => {
+  if (isPgRepositoryEnabled('reputation_policies')) {
+    try {
+      return {
+        ok: true,
+        mode: 'reputation-auto-pause-policy',
+        policy: getReputationPolicyFromPostgres(policy.domain),
+        persistenceMode: 'postgresql-local-psql-repository',
+        mutationScope: 'policy_only_no_queue_or_provider_pause',
+        realDeliveryAllowed: false
+      };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    mode: 'reputation-auto-pause-policy',
+    policy: { ...policy },
+    persistenceMode: isPgRepositoryEnabled('reputation_policies') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-policy-table-enabled',
+    mutationScope: 'policy_only_no_queue_or_provider_pause',
+    realDeliveryAllowed: false
+  };
+};
 
 export const saveReputationPolicy = (incoming = {}) => {
   const cleanDomain = normalizeDomain(incoming.domain || policy.domain);
@@ -57,12 +103,42 @@ export const saveReputationPolicy = (incoming = {}) => {
   if (next.minimumEvents < 1 || next.minimumEvents > 100000) errors.push('minimum_events_1_100000_required');
   if (errors.length > 0) return { ok: false, errors, realDeliveryAllowed: false };
 
+  if (isPgRepositoryEnabled('reputation_policies')) {
+    try {
+      const rows = runLocalPgRows(`
+        INSERT INTO reputation_policies (domain, bounce_rate_threshold, complaint_rate_threshold, deferral_rate_threshold, provider_error_rate_threshold, minimum_events, action_mode, updated_at)
+        VALUES (${sqlLiteral(next.domain)}, ${next.bounceRateThreshold}, ${next.complaintRateThreshold}, ${next.deferralRateThreshold}, ${next.providerErrorRateThreshold}, ${next.minimumEvents}, 'recommendation_only', now())
+        ON CONFLICT (domain) DO UPDATE SET
+          bounce_rate_threshold = EXCLUDED.bounce_rate_threshold,
+          complaint_rate_threshold = EXCLUDED.complaint_rate_threshold,
+          deferral_rate_threshold = EXCLUDED.deferral_rate_threshold,
+          provider_error_rate_threshold = EXCLUDED.provider_error_rate_threshold,
+          minimum_events = EXCLUDED.minimum_events,
+          action_mode = EXCLUDED.action_mode,
+          updated_at = now()
+        RETURNING domain, bounce_rate_threshold::text, complaint_rate_threshold::text, deferral_rate_threshold::text, provider_error_rate_threshold::text, minimum_events, action_mode;
+      `);
+      const saved = pgRowToPolicy(rows[0]);
+      policy = saved;
+      return {
+        ok: true,
+        mode: 'reputation-auto-pause-policy-saved',
+        policy: saved,
+        persistenceMode: 'postgresql-local-psql-repository',
+        mutationScope: 'policy_only_no_queue_or_provider_pause',
+        realDeliveryAllowed: false
+      };
+    } catch (error) {
+      // fall through to in-memory save
+    }
+  }
+
   policy = next;
   return {
     ok: true,
     mode: 'reputation-auto-pause-policy-saved',
     policy: { ...policy },
-    persistenceMode: 'in-memory-until-postgresql-policy-table-enabled',
+    persistenceMode: isPgRepositoryEnabled('reputation_policies') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-policy-table-enabled',
     mutationScope: 'policy_only_no_queue_or_provider_pause',
     realDeliveryAllowed: false
   };
@@ -70,6 +146,7 @@ export const saveReputationPolicy = (incoming = {}) => {
 
 export const evaluateAutoPause = ({ domain = policy.domain } = {}) => {
   const cleanDomain = normalizeDomain(domain || policy.domain);
+  const activePolicy = getReputationPolicyFromPostgres(cleanDomain);
   const allEvents = listEmailEvents().events || [];
   const domainEvents = allEvents.filter((event) => emailDomain(event.email) === cleanDomain);
   const counts = domainEvents.reduce((totals, event) => {
@@ -87,19 +164,19 @@ export const evaluateAutoPause = ({ domain = policy.domain } = {}) => {
   };
 
   const thresholdBreaches = [];
-  if (counts.denominator >= policy.minimumEvents) {
-    if (rates.bounceRate >= policy.bounceRateThreshold) thresholdBreaches.push('bounce_rate_threshold_exceeded');
-    if (rates.complaintRate >= policy.complaintRateThreshold) thresholdBreaches.push('complaint_rate_threshold_exceeded');
-    if (rates.deferralRate >= policy.deferralRateThreshold) thresholdBreaches.push('deferral_rate_threshold_exceeded');
-    if (rates.providerErrorRate >= policy.providerErrorRateThreshold) thresholdBreaches.push('provider_error_rate_threshold_exceeded');
+  if (counts.denominator >= activePolicy.minimumEvents) {
+    if (rates.bounceRate >= activePolicy.bounceRateThreshold) thresholdBreaches.push('bounce_rate_threshold_exceeded');
+    if (rates.complaintRate >= activePolicy.complaintRateThreshold) thresholdBreaches.push('complaint_rate_threshold_exceeded');
+    if (rates.deferralRate >= activePolicy.deferralRateThreshold) thresholdBreaches.push('deferral_rate_threshold_exceeded');
+    if (rates.providerErrorRate >= activePolicy.providerErrorRateThreshold) thresholdBreaches.push('provider_error_rate_threshold_exceeded');
   }
 
-  const insufficientData = counts.denominator < policy.minimumEvents;
+  const insufficientData = counts.denominator < activePolicy.minimumEvents;
   return {
     ok: true,
     mode: 'reputation-auto-pause-evaluation',
     domain: cleanDomain,
-    policy: { ...policy },
+    policy: { ...activePolicy },
     counts,
     rates,
     thresholdBreaches,

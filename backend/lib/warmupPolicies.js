@@ -1,3 +1,5 @@
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
+
 const DOMAIN_RE = /^(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z]{2,63}$/i;
 const DEFAULT_POLICY = {
   domain: 'stuffprettygood.com',
@@ -29,14 +31,67 @@ export const resetWarmupPoliciesForTests = () => {
   policies.set(DEFAULT_POLICY.domain, { ...DEFAULT_POLICY, startDate: new Date().toISOString().slice(0, 10) });
 };
 
-export const listWarmupPolicies = () => ({
-  ok: true,
-  mode: 'warmup-policy-registry',
-  count: policies.size,
-  policies: [...policies.values()].map((policy) => ({ ...policy })),
-  persistenceMode: 'in-memory-until-postgresql-warmup-policy-table-enabled',
-  realDeliveryAllowed: false
+const pgRowToPolicy = ([domain, startDate, startDailyCap, maxDailyCap, rampPercent, days, perDomainAllocation, enforcementMode]) => ({
+  domain,
+  startDate,
+  startDailyCap: Number(startDailyCap),
+  maxDailyCap: Number(maxDailyCap),
+  rampPercent: Number(rampPercent),
+  days: Number(days),
+  perDomainAllocation,
+  enforcementMode
 });
+
+const listWarmupPoliciesFromPostgres = () => runLocalPgRows(`
+  SELECT domain, start_date::text, start_daily_cap, max_daily_cap, ramp_percent, days, per_domain_allocation, enforcement_mode
+  FROM warmup_policies
+  ORDER BY domain;
+`).map(pgRowToPolicy);
+
+const getWarmupPolicyForDomain = (domain) => {
+  const cleanDomain = normalizeDomain(domain || DEFAULT_POLICY.domain);
+  if (isPgRepositoryEnabled('warmup_policies')) {
+    try {
+      const rows = runLocalPgRows(`
+        SELECT domain, start_date::text, start_daily_cap, max_daily_cap, ramp_percent, days, per_domain_allocation, enforcement_mode
+        FROM warmup_policies
+        WHERE domain IN (${sqlLiteral(cleanDomain)}, ${sqlLiteral(DEFAULT_POLICY.domain)})
+        ORDER BY CASE WHEN domain = ${sqlLiteral(cleanDomain)} THEN 0 ELSE 1 END
+        LIMIT 1;
+      `);
+      if (rows[0]) return pgRowToPolicy(rows[0]);
+    } catch (error) {
+      // fall through to in-memory/default policy
+    }
+  }
+  return policies.get(cleanDomain) || policies.get(DEFAULT_POLICY.domain) || { ...DEFAULT_POLICY };
+};
+
+export const listWarmupPolicies = () => {
+  if (isPgRepositoryEnabled('warmup_policies')) {
+    try {
+      const pgPolicies = listWarmupPoliciesFromPostgres();
+      return {
+        ok: true,
+        mode: 'warmup-policy-registry',
+        count: pgPolicies.length,
+        policies: pgPolicies.length > 0 ? pgPolicies : [{ ...DEFAULT_POLICY }],
+        persistenceMode: 'postgresql-local-psql-repository',
+        realDeliveryAllowed: false
+      };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    mode: 'warmup-policy-registry',
+    count: policies.size,
+    policies: [...policies.values()].map((policy) => ({ ...policy })),
+    persistenceMode: isPgRepositoryEnabled('warmup_policies') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-warmup-policy-table-enabled',
+    realDeliveryAllowed: false
+  };
+};
 
 export const saveWarmupPolicy = (incoming = {}) => {
   const domain = normalizeDomain(incoming.domain || DEFAULT_POLICY.domain);
@@ -60,12 +115,40 @@ export const saveWarmupPolicy = (incoming = {}) => {
   if (policy.days < 1 || policy.days > 365) errors.push('valid_days_1_365_required');
   if (errors.length > 0) return { ok: false, errors, realDeliveryAllowed: false };
 
+  if (isPgRepositoryEnabled('warmup_policies')) {
+    try {
+      const rows = runLocalPgRows(`
+        INSERT INTO warmup_policies (domain, start_date, start_daily_cap, max_daily_cap, ramp_percent, days, per_domain_allocation, enforcement_mode, updated_at)
+        VALUES (${sqlLiteral(policy.domain)}, ${sqlLiteral(policy.startDate)}, ${policy.startDailyCap}, ${policy.maxDailyCap}, ${policy.rampPercent}, ${policy.days}, 'single-domain', 'dry-run-schedule-gate', now())
+        ON CONFLICT (domain) DO UPDATE SET
+          start_date = EXCLUDED.start_date,
+          start_daily_cap = EXCLUDED.start_daily_cap,
+          max_daily_cap = EXCLUDED.max_daily_cap,
+          ramp_percent = EXCLUDED.ramp_percent,
+          days = EXCLUDED.days,
+          per_domain_allocation = EXCLUDED.per_domain_allocation,
+          enforcement_mode = EXCLUDED.enforcement_mode,
+          updated_at = now()
+        RETURNING domain, start_date::text, start_daily_cap, max_daily_cap, ramp_percent, days, per_domain_allocation, enforcement_mode;
+      `);
+      return {
+        ok: true,
+        mode: 'warmup-policy-saved',
+        policy: pgRowToPolicy(rows[0]),
+        persistenceMode: 'postgresql-local-psql-repository',
+        realDeliveryAllowed: false
+      };
+    } catch (error) {
+      // fall through to in-memory save
+    }
+  }
+
   policies.set(policy.domain, policy);
   return {
     ok: true,
     mode: 'warmup-policy-saved',
     policy: { ...policy },
-    persistenceMode: 'in-memory-until-postgresql-warmup-policy-table-enabled',
+    persistenceMode: isPgRepositoryEnabled('warmup_policies') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-warmup-policy-table-enabled',
     realDeliveryAllowed: false
   };
 };
@@ -78,7 +161,7 @@ const dailyCapForDay = (policy, dayNumber) => {
 
 export const evaluateWarmupScheduleCap = ({ domain = DEFAULT_POLICY.domain, scheduledAt, estimatedAudience = 0, existingScheduledCount = 0 } = {}) => {
   const cleanDomain = normalizeDomain(domain || DEFAULT_POLICY.domain);
-  const policy = policies.get(cleanDomain) || policies.get(DEFAULT_POLICY.domain) || { ...DEFAULT_POLICY };
+  const policy = getWarmupPolicyForDomain(cleanDomain);
   const scheduleDate = dateOnly(scheduledAt);
   const errors = [];
   if (!DOMAIN_RE.test(cleanDomain)) errors.push('valid_sender_domain_required');

@@ -45,7 +45,7 @@ export const repositoryReadiness = () => {
       schemaReadyModules: modules.filter((module) => module.schemaReady).length,
       liveRepositoryModules: modules.filter((module) => module.liveRepositoryEnabled).length,
       psqlAdapterReady: pgReady(),
-      nextModule: modules.find((module) => !module.liveRepositoryEnabled)?.module || 'templates'
+      nextModule: modules.find((module) => !module.liveRepositoryEnabled)?.module || 'all_core_runtime_repositories_enabled'
     },
     blockers: [
       'add_pg_driver_or_safe_psql_repository_adapter',

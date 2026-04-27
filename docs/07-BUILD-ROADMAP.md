@@ -20,6 +20,7 @@
 - [x] Add templates/campaigns local PostgreSQL runtime adapter with safe in-memory fallback
 - [x] Add send queue/email events local PostgreSQL runtime adapter with safe in-memory fallback
 - [x] Add users/admin sessions/audit local PostgreSQL runtime adapter with safe in-memory fallback
+- [x] Add warm-up/reputation policy local PostgreSQL runtime adapter with safe in-memory fallback
 - [x] Build initial visible admin screens for contacts, data sources, templates, campaigns, send queue, reputation, and reporting
 - [x] Add visible contact import validate/store workflow to admin workbench
 - [x] Add visible template creation/preview workflow to admin workbench
