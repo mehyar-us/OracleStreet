@@ -1513,6 +1513,43 @@ test('email event ingest requires admin session', async () => {
   assert.equal(res.status, 401);
 });
 
+test('bounce mailbox readiness reports safe receive posture without connecting', async () => {
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/bounce-mailbox/readiness');
+    assert.equal(unauth.status, 401);
+  });
+
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_BOUNCE_MAILBOX_HOST: 'imap.example.test',
+    ORACLESTREET_BOUNCE_MAILBOX_PORT: '993',
+    ORACLESTREET_BOUNCE_MAILBOX_USERNAME: 'bounces@example.test',
+    ORACLESTREET_BOUNCE_MAILBOX_PASSWORD: 'mailbox-secret',
+    ORACLESTREET_BOUNCE_MAILBOX_FOLDER: 'INBOX.Bounces',
+    ORACLESTREET_BOUNCE_MAILBOX_SECURE: 'true',
+    ORACLESTREET_BOUNCE_MAILBOX_POLL_ENABLED: 'false'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/email/bounce-mailbox/readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'bounce-mailbox-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.mailbox.hostConfigured, true);
+    assert.equal(readiness.body.mailbox.username, 'bo***@example.test');
+    assert.equal(JSON.stringify(readiness.body).includes('mailbox-secret'), false);
+    assert.equal(readiness.body.safety.noNetworkProbe, true);
+    assert.equal(readiness.body.safety.noMailboxConnection, true);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_bounce_mailbox_readiness_view'));
+  });
+});
+
 test('manual bounce parser validates DSN text without recording events or suppressions', async () => {
   resetAuditLogForTests();
   resetEmailEventsForTests();
@@ -1858,6 +1895,8 @@ test('tracked open and click endpoints record engagement without auth or deliver
 test('email event endpoints also work behind nginx stripped api prefix', async () => {
   const list = await request('/email/events');
   assert.equal(list.status, 401);
+  const bounceMailbox = await request('/email/bounce-mailbox/readiness');
+  assert.equal(bounceMailbox.status, 401);
   const bounceParse = await request('/email/bounce-parse/validate', { method: 'POST' });
   assert.equal(bounceParse.status, 401);
   const bounceIngest = await request('/email/bounce-parse/ingest', { method: 'POST' });

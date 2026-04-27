@@ -48,6 +48,7 @@
 - [x] Bounce/complaint ingestion baseline
 - [x] Manual bounce parser validation baseline
 - [x] Manual parsed bounce ingest baseline
+- [x] Bounce mailbox readiness safe-gate baseline
 - [x] Manual event CSV import validation baseline
 - [x] Manual event CSV import ingest baseline
 - [x] Event tracking baseline

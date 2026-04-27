@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
+import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
@@ -655,6 +656,15 @@ export const createHandler = () => {
       const result = recordTrackingEvent({ type: 'click', email: url.searchParams.get('email'), campaignId: url.searchParams.get('campaignId'), contactId: url.searchParams.get('contactId'), detail: url.searchParams.get('url') || url.searchParams.get('detail') || null });
       recordAuditEvent({ action: 'email_tracking_click', target: url.searchParams.get('campaignId') || null, status: result.ok ? 'ok' : 'rejected', details: { email: url.searchParams.get('email') || null, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, { ...result, mode: 'tracked-click-event', redirect: false, realDelivery: false });
+    }
+
+    if (url.pathname === '/api/email/bounce-mailbox/readiness' || url.pathname === '/email/bounce-mailbox/readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = bounceMailboxReadiness();
+      recordAuditEvent({ action: 'email_bounce_mailbox_readiness_view', actorEmail: session.email, target: 'bounce-mailbox', status: readiness.ok ? 'ok' : 'rejected', details: { blockers: readiness.blockers, noMailboxConnection: true, noSecretOutput: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, readiness);
     }
 
     if (url.pathname === '/api/email/bounce-parse/validate' || url.pathname === '/email/bounce-parse/validate') {
