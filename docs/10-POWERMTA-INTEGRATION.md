@@ -58,7 +58,7 @@ type EmailProvider = {
 These belong on the VPS in `/etc/oraclestreet/oraclestreet.env`, not git:
 
 ```bash
-ORACLESTREET_MAIL_PROVIDER=dry-run # dry-run | smtp | powermta
+ORACLESTREET_MAIL_PROVIDER=dry-run # dry-run | local-capture | smtp | powermta
 ORACLESTREET_POWERMTA_HOST=
 ORACLESTREET_POWERMTA_PORT=587
 ORACLESTREET_POWERMTA_USERNAME=
@@ -66,6 +66,7 @@ ORACLESTREET_POWERMTA_PASSWORD=
 ORACLESTREET_POWERMTA_SECURE=false
 ORACLESTREET_DEFAULT_FROM_EMAIL=
 ORACLESTREET_DEFAULT_FROM_NAME=OracleStreet
+ORACLESTREET_LOCAL_CAPTURE_ALLOWED_DOMAIN=example.test
 ```
 
 ## Send safety gates
@@ -92,6 +93,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 ## Build sequence
 
 1. [x] Dry-run provider with safe controlled test-send response.
+1a. [x] Local capture provider baseline that records controlled-domain messages without external delivery.
 2. [x] Generic SMTP provider config validation using the same safe adapter interface.
 3. [x] PowerMTA provider config validation with no network probe or real delivery by default.
 4. [x] Dry-run send queue enqueue baseline with consent/source/unsubscribe gates and no real delivery.
@@ -106,7 +108,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 
 - `GET /api/audit-log` requires an admin session and lists sanitized in-memory audit events until PostgreSQL persistence is wired.
 - `GET /api/email/config` exposes redacted provider readiness only.
-- `POST /api/email/provider/validate` requires an admin session and validates selected provider configuration without sending mail or opening a network connection.
+- `POST /api/email/provider/validate` requires an admin session and validates selected provider configuration without sending mail or opening a network connection. `local-capture` validates an allowed controlled recipient domain and never opens a network connection.
 - `POST /api/email/test-send` requires an admin session and is dry-run only.
 - `POST /api/send-queue/enqueue` requires an admin session, applies the current safe test-message gates, and queues dry-run jobs only.
 - `POST /api/campaigns/enqueue-dry-run` requires an admin session, renders a draft campaign audience into dry-run queue jobs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
@@ -117,6 +119,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/email/rate-limits` requires an admin session and returns dry-run warm-up caps. Queue enqueue enforces global and per-domain hourly limits before any provider path.
 - `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery.
 - `GET /api/email/events` requires an admin session and lists in-memory event records until PostgreSQL persistence is wired.
+- `GET /api/email/local-capture` requires an admin session and lists captured local-provider messages for controlled smoke tests only.
 - `GET /api/email/reporting` requires an admin session and summarizes queue, suppression, bounce/complaint, provider, rate-limit, and compliance-gate state without enabling delivery.
 - `GET /api/dashboard` includes the same safe email reporting summary.
 

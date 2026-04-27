@@ -7,6 +7,7 @@ import { resetCampaignsForTests } from '../lib/campaigns.js';
 import { resetContactsForTests } from '../lib/contacts.js';
 import { validateDatabaseConfig } from '../lib/database.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
+import { resetLocalCaptureForTests } from '../lib/emailProvider.js';
 import { resetSegmentsForTests } from '../lib/segments.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
 import { resetSuppressionsForTests } from '../lib/suppressions.js';
@@ -708,6 +709,62 @@ test('email provider validation accepts dry-run without network delivery', async
   });
 });
 
+test('local capture provider validates and records only controlled-domain messages without delivery', async () => {
+  resetLocalCaptureForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MAIL_PROVIDER: 'local-capture',
+    ORACLESTREET_LOCAL_CAPTURE_ALLOWED_DOMAIN: 'example.test'
+  }, async () => {
+    const unauth = await request('/api/email/local-capture');
+    assert.equal(unauth.status, 401);
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const validation = await request('/api/email/provider/validate', { method: 'POST', headers: { cookie } });
+    assert.equal(validation.status, 200);
+    assert.equal(validation.body.validation.ok, true);
+    assert.equal(validation.body.validation.provider, 'local-capture');
+    assert.equal(validation.body.validation.checks.externalDelivery, false);
+
+    const rejected = await request('/api/email/test-send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'outside@other.test',
+        subject: 'Outside capture test',
+        html: '<p>Controlled test.</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('recipient_outside_local_capture_domain'));
+
+    const accepted = await request('/api/email/test-send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'owned@example.test',
+        subject: 'Local capture smoke',
+        html: '<p>Controlled capture.</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.provider, 'local-capture');
+    assert.equal(accepted.body.realDelivery, false);
+
+    const capture = await request('/api/email/local-capture', { headers: { cookie } });
+    assert.equal(capture.status, 200);
+    assert.equal(capture.body.count, 1);
+    assert.equal(capture.body.messages[0].to, 'owned@example.test');
+    assert.equal(capture.body.messages[0].externalDelivery, false);
+  });
+});
+
 test('PowerMTA provider validation checks required config without exposing secrets or sending', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
@@ -761,6 +818,8 @@ test('SMTP provider validation rejects missing safe sender config', async () => 
 test('email provider validation endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/provider/validate', { method: 'POST' });
   assert.equal(res.status, 401);
+  const capture = await request('/email/local-capture');
+  assert.equal(capture.status, 401);
 });
 
 test('send queue requires admin session', async () => {

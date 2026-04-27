@@ -4,7 +4,7 @@ import { createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns 
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
-import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
+import { dryRunSend, getEmailProviderConfig, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { emailReportingSummary } from './lib/reporting.js';
@@ -357,6 +357,13 @@ export const createHandler = () => {
         validation,
         safeDefault: 'network_probe_skipped_no_delivery'
       });
+    }
+
+    if (url.pathname === '/api/email/local-capture' || url.pathname === '/email/local-capture') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, listLocalCapture());
     }
 
     if (url.pathname === '/api/send-queue' || url.pathname === '/send-queue') {

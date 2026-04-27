@@ -28,6 +28,7 @@
 ## Phase 3 — PMTA-first Email Engine
 
 - [x] Dry-run email provider baseline
+- [x] Local capture provider baseline
 - [x] PowerMTA config validation baseline
 - [x] Controlled test-send dry-run endpoint
 - [x] SMTP/provider adapter config validation

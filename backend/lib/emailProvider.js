@@ -1,9 +1,25 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PROVIDERS = new Set(['dry-run', 'smtp', 'powermta']);
+const PROVIDERS = new Set(['dry-run', 'local-capture', 'smtp', 'powermta']);
+
+const localCapture = [];
+let localCaptureSequence = 0;
 
 const redact = (value) => Boolean(value);
 const provider = (env = process.env) => String(env.ORACLESTREET_MAIL_PROVIDER || 'dry-run').trim().toLowerCase();
 const parsePort = (value, fallback) => Number(value || fallback);
+const captureAllowedDomain = (env = process.env) => String(env.ORACLESTREET_LOCAL_CAPTURE_ALLOWED_DOMAIN || 'example.test').trim().toLowerCase();
+
+export const resetLocalCaptureForTests = () => {
+  localCapture.length = 0;
+  localCaptureSequence = 0;
+};
+
+export const listLocalCapture = () => ({
+  ok: true,
+  mode: 'local-capture',
+  count: localCapture.length,
+  messages: localCapture.map((message) => ({ ...message }))
+});
 
 export const getEmailProviderConfig = (env = process.env) => {
   const selectedProvider = provider(env);
@@ -16,6 +32,10 @@ export const getEmailProviderConfig = (env = process.env) => {
     realSendingEnabled,
     powerMtaConfigured: Boolean(env.ORACLESTREET_POWERMTA_HOST),
     smtpConfigured: Boolean(env.ORACLESTREET_SMTP_HOST),
+    localCapture: {
+      allowedDomain: captureAllowedDomain(env),
+      externalDelivery: false
+    },
     powerMta: {
       hostConfigured: redact(env.ORACLESTREET_POWERMTA_HOST),
       port: parsePort(env.ORACLESTREET_POWERMTA_PORT, 587),
@@ -86,6 +106,19 @@ export const validateSelectedProviderConfig = (env = process.env) => {
   if (selectedProvider === 'dry-run') {
     return { ok: true, provider: 'dry-run', errors: [], checks: { realDelivery: false, networkProbe: 'not_applicable' } };
   }
+  if (selectedProvider === 'local-capture') {
+    const allowedDomain = captureAllowedDomain(env);
+    return {
+      ok: Boolean(allowedDomain && allowedDomain.includes('.')),
+      provider: 'local-capture',
+      errors: allowedDomain && allowedDomain.includes('.') ? [] : ['valid_local_capture_allowed_domain_required'],
+      checks: {
+        allowedDomain,
+        externalDelivery: false,
+        networkProbe: 'not_applicable'
+      }
+    };
+  }
   if (selectedProvider === 'smtp') return validateSmtpConfig(env);
   return validatePowerMtaConfig(env);
 };
@@ -122,13 +155,33 @@ export const dryRunSend = (message, env = process.env) => {
     if (!providerValidation.ok) {
       return { ok: false, mode: 'dry-run', provider: providerConfig.provider, errors: providerValidation.errors };
     }
+    if (providerConfig.provider === 'local-capture') {
+      const allowedDomain = captureAllowedDomain(env);
+      const domain = validation.normalized.to.split('@')[1];
+      if (domain !== allowedDomain) {
+        return { ok: false, mode: 'dry-run', provider: 'local-capture', errors: ['recipient_outside_local_capture_domain'], captureAllowedDomain: allowedDomain };
+      }
+    }
+  }
+
+  const providerMessageId = `${providerConfig.provider === 'local-capture' ? 'capture' : 'dryrun'}_${Date.now().toString(36)}`;
+  if (providerConfig.provider === 'local-capture') {
+    localCapture.push({
+      id: `cap_${(++localCaptureSequence).toString().padStart(6, '0')}`,
+      providerMessageId,
+      to: validation.normalized.to,
+      subject: validation.normalized.subject,
+      source: validation.normalized.source,
+      externalDelivery: false,
+      createdAt: new Date().toISOString()
+    });
   }
 
   return {
     ok: true,
     mode: 'dry-run',
     provider: providerConfig.provider,
-    providerMessageId: `dryrun_${Date.now().toString(36)}`,
+    providerMessageId,
     accepted: {
       to: validation.normalized.to,
       subject: validation.normalized.subject,
