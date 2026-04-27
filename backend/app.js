@@ -8,7 +8,7 @@ import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateC
 import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/controlledLiveTestReadiness.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, validateDataSourceQuery } from './lib/dataSources.js';
+import { createDataSource, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -250,6 +250,17 @@ export const createHandler = () => {
       const audit = listAuditEventsByActionPrefix('data_source_sync');
       recordAuditEvent({ action: 'data_source_sync_audit_view', actorEmail: session.email, details: { count: audit.count, realSync: false } });
       return jsonResponse(res, 200, { ...audit, mode: 'data-source-sync-audit-baseline', realSync: false });
+    }
+
+    if (url.pathname === '/api/data-source-import/preview' || url.pathname === '/data-source-import/preview') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = previewContactImportFromDataSource({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'data_source_contact_import_preview', actorEmail: session.email, target: body.dataSourceId || null, status: result.previewOk ? 'ok' : 'rejected', details: { errors: result.errors || [], rowsSeen: result.rowsSeen || 0, acceptedCount: result.acceptedCount || 0, rejectedCount: result.rejectedCount || 0, importMutation: false, realQuery: Boolean(result.realQuery) } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/data-source-query/validate' || url.pathname === '/data-source-query/validate') {

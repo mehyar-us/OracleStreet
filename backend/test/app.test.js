@@ -782,6 +782,51 @@ test('live remote PostgreSQL query and schema execution stay gated and redacted'
   });
 });
 
+test('remote PostgreSQL contact import preview maps rows through contact validation without importing', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+  }, async () => {
+    const unauth = await request('/api/data-source-import/preview', { method: 'POST', body: JSON.stringify({}) });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const preview = await request('/api/data-source-import/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        rows: [
+          { email_address: 'Reader@Example.test', consent: 'opt_in', list_source: 'owned remote warehouse', first_name: 'Ada' },
+          { email_address: 'bad-email', consent: 'opt_in', list_source: 'owned remote warehouse' },
+          { email_address: 'reader@example.test', consent: 'opt_in', list_source: 'owned remote warehouse' }
+        ],
+        mapping: { email: 'email_address', consentStatus: 'consent', source: 'list_source', firstName: 'first_name' },
+        defaults: { source: 'remote-postgresql-preview', consentStatus: 'opt_in' }
+      })
+    });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.body.mode, 'data-source-contact-import-preview');
+    assert.equal(preview.body.previewOk, false);
+    assert.equal(preview.body.rowsSeen, 3);
+    assert.equal(preview.body.acceptedCount, 1);
+    assert.equal(preview.body.rejectedCount, 2);
+    assert.equal(preview.body.importMutation, false);
+    assert.equal(preview.body.realQuery, false);
+    assert.equal(preview.body.sampleAccepted[0].email, 'reader@example.test');
+    assert.ok(preview.body.sampleRejected.some((row) => row.errors.includes('valid_email_required')));
+    assert.ok(preview.body.sampleRejected.some((row) => row.errors.includes('duplicate_email_in_import')));
+
+    const contacts = await request('/api/contacts', { headers: { cookie } });
+    assert.equal(contacts.body.count, 0);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_contact_import_preview'));
+  });
+});
+
 test('data source sync audit log requires admin and returns sanitized sync events only', async () => {
   resetAuditLogForTests();
   resetDataSourcesForTests();

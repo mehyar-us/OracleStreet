@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { validateContactImport } from './contacts.js';
 
 const dataSources = new Map();
 const encryptedConnectionSecrets = new Map();
@@ -428,6 +429,86 @@ export const executeDataSourceSchemaDiscovery = ({ approvalPhrase, ...input } = 
       redactedErrors: true,
       noSecretOutput: true
     }
+  };
+};
+
+const rowValue = (row, key) => {
+  if (!key) return '';
+  if (row && Object.prototype.hasOwnProperty.call(row, key)) return row[key];
+  const lowerKey = String(key).toLowerCase();
+  const found = Object.keys(row || {}).find((candidate) => candidate.toLowerCase() === lowerKey);
+  return found ? row[found] : '';
+};
+
+export const previewContactImportFromDataSource = ({ rows, dataSourceId, sql, limit = 100, timeoutMs = 5000, approvalPhrase, mapping = {}, defaults = {}, actorEmail = null } = {}, env = process.env) => {
+  let sourceRows = Array.isArray(rows) ? rows : null;
+  let execution = null;
+  const errors = [];
+
+  if (!sourceRows && sql) {
+    execution = executeDataSourceQuery({ dataSourceId, sql, limit, timeoutMs, approvalPhrase, actorEmail }, env);
+    if (!execution.ok) {
+      return {
+        ok: false,
+        mode: 'data-source-contact-import-preview',
+        errors: execution.errors || execution.blockers || ['remote_query_execution_blocked'],
+        blockers: execution.blockers || execution.errors || [],
+        rowsSeen: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        realQuery: Boolean(execution.realQuery),
+        rowsPulled: execution.rowsPulled || 0,
+        importMutation: false
+      };
+    }
+    sourceRows = execution.rows;
+  }
+
+  if (!Array.isArray(sourceRows)) errors.push('rows_or_approved_select_query_required');
+  if (sourceRows && sourceRows.length > 500) errors.push('preview_row_limit_500_required');
+  const emailColumn = String(mapping.email || 'email').trim();
+  if (!emailColumn) errors.push('email_mapping_required');
+
+  if (errors.length > 0) {
+    return { ok: false, mode: 'data-source-contact-import-preview', errors, rowsSeen: sourceRows?.length || 0, acceptedCount: 0, rejectedCount: 0, realQuery: Boolean(execution?.realQuery), rowsPulled: execution?.rowsPulled || 0, importMutation: false };
+  }
+
+  const mappedContacts = sourceRows.map((row) => ({
+    email: rowValue(row, emailColumn),
+    consentStatus: rowValue(row, mapping.consentStatus || mapping.consent_status) || defaults.consentStatus || defaults.consent_status || 'opt_in',
+    source: rowValue(row, mapping.source) || defaults.source || 'remote-postgresql-preview',
+    sourceDetail: rowValue(row, mapping.sourceDetail || mapping.source_detail) || defaults.sourceDetail || defaults.source_detail || null,
+    firstName: rowValue(row, mapping.firstName || mapping.first_name) || null,
+    lastName: rowValue(row, mapping.lastName || mapping.last_name) || null
+  }));
+  const validation = validateContactImport(mappedContacts);
+
+  return {
+    ...validation,
+    ok: true,
+    mode: 'data-source-contact-import-preview',
+    previewOk: validation.ok,
+    rowsSeen: sourceRows.length,
+    rowsPulled: execution?.rowsPulled || 0,
+    realQuery: Boolean(execution?.realQuery),
+    importMutation: false,
+    source: dataSourceId ? sourcePublicView(dataSources.get(String(dataSourceId).trim())) : null,
+    mapping: {
+      email: emailColumn,
+      consentStatus: mapping.consentStatus || mapping.consent_status || null,
+      source: mapping.source || null,
+      firstName: mapping.firstName || mapping.first_name || null,
+      lastName: mapping.lastName || mapping.last_name || null,
+      sourceDetail: mapping.sourceDetail || mapping.source_detail || null,
+      defaultsApplied: {
+        consentStatus: defaults.consentStatus || defaults.consent_status || 'opt_in',
+        source: defaults.source || 'remote-postgresql-preview'
+      }
+    },
+    sampleAccepted: validation.accepted.slice(0, 5),
+    sampleRejected: validation.rejected.slice(0, 10),
+    actorEmail,
+    createdAt: nowIso()
   };
 };
 

@@ -100,7 +100,7 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Remote PostgreSQL import preview + field mapping from approved SELECT rows into contact import validation.
+1. Remote PostgreSQL approved import execution into contacts with duplicate/update counts and sync-run history.
 2. Multi-user/RBAC admin workflow.
 3. Campaign calendar UI over warm-up caps.
 4. Contact browser search/filter and source-quality drilldowns.
