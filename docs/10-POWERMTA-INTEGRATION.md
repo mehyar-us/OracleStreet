@@ -114,6 +114,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 19. [x] Campaign dry-run scheduling baseline that records future schedules while keeping manual dispatch and no delivery.
 20. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
 21. [x] Manual event CSV import ingest baseline that atomically imports valid bounce/complaint files into events and suppressions without delivery.
+22. [x] Tracked open/click event baseline that records engagement events without auth, redirects, delivery, or external probes.
 
 ## Current validation endpoints
 
@@ -134,6 +135,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/email/events/validate-import` requires an admin session and validates manual CSV bounce/complaint imports without recording events, creating suppressions, probing networks, or sending mail.
 - `POST /api/email/events/import` requires an admin session, atomically rejects invalid CSV files, and imports fully valid bounce/complaint rows into events and suppressions without probing networks or sending mail.
 - `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery. Internal `dispatched` events are recorded only by the dry-run dispatch path.
+- `GET /api/track/open` and `GET /api/track/click` record tracked engagement events with campaign/contact metadata without auth, redirects, network probes, or delivery.
 - `GET /api/email/events` requires an admin session and lists in-memory event records until PostgreSQL persistence is wired.
 - `GET /api/email/local-capture` requires an admin session and lists captured local-provider messages for controlled smoke tests only.
 - `GET /api/email/reporting` requires an admin session and summarizes queue, suppression, bounce/complaint, provider, rate-limit, and compliance-gate state without enabling delivery.

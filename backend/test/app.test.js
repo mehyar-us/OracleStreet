@@ -1334,6 +1334,47 @@ test('manual event ingest rejects internal dispatched events', async () => {
   });
 });
 
+test('tracked open and click endpoints record engagement without auth or delivery', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  await withAdminEnv(async () => {
+    const missingEmail = await request('/api/track/open?campaignId=cmp_track');
+    assert.equal(missingEmail.status, 400);
+    assert.ok(missingEmail.body.errors.includes('valid_email_required'));
+
+    const open = await request('/api/track/open?email=Reader@Example.test&campaignId=cmp_track&contactId=ct_track');
+    assert.equal(open.status, 200);
+    assert.equal(open.body.mode, 'tracked-open-event');
+    assert.equal(open.body.event.type, 'open');
+    assert.equal(open.body.event.email, 'reader@example.test');
+    assert.equal(open.body.event.campaignId, 'cmp_track');
+    assert.equal(open.body.realDelivery, false);
+
+    const click = await request('/api/track/click?email=reader@example.test&campaignId=cmp_track&contactId=ct_track&url=https%3A%2F%2Fexample.test%2Foffer');
+    assert.equal(click.status, 200);
+    assert.equal(click.body.mode, 'tracked-click-event');
+    assert.equal(click.body.redirect, false);
+    assert.equal(click.body.event.type, 'click');
+    assert.equal(click.body.event.detail, 'https://example.test/offer');
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 2);
+    assert.equal(events.body.events[0].type, 'open');
+    assert.equal(events.body.events[1].type, 'click');
+
+    const reporting = await request('/api/email/reporting', { headers: { cookie } });
+    assert.equal(reporting.body.totals.opens, 1);
+    assert.equal(reporting.body.totals.clicks, 1);
+    assert.equal(reporting.body.safety.complianceGates.engagementTracking, 'tracked_open_click_records_event_without_delivery');
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_tracking_open'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_tracking_click'));
+  });
+});
+
 test('email event endpoints also work behind nginx stripped api prefix', async () => {
   const list = await request('/email/events');
   assert.equal(list.status, 401);
@@ -1343,6 +1384,8 @@ test('email event endpoints also work behind nginx stripped api prefix', async (
   assert.equal(importEvents.status, 401);
   const ingest = await request('/email/events/ingest', { method: 'POST' });
   assert.equal(ingest.status, 401);
+  const open = await request('/track/open?email=reader@example.test');
+  assert.equal(open.status, 200);
 });
 
 test('email reporting requires admin session and summarizes safe sending state', async () => {

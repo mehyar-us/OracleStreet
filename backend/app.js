@@ -4,7 +4,7 @@ import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateC
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
-import { ingestEmailEvents, listEmailEvents, recordEmailEvent } from './lib/emailEvents.js';
+import { ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
@@ -502,6 +502,20 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, listEmailEvents());
+    }
+
+    if (url.pathname === '/api/track/open' || url.pathname === '/track/open') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const result = recordTrackingEvent({ type: 'open', email: url.searchParams.get('email'), campaignId: url.searchParams.get('campaignId'), contactId: url.searchParams.get('contactId'), detail: url.searchParams.get('detail') || null });
+      recordAuditEvent({ action: 'email_tracking_open', target: url.searchParams.get('campaignId') || null, status: result.ok ? 'ok' : 'rejected', details: { email: url.searchParams.get('email') || null, errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, { ...result, mode: 'tracked-open-event', realDelivery: false });
+    }
+
+    if (url.pathname === '/api/track/click' || url.pathname === '/track/click') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const result = recordTrackingEvent({ type: 'click', email: url.searchParams.get('email'), campaignId: url.searchParams.get('campaignId'), contactId: url.searchParams.get('contactId'), detail: url.searchParams.get('url') || url.searchParams.get('detail') || null });
+      recordAuditEvent({ action: 'email_tracking_click', target: url.searchParams.get('campaignId') || null, status: result.ok ? 'ok' : 'rejected', details: { email: url.searchParams.get('email') || null, errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, { ...result, mode: 'tracked-click-event', redirect: false, realDelivery: false });
     }
 
     if (url.pathname === '/api/email/events/validate-import' || url.pathname === '/email/events/validate-import') {

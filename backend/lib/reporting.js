@@ -115,7 +115,9 @@ export const emailReportingSummary = (env = process.env) => {
       auditEvents: audit.count,
       bounces: eventCounts.bounce || 0,
       complaints: eventCounts.complaint || 0,
-      dispatched: eventCounts.dispatched || 0
+      dispatched: eventCounts.dispatched || 0,
+      opens: eventCounts.open || 0,
+      clicks: eventCounts.click || 0
     },
     suppressionCounts,
     eventCounts,
@@ -128,6 +130,7 @@ export const emailReportingSummary = (env = process.env) => {
         suppression: 'enforced_for_queue',
         unsubscribe: 'tracked_link_records_suppression',
         dispatchEvents: 'dry_run_dispatch_records_event',
+        engagementTracking: 'tracked_open_click_records_event_without_delivery',
         bounceComplaint: 'manual_ingest_records_event_and_suppression',
         rateLimits: 'dry_run_warmup_enforced',
         audit: 'baseline_in_memory',

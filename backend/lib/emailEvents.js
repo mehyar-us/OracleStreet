@@ -2,7 +2,8 @@ import { addSuppression } from './suppressions.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INGEST_TYPES = new Set(['bounce', 'complaint']);
-const EVENT_TYPES = new Set(['bounce', 'complaint', 'dispatched']);
+const EVENT_TYPES = new Set(['bounce', 'complaint', 'dispatched', 'open', 'click']);
+const TRACKING_TYPES = new Set(['open', 'click']);
 const SUPPRESSION_TYPES = new Set(['bounce', 'complaint']);
 const events = [];
 let sequence = 0;
@@ -86,4 +87,18 @@ export const ingestEmailEvents = ({ events: incomingEvents, actorEmail = null })
     accepted,
     rejected
   };
+};
+
+export const recordTrackingEvent = ({ type, email, campaignId = null, contactId = null, detail = null }) => {
+  const cleanType = String(type || '').trim().toLowerCase();
+  if (!TRACKING_TYPES.has(cleanType)) return { ok: false, errors: ['valid_tracking_type_required'] };
+  return recordEmailEvent({
+    type: cleanType,
+    email,
+    source: 'tracked_engagement',
+    detail,
+    campaignId,
+    contactId,
+    actorEmail: null
+  });
 };

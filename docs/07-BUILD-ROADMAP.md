@@ -47,6 +47,7 @@
 - [x] Manual event CSV import validation baseline
 - [x] Manual event CSV import ingest baseline
 - [x] Event tracking baseline
+- [x] Open/click engagement tracking baseline
 - [x] Dry-run dispatch event tracking baseline
 - [x] Campaign reporting safe summary baseline
 - [x] Real sending readiness safe-gate baseline
