@@ -1596,6 +1596,19 @@ test('PowerMTA accounting import records valid delivery CSV atomically', async (
     assert.equal(events.body.count, 3);
     assert.deepEqual(events.body.events.map((event) => event.type), ['bounce', 'deferred', 'delivered']);
     assert.deepEqual(events.body.events.map((event) => event.providerMessageId), ['msg-hard', 'msg-slow', 'msg-ok']);
+
+    const lookupMissing = await request('/api/email/events/provider-message', { headers: { cookie } });
+    assert.equal(lookupMissing.status, 400);
+    assert.equal(lookupMissing.body.error, 'provider_message_id_required');
+
+    const lookup = await request('/api/email/events/provider-message?providerMessageId=msg-hard', { headers: { cookie } });
+    assert.equal(lookup.status, 200);
+    assert.equal(lookup.body.mode, 'provider-message-event-lookup');
+    assert.equal(lookup.body.count, 1);
+    assert.equal(lookup.body.events[0].email, 'hard@example.test');
+    assert.equal(lookup.body.events[0].type, 'bounce');
+    assert.equal(lookup.body.safety.noEventRecorded, true);
+
     const suppressions = await request('/api/suppressions', { headers: { cookie } });
     assert.equal(suppressions.body.count, 1);
     assert.equal(suppressions.body.suppressions[0].email, 'hard@example.test');
@@ -1990,6 +2003,8 @@ test('tracked open and click endpoints record engagement without auth or deliver
 });
 
 test('email event endpoints also work behind nginx stripped api prefix', async () => {
+  const providerMessageEvents = await request('/email/events/provider-message?providerMessageId=msg-test');
+  assert.equal(providerMessageEvents.status, 401);
   const list = await request('/email/events');
   assert.equal(list.status, 401);
   const pmtaAccountingImport = await request('/email/powermta/accounting/import', { method: 'POST' });

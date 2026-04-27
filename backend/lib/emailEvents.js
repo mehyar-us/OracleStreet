@@ -23,6 +23,28 @@ export const listEmailEvents = () => ({
   events: events.map((event) => ({ ...event }))
 });
 
+export const findEmailEventsByProviderMessageId = (providerMessageId) => {
+  const cleanProviderMessageId = String(providerMessageId || '').trim();
+  if (!cleanProviderMessageId) return { ok: false, error: 'provider_message_id_required' };
+  if (cleanProviderMessageId.length > 200) return { ok: false, error: 'provider_message_id_too_long' };
+  const matches = events.filter((event) => event.providerMessageId === cleanProviderMessageId);
+  return {
+    ok: true,
+    mode: 'provider-message-event-lookup',
+    providerMessageId: cleanProviderMessageId,
+    count: matches.length,
+    events: matches.map((event) => ({ ...event })),
+    safety: {
+      noNetworkProbe: true,
+      noMailboxConnection: true,
+      noEventRecorded: true,
+      noSuppressionCreated: true,
+      realDelivery: false
+    },
+    realDelivery: false
+  };
+};
+
 export const recordEmailEvent = ({ type, email, source = 'manual_ingest', detail = null, campaignId = null, contactId = null, providerMessageId = null, actorEmail = null }) => {
   const cleanType = String(type || '').trim().toLowerCase();
   const normalized = normalizeEmail(email);

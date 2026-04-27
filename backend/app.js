@@ -9,7 +9,7 @@ import { importContacts, listContacts, validateContactImport } from './lib/conta
 import { validateDatabaseConfig } from './lib/database.js';
 import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
-import { ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
+import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
@@ -646,6 +646,15 @@ export const createHandler = () => {
         contactId: payload.contactId || null,
         realDelivery: false
       });
+    }
+
+    if (url.pathname === '/api/email/events/provider-message' || url.pathname === '/email/events/provider-message') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const lookup = findEmailEventsByProviderMessageId(url.searchParams.get('providerMessageId'));
+      recordAuditEvent({ action: 'email_provider_message_event_lookup', actorEmail: session.email, target: lookup.ok ? lookup.providerMessageId : 'provider-message', status: lookup.ok ? 'ok' : 'rejected', details: { count: lookup.count || 0, error: lookup.error || null, realDelivery: false } });
+      return jsonResponse(res, lookup.ok ? 200 : 400, lookup);
     }
 
     if (url.pathname === '/api/email/events' || url.pathname === '/email/events') {

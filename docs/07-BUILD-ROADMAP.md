@@ -52,6 +52,7 @@
 - [x] PowerMTA accounting CSV import validation baseline
 - [x] PowerMTA accounting CSV import ingest baseline
 - [x] Provider message ID event metadata baseline
+- [x] Provider message event lookup baseline
 - [x] Manual event CSV import validation baseline
 - [x] Manual event CSV import ingest baseline
 - [x] Event tracking baseline
