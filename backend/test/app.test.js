@@ -551,13 +551,20 @@ test('campaign endpoints require admin session', async () => {
     body: JSON.stringify({ segmentId: 'seg_000001', templateId: 'tpl_000001' })
   });
   assert.equal(estimate.status, 401);
+  const enqueue = await request('/api/campaigns/enqueue-dry-run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ campaignId: 'cmp_000001' })
+  });
+  assert.equal(enqueue.status, 401);
 });
 
-test('campaign draft baseline estimates safe audience without delivery', async () => {
+test('campaign draft baseline estimates and enqueues safe dry-run audience without delivery', async () => {
   resetAuditLogForTests();
   resetCampaignsForTests();
   resetContactsForTests();
   resetSegmentsForTests();
+  resetSendQueueForTests();
   resetSuppressionsForTests();
   resetTemplatesForTests();
   await withAdminEnv(async () => {
@@ -609,12 +616,30 @@ test('campaign draft baseline estimates safe audience without delivery', async (
     assert.equal(campaign.body.campaign.status, 'draft');
     assert.equal(campaign.body.campaign.realDeliveryAllowed, false);
 
+    const enqueued = await request('/api/campaigns/enqueue-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: campaign.body.campaign.id })
+    });
+    assert.equal(enqueued.status, 200);
+    assert.equal(enqueued.body.mode, 'campaign-dry-run-queue');
+    assert.equal(enqueued.body.enqueuedCount, 1);
+    assert.equal(enqueued.body.realDelivery, false);
+    assert.equal(enqueued.body.campaign.status, 'queued_dry_run');
+    assert.equal(enqueued.body.jobs[0].campaignId, campaign.body.campaign.id);
+    assert.equal(enqueued.body.jobs[0].to, 'buyer-b@example.test');
+
     const list = await request('/api/campaigns', { headers: { cookie } });
     assert.equal(list.body.count, 1);
+    assert.equal(list.body.campaigns[0].status, 'queued_dry_run');
+    const queue = await request('/api/send-queue', { headers: { cookie } });
+    assert.equal(queue.body.count, 1);
+    assert.equal(queue.body.jobs[0].safety.realDelivery, false);
     const dashboard = await request('/api/dashboard', { headers: { cookie } });
     assert.equal(dashboard.body.summary.campaigns, 1);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_create'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_enqueue_dry_run'));
   });
 });
 
@@ -623,6 +648,8 @@ test('campaign endpoints also work behind nginx stripped api prefix', async () =
   assert.equal(list.status, 401);
   const estimate = await request('/campaigns/estimate', { method: 'POST' });
   assert.equal(estimate.status, 401);
+  const enqueue = await request('/campaigns/enqueue-dry-run', { method: 'POST' });
+  assert.equal(enqueue.status, 401);
 });
 
 

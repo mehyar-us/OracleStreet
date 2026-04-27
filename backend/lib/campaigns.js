@@ -1,5 +1,6 @@
+import { enqueueDryRunSend } from './sendQueue.js';
 import { estimateSegmentAudience, getSegment } from './segments.js';
-import { getTemplate } from './templates.js';
+import { getTemplate, renderTemplateContent } from './templates.js';
 
 const campaigns = new Map();
 let sequence = 0;
@@ -78,3 +79,80 @@ export const listCampaigns = () => ({
   count: campaigns.size,
   campaigns: [...campaigns.values()].map((campaign) => ({ ...campaign }))
 });
+
+export const getCampaign = (id) => {
+  const campaign = campaigns.get(String(id || '').trim());
+  return campaign ? { ...campaign } : null;
+};
+
+const contactRenderData = (contact) => ({
+  email: contact.email,
+  firstName: contact.firstName || '',
+  lastName: contact.lastName || '',
+  source: contact.source,
+  consentStatus: contact.consentStatus
+});
+
+export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = process.env }) => {
+  const campaign = campaigns.get(String(campaignId || '').trim());
+  if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
+  if (campaign.status !== 'draft') return { ok: false, errors: ['campaign_must_be_draft'] };
+
+  const template = getTemplate(campaign.templateId);
+  if (!template) return { ok: false, errors: ['template_not_found'] };
+  const estimate = estimateCampaign({ segmentId: campaign.segmentId, templateId: campaign.templateId });
+  if (!estimate.ok) return estimate;
+
+  const audience = estimateSegmentAudience(estimate.segment.criteria);
+  const jobs = [];
+  const errors = [];
+
+  for (const contact of audience.contacts) {
+    const rendered = renderTemplateContent(template, contactRenderData(contact));
+    const result = enqueueDryRunSend({
+      to: contact.email,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      consentStatus: contact.consentStatus,
+      source: contact.source,
+      campaignId: campaign.id,
+      contactId: contact.id
+    }, actorEmail, env);
+    if (!result.ok) {
+      errors.push({ email: contact.email, errors: result.errors });
+      continue;
+    }
+    jobs.push(result.job);
+  }
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      mode: 'campaign-dry-run-queue',
+      campaignId: campaign.id,
+      enqueuedCount: jobs.length,
+      rejectedCount: errors.length,
+      errors,
+      realDelivery: false
+    };
+  }
+
+  const updated = {
+    ...campaign,
+    status: 'queued_dry_run',
+    queuedDryRunCount: jobs.length,
+    realDeliveryAllowed: false,
+    updatedAt: nowIso()
+  };
+  campaigns.set(campaign.id, updated);
+
+  return {
+    ok: true,
+    mode: 'campaign-dry-run-queue',
+    campaign: { ...updated },
+    enqueuedCount: jobs.length,
+    jobs,
+    realDelivery: false
+  };
+};

@@ -63,6 +63,8 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
     subject: dryRun.accepted.subject,
     source: dryRun.accepted.source,
     actorEmail,
+    campaignId: message.campaignId || null,
+    contactId: message.contactId || null,
     safety: {
       consentChecked: true,
       sourceChecked: true,

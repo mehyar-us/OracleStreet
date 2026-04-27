@@ -55,15 +55,17 @@ export const listTemplates = () => ({
 
 export const getTemplate = (id) => templates.get(String(id || '').trim()) || null;
 
+export const renderTemplateContent = (template, data = {}) => ({
+  subject: renderToken(template.subject, data),
+  html: renderToken(template.html, data),
+  text: template.text ? renderToken(template.text, data) : null
+});
+
 export const renderTemplatePreview = ({ id, data = {} }) => {
   const template = getTemplate(id);
   if (!template) return { ok: false, errors: ['template_not_found'] };
 
-  const rendered = {
-    subject: renderToken(template.subject, data),
-    html: renderToken(template.html, data),
-    text: template.text ? renderToken(template.text, data) : null
-  };
+  const rendered = renderTemplateContent(template, data);
 
   return {
     ok: true,

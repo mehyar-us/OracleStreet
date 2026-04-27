@@ -99,6 +99,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 6. [x] Dry-run rate limit/warm-up baseline with per-domain and global hourly caps.
 7. [x] Manual bounce/complaint ingest baseline that records events and suppresses recipients.
 8. [x] Dashboard reporting baseline for safe dry-run queue, suppressions, events, and compliance gates.
+9. [x] Campaign-to-send-queue dry-run enqueue baseline with rendered templates, segment audience, suppression exclusion, and no delivery.
 
 ## Current validation endpoints
 
@@ -107,6 +108,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/email/provider/validate` requires an admin session and validates selected provider configuration without sending mail or opening a network connection.
 - `POST /api/email/test-send` requires an admin session and is dry-run only.
 - `POST /api/send-queue/enqueue` requires an admin session, applies the current safe test-message gates, and queues dry-run jobs only.
+- `POST /api/campaigns/enqueue-dry-run` requires an admin session, renders a draft campaign audience into dry-run queue jobs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
 - `POST /api/unsubscribe` records an unsubscribe suppression without sending mail; this is the baseline for future tracked unsubscribe links.
