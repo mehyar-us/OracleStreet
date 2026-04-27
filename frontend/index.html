@@ -231,6 +231,39 @@
 
 
 
+
+    const createRemoteDataSource = async () => {
+      const result = document.querySelector('#remote-source-result');
+      const host = document.querySelector('#remote-source-host').value.trim();
+      const port = document.querySelector('#remote-source-port').value.trim() || '5432';
+      const database = document.querySelector('#remote-source-database').value.trim();
+      const username = document.querySelector('#remote-source-username').value.trim();
+      const password = document.querySelector('#remote-source-password').value;
+      const sslMode = document.querySelector('#remote-source-sslmode').value;
+      const url = `postgresql://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}?sslmode=${encodeURIComponent(sslMode)}`;
+      const payload = {
+        name: document.querySelector('#remote-source-name').value,
+        type: 'postgresql',
+        connectionUrl: url,
+        storeSecret: document.querySelector('#remote-source-store-secret').checked
+      };
+      result.className = 'status';
+      result.textContent = 'Registering redacted PostgreSQL source…';
+      const body = await fetch('/api/data-sources', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'source_rejected']).join(', ')}`;
+        return;
+      }
+      document.querySelector('#remote-source-password').value = '';
+      result.innerHTML = `Registered <strong>${body.source.id}</strong> for ${body.source.connection.parsed.host}. Secret stored: <strong>${body.source.connection.secretStored}</strong>. Real sync: <strong>${body.realSync}</strong>.`;
+      await loadWorkbench();
+    };
+
     const dispatchNextDryRun = async () => {
       const result = document.querySelector('#send-queue-dispatch-result');
       result.className = 'status';
@@ -308,7 +341,8 @@
       document.querySelector('#dispatch-next-dry-run').addEventListener('click', dispatchNextDryRun);
       setScreen('#suppressions-screen', 'Suppressions', `<div class="kv"><span>Suppressed</span><strong>${suppressions.count || 0}</strong></div>${listItems(suppressions.suppressions || [], 'No suppressions recorded yet. Unsubscribes, bounces, and complaints will appear here.', (s) => `<li>${s.email} · ${s.reason} · ${s.source}</li>`)}`);
       const firstSourceId = (dataSources.sources || [])[0]?.id || '';
-      setScreen('#remote-db-screen', 'Remote PostgreSQL', `<div class="kv"><span>Sources</span><strong>${dataSources.count || 0}</strong><span>Sync dry-runs</span><strong>${syncRuns.count || 0}</strong></div>${listItems(dataSources.sources || [], 'No remote sources registered. Add one through the protected data-source API, then validate SELECT-only query plans here.', (s) => `<li>${s.name} · ${s.connection?.parsed?.host || 'host redacted'} · ${s.connection?.secretStored ? 'encrypted secret' : 'metadata only'}</li>`)}<p>Validate a SELECT-only remote query plan. This enforces limit/timeout and redacted metadata while live remote execution stays locked until the PostgreSQL driver and approval gate are enabled.</p><label>Data source ID <input id="remote-query-source-id" value="${firstSourceId}" placeholder="ds_000001" /></label><label>SELECT query <textarea id="remote-query-sql">select email, consent_status, source from contacts</textarea></label><label>Limit <input id="remote-query-limit" type="number" min="1" max="500" value="100" /></label><label>Timeout ms <input id="remote-query-timeout" type="number" min="100" max="10000" value="5000" /></label><div class="toolbar"><button id="validate-remote-query" type="button">Validate SELECT query</button></div><div id="remote-query-result" class="status"></div>`);
+      setScreen('#remote-db-screen', 'Remote PostgreSQL', `<div class="kv"><span>Sources</span><strong>${dataSources.count || 0}</strong><span>Sync dry-runs</span><strong>${syncRuns.count || 0}</strong></div>${listItems(dataSources.sources || [], 'No remote sources registered. Register a PostgreSQL source below, then validate SELECT-only query plans here.', (s) => `<li>${s.name} · ${s.connection?.parsed?.host || 'host redacted'} · ${s.connection?.secretStored ? 'encrypted secret' : 'metadata only'}</li>`)}<p>Register remote PostgreSQL source metadata. Passwords are sent only to the protected API, returned as redacted metadata/secret refs, and never displayed after save.</p><label>Name <input id="remote-source-name" value="Affiliate warehouse" /></label><label>Host <input id="remote-source-host" placeholder="db.example.test" /></label><label>Port <input id="remote-source-port" value="5432" /></label><label>Database <input id="remote-source-database" placeholder="warehouse" /></label><label>Username <input id="remote-source-username" placeholder="readonly_user" /></label><label>Password <input id="remote-source-password" type="password" autocomplete="off" /></label><label>SSL mode <select id="remote-source-sslmode"><option value="require">require</option><option value="verify-full">verify-full</option><option value="disable">disable</option></select></label><label><input id="remote-source-store-secret" type="checkbox" checked /> Store encrypted secret ref</label><div class="toolbar"><button id="create-remote-source" type="button">Register PostgreSQL source</button></div><div id="remote-source-result" class="status"></div><p>Validate a SELECT-only remote query plan. This enforces limit/timeout and redacted metadata while live remote execution stays locked until the PostgreSQL driver and approval gate are enabled.</p><label>Data source ID <input id="remote-query-source-id" value="${firstSourceId}" placeholder="ds_000001" /></label><label>SELECT query <textarea id="remote-query-sql">select email, consent_status, source from contacts</textarea></label><label>Limit <input id="remote-query-limit" type="number" min="1" max="500" value="100" /></label><label>Timeout ms <input id="remote-query-timeout" type="number" min="100" max="10000" value="5000" /></label><div class="toolbar"><button id="validate-remote-query" type="button">Validate SELECT query</button></div><div id="remote-query-result" class="status"></div>`);
+      document.querySelector('#create-remote-source').addEventListener('click', createRemoteDataSource);
       document.querySelector('#validate-remote-query').addEventListener('click', validateRemoteQuery);
       setScreen('#audit-screen', 'Audit', `<div class="kv"><span>Audit events</span><strong>${audit.count || 0}</strong></div>${listItems(audit.events || [], 'No audit events in memory yet.', (e) => `<li>${e.action} · ${e.status || 'ok'} · ${e.actorEmail || 'system'}</li>`)}`);
       cmsWorkbench.classList.remove('hidden');

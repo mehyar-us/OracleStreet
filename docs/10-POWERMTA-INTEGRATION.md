@@ -139,15 +139,16 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 44. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
 45. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
 46. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
-47. [x] Remote PostgreSQL SELECT-only query validator/planner UI/API with limit/timeout gates, redacted metadata, schema-discovery plan, and no live remote execution.
-48. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
-49. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
-50. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
-51. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
-52. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
-53. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
-54. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
-55. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
+47. [x] Frontend remote PostgreSQL source registration workflow with redacted metadata, encrypted secret ref request, and no live sync/query execution.
+48. [x] Remote PostgreSQL SELECT-only query validator/planner UI/API with limit/timeout gates, redacted metadata, schema-discovery plan, and no live remote execution.
+49. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
+50. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
+51. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
+52. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
+53. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
+54. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
+55. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
+56. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
 
 ## Current validation endpoints
 
@@ -203,6 +204,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `/` frontend dashboard displays a protected remote PostgreSQL mapping/status panel using redacted source metadata and dry-run sync counts only. It does not expose secrets, enable sync, or pull remote rows.
 - `GET /api/data-source-sync-audit` requires an admin session and returns sanitized `data_source_sync*` audit events only. Viewing the audit is itself audited, returns no plaintext secrets, and keeps `realSync: false`.
 - `POST /api/data-source-query/validate` requires an admin session, validates registered remote PostgreSQL source IDs, accepts only SELECT/CTE-style single statements, rejects destructive SQL, applies required limit/timeout bounds, returns a schema-discovery/query plan with redacted source metadata, pulls zero rows, and keeps `realQuery: false` until pg-driver/operator approval gates exist.
+- `/` frontend remote PostgreSQL panel includes a protected source registration workflow wired to `/api/data-sources`, requests encrypted secret refs, clears password fields after save, displays only redacted metadata, and keeps live sync/query execution disabled.
 - `/` frontend remote PostgreSQL panel includes a protected SELECT-only query validator wired to `/api/data-source-query/validate`, with accepted/rejected feedback and no plaintext secret or live remote execution.
 
 ## PMTA-first development priority

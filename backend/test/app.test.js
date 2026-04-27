@@ -241,6 +241,9 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Dispatch next dry-run job/);
   assert.match(html, /suppressions-screen/);
   assert.match(html, /remote-db-screen/);
+  assert.match(html, /api\/data-sources/);
+  assert.match(html, /Register PostgreSQL source/);
+  assert.match(html, /remote-source-password/);
   assert.match(html, /api\/data-source-query\/validate/);
   assert.match(html, /Validate SELECT query/);
   assert.match(html, /reputation-screen/);
