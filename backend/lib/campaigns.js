@@ -85,6 +85,40 @@ export const getCampaign = (id) => {
   return campaign ? { ...campaign } : null;
 };
 
+export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
+  const campaign = campaigns.get(String(campaignId || '').trim());
+  if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
+  if (campaign.status !== 'draft') return { ok: false, errors: ['campaign_must_be_draft'] };
+
+  const estimate = estimateCampaign({ segmentId: campaign.segmentId, templateId: campaign.templateId });
+  if (!estimate.ok) return estimate;
+  if (estimate.estimatedAudience < 1) return { ok: false, errors: ['campaign_audience_required'] };
+
+  const updated = {
+    ...campaign,
+    status: 'approved_dry_run',
+    approvedBy: actorEmail,
+    approvedAt: nowIso(),
+    realDeliveryAllowed: false,
+    updatedAt: nowIso()
+  };
+  campaigns.set(campaign.id, updated);
+
+  return {
+    ok: true,
+    mode: 'campaign-dry-run-approval',
+    campaign: { ...updated },
+    compliance: {
+      consentSource: 'segment_contacts_prevalidated',
+      suppressionsExcluded: true,
+      unsubscribeLanguagePresent: true,
+      rateLimitsRequiredAtQueue: true,
+      realDeliveryAllowed: false
+    },
+    realDelivery: false
+  };
+};
+
 const contactRenderData = (contact) => ({
   email: contact.email,
   firstName: contact.firstName || '',
@@ -96,7 +130,7 @@ const contactRenderData = (contact) => ({
 export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = process.env }) => {
   const campaign = campaigns.get(String(campaignId || '').trim());
   if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
-  if (campaign.status !== 'draft') return { ok: false, errors: ['campaign_must_be_draft'] };
+  if (campaign.status !== 'approved_dry_run') return { ok: false, errors: ['campaign_must_be_approved_dry_run'] };
 
   const template = getTemplate(campaign.templateId);
   if (!template) return { ok: false, errors: ['template_not_found'] };

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
-import { createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns } from './lib/campaigns.js';
+import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { ingestEmailEvents, listEmailEvents, recordEmailEvent } from './lib/emailEvents.js';
@@ -322,6 +322,17 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = estimateCampaign({ segmentId: body.segmentId, templateId: body.templateId });
       recordAuditEvent({ action: 'campaign_estimate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.estimatedAudience, suppressedCount: result.suppressedCount, errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/campaigns/approve-dry-run' || url.pathname === '/campaigns/approve-dry-run') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = approveCampaignDryRun({ campaignId: body.campaignId, actorEmail: session.email });
+      recordAuditEvent({ action: 'campaign_approve_dry_run', actorEmail: session.email, target: body.campaignId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

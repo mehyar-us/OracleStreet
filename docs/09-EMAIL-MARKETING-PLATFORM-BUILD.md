@@ -64,6 +64,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 ### 5. Send engine
 
 - [x] `send_jobs` dry-run queue baseline
+- [x] campaign dry-run approval baseline before queue enqueue
 - [x] campaign-to-queue dry-run enqueue baseline with suppression/rate-limit gates
 - provider adapter interface
 - dry-run provider first

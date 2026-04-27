@@ -34,6 +34,7 @@
 - [x] SMTP/provider adapter config validation
 - [x] PowerMTA SMTP adapter config validation
 - [x] Send queue dry-run enqueue baseline
+- [x] Campaign dry-run approval baseline
 - [x] Campaign-to-send-queue dry-run enqueue baseline
 - [x] Send queue dry-run dispatch baseline
 - [x] Suppression/unsubscribe handling baseline
