@@ -88,6 +88,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - [x] PowerMTA accounting CSV import validation baseline for delivered/deferred/bounce rows without recording events
 - [x] PowerMTA accounting CSV import ingest baseline that records valid delivered/deferred/bounce rows, provider message IDs, and suppresses hard bounces only
 - [x] provider message event lookup baseline for PowerMTA traceability without probes or mutation
+- [x] provider message traceability schema migration for PostgreSQL event persistence
 - unsubscribe tracking
 - [x] campaign reporting safe summary baseline
 

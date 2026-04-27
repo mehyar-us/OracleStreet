@@ -120,32 +120,33 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 25. [x] PowerMTA accounting CSV import ingest baseline that records valid delivered/deferred/bounce rows, provider message IDs, and suppresses hard bounces only.
 26. [x] Provider message ID event metadata baseline for PMTA accounting traceability without exposing secrets.
 27. [x] Provider message event lookup baseline for PMTA traceability without probes or mutation.
-28. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
-29. [x] Manual event CSV import ingest baseline that atomically imports valid bounce/complaint files into events and suppressions without delivery.
-30. [x] Tracked open/click event baseline that records engagement events without auth, redirects, delivery, or external probes.
-31. [x] Campaign tracking URL injection baseline that adds open/click tracking URLs to dry-run campaign queue jobs without delivery.
-32. [x] Manual delivery event ingest baseline for delivered/deferred batches without suppressions, probes, or delivery.
-33. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
-34. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
-35. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
-36. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
-37. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
-38. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
-39. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
-40. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
-41. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
-42. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
-43. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
-44. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
-45. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
-46. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
-47. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
-48. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
+28. [x] Provider message traceability schema migration for PostgreSQL event persistence.
+29. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
+30. [x] Manual event CSV import ingest baseline that atomically imports valid bounce/complaint files into events and suppressions without delivery.
+31. [x] Tracked open/click event baseline that records engagement events without auth, redirects, delivery, or external probes.
+32. [x] Campaign tracking URL injection baseline that adds open/click tracking URLs to dry-run campaign queue jobs without delivery.
+33. [x] Manual delivery event ingest baseline for delivered/deferred batches without suppressions, probes, or delivery.
+34. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
+35. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
+36. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
+37. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
+38. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
+39. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
+40. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
+41. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
+42. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
+43. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
+44. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
+45. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
+46. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
+47. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
+48. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
+49. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
 
 ## Current validation endpoints
 
 - `GET /api/audit-log` requires an admin session and lists sanitized in-memory audit events until PostgreSQL persistence is wired.
-- `GET /api/schema/migrations` requires an admin session and lists the PostgreSQL migration manifest including `002_email_engine_alignment` for current dry-run queue/event schema alignment. The API only lists migrations; it does not apply schema changes.
+- `GET /api/schema/migrations` requires an admin session and lists the PostgreSQL migration manifest including `002_email_engine_alignment` for current dry-run queue/event schema alignment and `003_provider_message_event_traceability` for PMTA provider-message event lookups. The API only lists migrations; it does not apply schema changes.
 - `GET /api/email/config` exposes redacted provider readiness only.
 - `POST /api/email/provider/validate` requires an admin session and validates selected provider configuration without sending mail or opening a network connection. `local-capture` validates an allowed controlled recipient domain and never opens a network connection.
 - `GET /api/email/provider/adapter` requires an admin session and reports the selected safe provider adapter capability/readiness. SMTP/PowerMTA adapters remain `configured-but-locked`, redact secrets, and return `realDeliveryAllowed: false`.
