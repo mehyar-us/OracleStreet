@@ -32,3 +32,13 @@ Use:
 ```bash
 ssh oraclestreet-vps
 ```
+
+## GitHub push token
+
+Autonomous OracleStreet pushes use `GITHUB_TOKEN` from `/home/mehya/.openclaw/.env` through:
+
+```bash
+./scripts/push-origin-main.sh
+```
+
+The helper keeps the git remote token-free and supplies credentials only through an ephemeral `GIT_ASKPASS` script. Do not write the token into `.git/config`, remotes, docs, logs, or commits.

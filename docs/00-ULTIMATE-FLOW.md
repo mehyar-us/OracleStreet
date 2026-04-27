@@ -32,7 +32,7 @@ The flow borrows the reliable parts of common SaaS deployment patterns: commit-a
 ## Definition of done for each deploy
 
 - `git status` clean locally before deploy.
-- Commit pushed to `origin/main`.
+- Commit pushed to `origin/main` via `./scripts/push-origin-main.sh`, which loads `GITHUB_TOKEN` from `/home/mehya/.openclaw/.env` without storing the token in git config.
 - `nginx -t` passes on VPS.
 - `systemctl is-active oraclestreet-backend nginx docker ssh` passes.
 - `curl http://127.0.0.1/api/health` returns OK on VPS.

@@ -10,6 +10,7 @@
 ## Deploy command
 
 ```bash
+./scripts/push-origin-main.sh
 ./scripts/deploy-vps.sh
 ```
 
