@@ -232,6 +232,30 @@
 
 
 
+
+    const addManualSuppressionFromWorkbench = async () => {
+      const result = document.querySelector('#suppression-create-result');
+      const payload = {
+        email: document.querySelector('#suppression-email').value,
+        reason: document.querySelector('#suppression-reason').value,
+        source: document.querySelector('#suppression-source').value
+      };
+      result.className = 'status';
+      result.textContent = 'Recording suppression gate…';
+      const body = await fetch('/api/suppressions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'suppression_rejected']).join(', ')}`;
+        return;
+      }
+      result.innerHTML = `${body.created ? 'Created' : 'Updated'} suppression for <strong>${body.suppression.email}</strong> (${body.suppression.reason}). This recipient remains blocked from dry-run and future real queues.`;
+      await loadWorkbench();
+    };
+
     const createRemoteDataSource = async () => {
       const result = document.querySelector('#remote-source-result');
       const host = document.querySelector('#remote-source-host').value.trim();
@@ -364,7 +388,8 @@
       document.querySelector('#enqueue-campaign').addEventListener('click', () => runCampaignAction('enqueue'));
       setScreen('#send-queue-screen', 'Send queue', `<div class="kv"><span>Jobs</span><strong>${queue.count || 0}</strong><span>Delivery mode</span><strong>dry-run</strong></div>${listItems(queue.jobs || [], 'Queue empty. Campaign enqueue creates dry-run jobs only.', (j) => `<li>${j.recipientEmail || j.to} · ${j.status} · ${j.campaignId || 'manual'}</li>`)}<p>Dispatch exactly one queued dry-run job through the safe adapter. This records an internal dispatched event and never sends external mail.</p><div class="toolbar"><button id="dispatch-next-dry-run" type="button">Dispatch next dry-run job</button></div><div id="send-queue-dispatch-result" class="status"></div>`);
       document.querySelector('#dispatch-next-dry-run').addEventListener('click', dispatchNextDryRun);
-      setScreen('#suppressions-screen', 'Suppressions', `<div class="kv"><span>Suppressed</span><strong>${suppressions.count || 0}</strong></div>${listItems(suppressions.suppressions || [], 'No suppressions recorded yet. Unsubscribes, bounces, and complaints will appear here.', (s) => `<li>${s.email} · ${s.reason} · ${s.source}</li>`)}`);
+      setScreen('#suppressions-screen', 'Suppressions', `<div class="kv"><span>Suppressed</span><strong>${suppressions.count || 0}</strong></div>${listItems(suppressions.suppressions || [], 'No suppressions recorded yet. Unsubscribes, bounces, and complaints will appear here.', (s) => `<li>${s.email} · ${s.reason} · ${s.source}</li>`)}<p>Add or update a manual suppression. Suppressed recipients are blocked before dry-run queue enqueue and remain a required gate before any future real delivery.</p><label>Email <input id="suppression-email" type="email" placeholder="subscriber@example.test" /></label><label>Reason <select id="suppression-reason"><option value="manual">manual</option><option value="unsubscribe">unsubscribe</option><option value="bounce">bounce</option><option value="complaint">complaint</option></select></label><label>Source <input id="suppression-source" value="admin-workbench" /></label><div class="toolbar"><button id="add-manual-suppression" type="button">Add suppression gate</button></div><div id="suppression-create-result" class="status"></div>`);
+      document.querySelector('#add-manual-suppression').addEventListener('click', addManualSuppressionFromWorkbench);
       const firstSourceId = (dataSources.sources || [])[0]?.id || '';
       setScreen('#remote-db-screen', 'Remote PostgreSQL', `<div class="kv"><span>Sources</span><strong>${dataSources.count || 0}</strong><span>Sync dry-runs</span><strong>${syncRuns.count || 0}</strong></div>${listItems(dataSources.sources || [], 'No remote sources registered. Register a PostgreSQL source below, then validate SELECT-only query plans here.', (s) => `<li>${s.name} · ${s.connection?.parsed?.host || 'host redacted'} · ${s.connection?.secretStored ? 'encrypted secret' : 'metadata only'}</li>`)}<p>Register remote PostgreSQL source metadata. Passwords are sent only to the protected API, returned as redacted metadata/secret refs, and never displayed after save.</p><label>Name <input id="remote-source-name" value="Affiliate warehouse" /></label><label>Host <input id="remote-source-host" placeholder="db.example.test" /></label><label>Port <input id="remote-source-port" value="5432" /></label><label>Database <input id="remote-source-database" placeholder="warehouse" /></label><label>Username <input id="remote-source-username" placeholder="readonly_user" /></label><label>Password <input id="remote-source-password" type="password" autocomplete="off" /></label><label>SSL mode <select id="remote-source-sslmode"><option value="require">require</option><option value="verify-full">verify-full</option><option value="disable">disable</option></select></label><label><input id="remote-source-store-secret" type="checkbox" checked /> Store encrypted secret ref</label><div class="toolbar"><button id="create-remote-source" type="button">Register PostgreSQL source</button></div><div id="remote-source-result" class="status"></div><p>Plan schema discovery without opening the remote connection. This produces allowlisted information_schema queries and keeps tables/columns empty until pg-driver and approval gates are enabled.</p><label>Data source ID <input id="remote-schema-source-id" value="${firstSourceId}" placeholder="ds_000001" /></label><label>Schema allowlist <input id="remote-schema-allowlist" value="public" /></label><label>Table limit <input id="remote-schema-table-limit" type="number" min="1" max="500" value="100" /></label><label>Column limit <input id="remote-schema-column-limit" type="number" min="1" max="2000" value="500" /></label><label>Timeout ms <input id="remote-schema-timeout" type="number" min="100" max="10000" value="5000" /></label><div class="toolbar"><button id="plan-remote-schema" type="button">Plan schema discovery</button></div><div id="remote-schema-result" class="status"></div><p>Validate a SELECT-only remote query plan. This enforces limit/timeout and redacted metadata while live remote execution stays locked until the PostgreSQL driver and approval gate are enabled.</p><label>Data source ID <input id="remote-query-source-id" value="${firstSourceId}" placeholder="ds_000001" /></label><label>SELECT query <textarea id="remote-query-sql">select email, consent_status, source from contacts</textarea></label><label>Limit <input id="remote-query-limit" type="number" min="1" max="500" value="100" /></label><label>Timeout ms <input id="remote-query-timeout" type="number" min="100" max="10000" value="5000" /></label><div class="toolbar"><button id="validate-remote-query" type="button">Validate SELECT query</button></div><div id="remote-query-result" class="status"></div>`);
       document.querySelector('#create-remote-source').addEventListener('click', createRemoteDataSource);

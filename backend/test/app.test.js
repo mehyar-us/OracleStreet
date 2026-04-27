@@ -240,6 +240,9 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/send-queue\/dispatch-next-dry-run/);
   assert.match(html, /Dispatch next dry-run job/);
   assert.match(html, /suppressions-screen/);
+  assert.match(html, /api\/suppressions/);
+  assert.match(html, /Add suppression gate/);
+  assert.match(html, /suppression-reason/);
   assert.match(html, /remote-db-screen/);
   assert.match(html, /api\/data-sources/);
   assert.match(html, /Register PostgreSQL source/);
