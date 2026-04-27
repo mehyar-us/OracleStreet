@@ -126,3 +126,7 @@ Boss noted that the deployed site does not yet feel like it has features. The au
 - Users/RBAC/admin management.
 
 Every new backend capability should get either a visible UI affordance or a clear operator endpoint documented in the dashboard until a full frontend framework is selected.
+
+## Visible CMS workbench baseline
+
+The root frontend now exposes a protected admin CMS workbench after login. It loads live safe-read panels for contacts, templates, campaigns, send queue, suppressions, remote PostgreSQL sources/sync dry-runs, reputation/readiness gates, and audit events. This is intentionally read/dry-run first while PostgreSQL persistence and safety gates are completed; the next frontend step is turning those panels into full CRUD/action workflows.

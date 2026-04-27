@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
@@ -212,6 +213,21 @@ const withAdminEnv = async (fn) => withEnv({
   ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
   ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
 }, fn);
+
+test('frontend exposes visible admin CMS workbench surfaces', () => {
+  const html = readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(html, /Admin CMS workbench/);
+  assert.match(html, /contacts-screen/);
+  assert.match(html, /templates-screen/);
+  assert.match(html, /campaigns-screen/);
+  assert.match(html, /send-queue-screen/);
+  assert.match(html, /suppressions-screen/);
+  assert.match(html, /remote-db-screen/);
+  assert.match(html, /reputation-screen/);
+  assert.match(html, /audit-screen/);
+  assert.match(html, /loadWorkbench/);
+  assert.match(html, /api\/email\/sending-readiness/);
+});
 
 test('migration manifest is protected and lists initial PostgreSQL schema plus email engine alignment and provider traceability', async () => {
   await withAdminEnv(async () => {
