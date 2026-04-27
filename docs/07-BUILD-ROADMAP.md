@@ -32,7 +32,8 @@
 - [x] Add visible remote PostgreSQL source registration workflow to admin workbench
 - [x] Add remote PostgreSQL schema discovery planner UI/API
 - [x] Add SELECT-only remote PostgreSQL query validator/planner UI/API
-- [ ] Add live remote PostgreSQL probe/schema discovery/query execution behind pg-driver and approval gates
+- [x] Add live remote PostgreSQL probe/schema discovery/query execution behind psql adapter and approval gates
+- [ ] Add remote PostgreSQL import preview and field mapping into contact validation
 - [x] Add warm-up planner controls UI
 - [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI

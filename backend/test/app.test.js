@@ -724,6 +724,64 @@ test('data source query validator endpoint also works behind nginx stripped api 
   assert.equal(res.status, 401);
 });
 
+test('live remote PostgreSQL query and schema execution stay gated and redacted', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATA_SOURCE_SECRET_KEY: 'test-data-source-secret-key-at-least-32-chars',
+    ORACLESTREET_REMOTE_PG_EXECUTION_ENABLED: 'false'
+  }, async () => {
+    const unauth = await request('/api/data-source-query/execute', { method: 'POST', body: JSON.stringify({}) });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const created = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        name: 'Live gated warehouse',
+        type: 'postgresql',
+        storeSecret: true,
+        connectionUrl: 'postgresql://reader:live-secret@warehouse.example.test:5432/affiliate?sslmode=require'
+      })
+    });
+
+    const blockedQuery = await request('/api/data-source-query/execute', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ dataSourceId: created.body.source.id, sql: 'select email from contacts', limit: 25, timeoutMs: 500, approvalPhrase: 'wrong' })
+    });
+    assert.equal(blockedQuery.status, 400);
+    assert.equal(blockedQuery.body.mode, 'data-source-select-query-live-gate');
+    assert.ok(blockedQuery.body.errors.includes('remote_postgresql_execution_disabled'));
+    assert.ok(blockedQuery.body.errors.includes('exact_remote_read_only_approval_phrase_required'));
+    assert.equal(blockedQuery.body.realQuery, false);
+    assert.equal(blockedQuery.body.rowsPulled, 0);
+    assert.equal(blockedQuery.body.safety.noSecretOutput, true);
+    assert.equal(JSON.stringify(blockedQuery.body).includes('live-secret'), false);
+
+    const blockedSchema = await request('/api/data-source-schema/discover', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ dataSourceId: created.body.source.id, schemas: ['public'], tableLimit: 10, columnLimit: 50, timeoutMs: 500, approvalPhrase: 'I_APPROVE_REMOTE_POSTGRESQL_READ_ONLY_EXECUTION' })
+    });
+    assert.equal(blockedSchema.status, 400);
+    assert.equal(blockedSchema.body.mode, 'data-source-schema-discovery-live-gate');
+    assert.ok(blockedSchema.body.errors.includes('remote_postgresql_execution_disabled'));
+    assert.equal(blockedSchema.body.realDiscovery, false);
+    assert.equal(blockedSchema.body.tablesReturned, 0);
+    assert.equal(JSON.stringify(blockedSchema.body).includes('live-secret'), false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_query_execute'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_schema_discover'));
+  });
+});
+
 test('data source sync audit log requires admin and returns sanitized sync events only', async () => {
   resetAuditLogForTests();
   resetDataSourcesForTests();

@@ -8,7 +8,7 @@ import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateC
 import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/controlledLiveTestReadiness.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, validateDataSourceQuery } from './lib/dataSources.js';
+import { createDataSource, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -271,6 +271,28 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = planDataSourceSchemaDiscovery({ ...body, actorEmail: session.email });
       recordAuditEvent({ action: 'data_source_schema_plan', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], tablesReturned: 0, columnsReturned: 0, realDiscovery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/data-source-query/execute' || url.pathname === '/data-source-query/execute') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = executeDataSourceQuery({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'data_source_query_execute', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], rowsPulled: result.rowsPulled || 0, realQuery: Boolean(result.realQuery), redactedErrors: true } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/data-source-schema/discover' || url.pathname === '/data-source-schema/discover') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = executeDataSourceSchemaDiscovery({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'data_source_schema_discover', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], tablesReturned: result.tablesReturned || 0, columnsReturned: result.columnsReturned || 0, realDiscovery: Boolean(result.realDiscovery), redactedErrors: true } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

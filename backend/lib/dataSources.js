@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 
 const dataSources = new Map();
 const encryptedConnectionSecrets = new Map();
@@ -95,12 +96,66 @@ const encryptConnectionSecret = (plainText) => {
   };
 };
 
+const decryptConnectionSecret = (ref) => {
+  const readiness = encryptionReadiness();
+  const stored = encryptedConnectionSecrets.get(String(ref || '').trim());
+  if (!readiness.ok) return { ok: false, errors: readiness.errors };
+  if (!stored) return { ok: false, errors: ['encrypted_connection_secret_not_found'] };
+  try {
+    const decipher = crypto.createDecipheriv(stored.algorithm, deriveEncryptionKey(), Buffer.from(stored.iv, 'base64url'));
+    decipher.setAuthTag(Buffer.from(stored.authTag, 'base64url'));
+    const plaintext = Buffer.concat([decipher.update(Buffer.from(stored.ciphertext, 'base64url')), decipher.final()]).toString('utf8');
+    return { ok: true, plaintext };
+  } catch {
+    return { ok: false, errors: ['encrypted_connection_secret_decrypt_failed'] };
+  }
+};
+
 
 const destructiveSqlPattern = /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|copy|call|do|execute|merge|vacuum|analyze)\b/i;
 const hasSelectPrefix = (sql) => /^\s*(select|with)\b/i.test(sql);
 const hasLimit = (sql) => /\blimit\s+\d+\b/i.test(sql);
+const liveExecutionEnabled = (env = process.env) => String(env.ORACLESTREET_REMOTE_PG_EXECUTION_ENABLED || '').trim().toLowerCase() === 'true';
+const requiredRemoteApprovalPhrase = 'I_APPROVE_REMOTE_POSTGRESQL_READ_ONLY_EXECUTION';
+const quoteSqlLiteral = (value) => `'${String(value).replaceAll("'", "''")}'`;
 
-export const validateDataSourceQuery = ({ dataSourceId, sql, limit = 100, timeoutMs = 5000, explain = true, actorEmail = null }) => {
+const psqlEnvFromUrl = (rawUrl, env = process.env) => {
+  const parsed = new URL(rawUrl);
+  const sslMode = parsed.searchParams.get('sslmode') || 'require';
+  return {
+    ...env,
+    PGHOST: parsed.hostname,
+    PGPORT: String(parsed.port || 5432),
+    PGDATABASE: parsed.pathname.replace(/^\//, ''),
+    PGUSER: decodeURIComponent(parsed.username || ''),
+    PGPASSWORD: decodeURIComponent(parsed.password || ''),
+    PGSSLMODE: sslMode,
+    PGCONNECT_TIMEOUT: '5'
+  };
+};
+
+const runPsqlJson = ({ connectionUrl, sql, timeoutMs }) => {
+  const wrappedSql = `select coalesce(jsonb_agg(row_to_json(__oraclestreet_remote_query)), '[]'::jsonb)::text from (${sql.replace(/;\s*$/, '')}) __oraclestreet_remote_query;`;
+  const result = spawnSync('psql', ['-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', wrappedSql], {
+    env: psqlEnvFromUrl(connectionUrl),
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 1024 * 1024
+  });
+  if (result.error || result.status !== 0) {
+    return { ok: false, errors: [result.error?.code === 'ETIMEDOUT' ? 'remote_postgresql_query_timeout' : 'remote_postgresql_query_failed_redacted'] };
+  }
+  try {
+    const rows = JSON.parse(String(result.stdout || '[]').trim() || '[]');
+    return { ok: true, rows: Array.isArray(rows) ? rows : [] };
+  } catch {
+    return { ok: false, errors: ['remote_postgresql_result_parse_failed'] };
+  }
+};
+
+const sourcePublicView = (source) => source ? { id: source.id, name: source.name, connection: { parsed: { ...source.connection.parsed }, secretStored: source.connection.secretStored } } : null;
+
+const buildValidatedQueryPlan = ({ dataSourceId, sql, limit = 100, timeoutMs = 5000, explain = true, actorEmail = null }) => {
   const source = dataSources.get(String(dataSourceId || '').trim());
   const cleanSql = String(sql || '').trim();
   const parsedLimit = Number(limit);
@@ -125,7 +180,7 @@ export const validateDataSourceQuery = ({ dataSourceId, sql, limit = 100, timeou
       realQuery: false,
       rowsReturned: 0,
       networkProbe: 'skipped',
-      source: source ? { id: source.id, name: source.name, connection: { parsed: { ...source.connection.parsed }, secretStored: source.connection.secretStored } } : null
+      source: sourcePublicView(source)
     };
   }
 
@@ -168,8 +223,80 @@ export const validateDataSourceQuery = ({ dataSourceId, sql, limit = 100, timeou
   };
 };
 
+export const validateDataSourceQuery = (input) => buildValidatedQueryPlan(input);
 
-export const planDataSourceSchemaDiscovery = ({ dataSourceId, schemas = ['public'], tableLimit = 100, columnLimit = 500, timeoutMs = 5000, actorEmail = null }) => {
+export const executeDataSourceQuery = ({ approvalPhrase, ...input } = {}, env = process.env) => {
+  const plan = buildValidatedQueryPlan(input);
+  const blockers = [];
+  if (!plan.ok) return plan;
+  if (!liveExecutionEnabled(env)) blockers.push('remote_postgresql_execution_disabled');
+  if (approvalPhrase !== requiredRemoteApprovalPhrase) blockers.push('exact_remote_read_only_approval_phrase_required');
+  const source = dataSources.get(String(input.dataSourceId || '').trim());
+  if (!source?.connection.secretStored) blockers.push('encrypted_connection_secret_required');
+  const ref = source?.connection.encryptedConnectionRef?.ref;
+  const decrypted = blockers.length === 0 ? decryptConnectionSecret(ref) : null;
+  if (decrypted && !decrypted.ok) blockers.push(...decrypted.errors);
+  if (blockers.length > 0) {
+    return {
+      ...plan,
+      mode: 'data-source-select-query-live-gate',
+      ok: false,
+      errors: blockers,
+      blockers,
+      rows: [],
+      rowsReturned: 0,
+      rowsPulled: 0,
+      realQuery: false,
+      networkProbe: 'blocked_before_remote_connection',
+      safety: {
+        selectOnly: true,
+        boundedLimit: true,
+        boundedTimeout: true,
+        redactedErrors: true,
+        noSecretOutput: true,
+        noDestructiveSql: true
+      }
+    };
+  }
+
+  const executed = runPsqlJson({ connectionUrl: decrypted.plaintext, sql: plan.query.projectedSql, timeoutMs: plan.query.timeoutMs });
+  if (!executed.ok) {
+    return {
+      ...plan,
+      mode: 'data-source-select-query-live-gate',
+      ok: false,
+      errors: executed.errors,
+      blockers: executed.errors,
+      rows: [],
+      rowsReturned: 0,
+      rowsPulled: 0,
+      realQuery: false,
+      networkProbe: 'attempted_with_redacted_error'
+    };
+  }
+
+  return {
+    ...plan,
+    mode: 'data-source-select-query-live-gate',
+    rows: executed.rows,
+    rowsReturned: executed.rows.length,
+    rowsPulled: executed.rows.length,
+    realQuery: true,
+    networkProbe: 'executed_read_only_via_psql_adapter',
+    blockers: [],
+    safety: {
+      selectOnly: true,
+      boundedLimit: true,
+      boundedTimeout: true,
+      redactedErrors: true,
+      noSecretOutput: true,
+      noDestructiveSql: true
+    }
+  };
+};
+
+
+const buildSchemaDiscoveryPlan = ({ dataSourceId, schemas = ['public'], tableLimit = 100, columnLimit = 500, timeoutMs = 5000, actorEmail = null }) => {
   const source = dataSources.get(String(dataSourceId || '').trim());
   const requestedSchemas = Array.isArray(schemas) ? schemas.map((schema) => String(schema || '').trim()).filter(Boolean) : [];
   const parsedTableLimit = Number(tableLimit);
@@ -194,11 +321,11 @@ export const planDataSourceSchemaDiscovery = ({ dataSourceId, schemas = ['public
       tablesReturned: 0,
       columnsReturned: 0,
       networkProbe: 'skipped',
-      source: source ? { id: source.id, name: source.name, connection: { parsed: { ...source.connection.parsed }, secretStored: source.connection.secretStored } } : null
+      source: sourcePublicView(source)
     };
   }
 
-  const quotedSchemas = requestedSchemas.map((schema) => `'${schema.replaceAll("'", "''")}'`).join(', ');
+  const quotedSchemas = requestedSchemas.map((schema) => quoteSqlLiteral(schema)).join(', ');
   return {
     ok: true,
     mode: 'data-source-schema-discovery-safe-plan',
@@ -242,6 +369,65 @@ export const planDataSourceSchemaDiscovery = ({ dataSourceId, schemas = ['public
     blockers: source.connection.secretStored ? ['pg_driver_not_enabled', 'live_schema_discovery_disabled'] : ['encrypted_connection_secret_required', 'pg_driver_not_enabled', 'live_schema_discovery_disabled'],
     actorEmail,
     createdAt: nowIso()
+  };
+};
+
+export const planDataSourceSchemaDiscovery = (input) => buildSchemaDiscoveryPlan(input);
+
+export const executeDataSourceSchemaDiscovery = ({ approvalPhrase, ...input } = {}, env = process.env) => {
+  const plan = buildSchemaDiscoveryPlan(input);
+  const blockers = [];
+  if (!plan.ok) return plan;
+  if (!liveExecutionEnabled(env)) blockers.push('remote_postgresql_execution_disabled');
+  if (approvalPhrase !== requiredRemoteApprovalPhrase) blockers.push('exact_remote_read_only_approval_phrase_required');
+  const source = dataSources.get(String(input.dataSourceId || '').trim());
+  if (!source?.connection.secretStored) blockers.push('encrypted_connection_secret_required');
+  const ref = source?.connection.encryptedConnectionRef?.ref;
+  const decrypted = blockers.length === 0 ? decryptConnectionSecret(ref) : null;
+  if (decrypted && !decrypted.ok) blockers.push(...decrypted.errors);
+  if (blockers.length > 0) {
+    return {
+      ...plan,
+      mode: 'data-source-schema-discovery-live-gate',
+      ok: false,
+      errors: blockers,
+      blockers,
+      tables: [],
+      columns: [],
+      tablesReturned: 0,
+      columnsReturned: 0,
+      rowsPulled: 0,
+      realProbe: false,
+      realDiscovery: false,
+      networkProbe: 'blocked_before_remote_connection'
+    };
+  }
+
+  const tables = runPsqlJson({ connectionUrl: decrypted.plaintext, sql: plan.discovery.tablesSql, timeoutMs: plan.discovery.timeoutMs });
+  if (!tables.ok) return { ...plan, mode: 'data-source-schema-discovery-live-gate', ok: false, errors: tables.errors, blockers: tables.errors, tables: [], columns: [], tablesReturned: 0, columnsReturned: 0, rowsPulled: 0, realProbe: false, realDiscovery: false, networkProbe: 'attempted_with_redacted_error' };
+  const columns = runPsqlJson({ connectionUrl: decrypted.plaintext, sql: plan.discovery.columnsSql, timeoutMs: plan.discovery.timeoutMs });
+  if (!columns.ok) return { ...plan, mode: 'data-source-schema-discovery-live-gate', ok: false, errors: columns.errors, blockers: columns.errors, tables: [], columns: [], tablesReturned: 0, columnsReturned: 0, rowsPulled: 0, realProbe: false, realDiscovery: false, networkProbe: 'attempted_with_redacted_error' };
+
+  return {
+    ...plan,
+    mode: 'data-source-schema-discovery-live-gate',
+    tables: tables.rows,
+    columns: columns.rows,
+    tablesReturned: tables.rows.length,
+    columnsReturned: columns.rows.length,
+    rowsPulled: 0,
+    realProbe: true,
+    realDiscovery: true,
+    networkProbe: 'executed_read_only_via_psql_adapter',
+    blockers: [],
+    safety: {
+      informationSchemaOnly: true,
+      boundedTableLimit: true,
+      boundedColumnLimit: true,
+      boundedTimeout: true,
+      redactedErrors: true,
+      noSecretOutput: true
+    }
   };
 };
 

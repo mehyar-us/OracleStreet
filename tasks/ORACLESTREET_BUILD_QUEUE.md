@@ -60,7 +60,7 @@ Verification:
 
 ### O4 — Remote PostgreSQL connector and query runner
 
-Status: visible source registration UI, source registry, encrypted secret refs, schema discovery planner UI/API, sync dry-run validation/audit, and SELECT-only query validator/planner UI/API shipped; live probe/schema/query execution still gated pending pg-driver integration and explicit operator approval.
+Status: visible source registration UI, source registry, encrypted secret refs, schema discovery planner UI/API, sync dry-run validation/audit, SELECT-only query validator/planner UI/API, and live read-only schema/query execution gates shipped. Live execution remains disabled unless `ORACLESTREET_REMOTE_PG_EXECUTION_ENABLED=true`, encrypted secret refs exist, bounded limits/timeouts pass, and the exact operator approval phrase is supplied; errors are redacted and destructive SQL is rejected.
 
 Acceptance:
 - Save remote PostgreSQL connection metadata and encrypted credential refs.
@@ -116,13 +116,14 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
+1. Remote PostgreSQL import preview + field mapping from approved SELECT rows into contact import validation.
 2. Multi-user/RBAC admin workflow.
 3. Campaign calendar UI over warm-up caps.
 4. Contact browser search/filter and source-quality drilldowns.
 5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
 
 Latest shipped slice:
+- Live remote PostgreSQL read-only execution gate: `/api/data-source-schema/discover` and `/api/data-source-query/execute` can execute only when env/operator gates pass, use encrypted secret refs, enforce SELECT/information_schema-only limits/timeouts, redact errors, reject destructive SQL, and expose visible UI controls without plaintext secrets.
 - Controlled one-recipient MTA live-test runbook gate: `POST /api/email/controlled-live-test/plan` and the reputation UI now collect owned-recipient/proof/approval phrase and return a one-message runbook without sending, probing, mutating queues/providers, exposing secrets, or unlocking delivery.
 - Warm-up/reputation policy PostgreSQL runtime adapter: warm-up policy list/save/schedule-cap evaluation and reputation policy save/evaluate now use local PostgreSQL tables through the `psql` adapter when enabled; recommendation-only posture and real-delivery lock remain intact.
 - Users/admin sessions/audit PostgreSQL runtime adapter: admin login upserts the bootstrap admin into `users`, records a hashed session ledger in `admin_sessions`, and writes/list audit events through `audit_log` when enabled; signed cookies remain the auth verifier and raw tokens/passwords are never stored or exposed.
