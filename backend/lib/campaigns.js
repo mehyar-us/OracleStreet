@@ -1,3 +1,4 @@
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
 import { enqueueDryRunSend } from './sendQueue.js';
 import { estimateSegmentAudience, getSegment } from './segments.js';
 import { buildClickTrackingUrl, buildOpenTrackingUrl, buildUnsubscribeUrl, getTemplate, renderTemplateContent } from './templates.js';
@@ -7,6 +8,59 @@ const campaigns = new Map();
 let sequence = 0;
 
 const nowIso = () => new Date().toISOString();
+
+const pgRowToCampaign = ([id, name, status, segmentId, templateId, estimatedAudience, suppressedCount, approvedBy, approvedAt, scheduledAt, senderDomain, warmupDay, warmupDailyCap, warmupPlannedCount, scheduledBy, queuedDryRunCount, createdAt, updatedAt]) => ({
+  id,
+  name,
+  status,
+  segmentId: segmentId || null,
+  templateId: templateId || null,
+  estimatedAudience: Number(estimatedAudience || 0),
+  suppressedCount: Number(suppressedCount || 0),
+  approvedBy: approvedBy || null,
+  approvedAt: approvedAt || null,
+  scheduledAt: scheduledAt || null,
+  senderDomain: senderDomain || null,
+  warmupDay: warmupDay ? Number(warmupDay) : null,
+  warmupDailyCap: warmupDailyCap ? Number(warmupDailyCap) : null,
+  warmupPlannedCount: warmupPlannedCount ? Number(warmupPlannedCount) : null,
+  scheduledBy: scheduledBy || null,
+  queuedDryRunCount: Number(queuedDryRunCount || 0),
+  realDeliveryAllowed: false,
+  actorEmail: null,
+  createdAt,
+  updatedAt: updatedAt || null
+});
+
+const campaignSelect = `id::text, name, status, coalesce(segment_id, ''), coalesce(template_id, ''), estimated_audience::text, suppressed_count::text, coalesce(approved_by, ''), coalesce(approved_at::text, ''), coalesce(scheduled_at::text, ''), coalesce(sender_domain, ''), coalesce(warmup_day::text, ''), coalesce(warmup_daily_cap::text, ''), coalesce(warmup_planned_count::text, ''), coalesce(scheduled_by, ''), queued_dry_run_count::text, created_at::text, updated_at::text`;
+
+const listCampaignsFromPostgres = () => runLocalPgRows(`
+  SELECT ${campaignSelect}
+  FROM campaigns
+  ORDER BY created_at DESC, name ASC
+  LIMIT 1000;
+`).map(pgRowToCampaign);
+
+const getCampaignFromPostgres = (id) => {
+  const rows = runLocalPgRows(`
+    SELECT ${campaignSelect}
+    FROM campaigns
+    WHERE id::text = ${sqlLiteral(String(id || '').trim())}
+    LIMIT 1;
+  `);
+  return rows[0] ? pgRowToCampaign(rows[0]) : null;
+};
+
+const updateCampaignInPostgres = (campaign, fields = {}) => {
+  const updates = Object.entries(fields).map(([column, value]) => `${column} = ${value}`).join(', ');
+  const rows = runLocalPgRows(`
+    UPDATE campaigns
+    SET ${updates}${updates ? ', ' : ''}updated_at = now()
+    WHERE id::text = ${sqlLiteral(campaign.id)}
+    RETURNING ${campaignSelect};
+  `);
+  return rows[0] ? pgRowToCampaign(rows[0]) : null;
+};
 
 export const resetCampaignsForTests = () => {
   campaigns.clear();
@@ -53,6 +107,25 @@ export const createCampaign = ({ name, segmentId, templateId, actorEmail = null 
   if (!estimate.ok) errors.push(...estimate.errors);
   if (errors.length > 0) return { ok: false, errors };
 
+  if (isPgRepositoryEnabled('campaigns')) {
+    try {
+      const rows = runLocalPgRows(`
+        INSERT INTO campaigns (name, status, segment_id, template_id, estimated_audience, suppressed_count, updated_at)
+        VALUES (${sqlLiteral(cleanName)}, 'draft', ${sqlLiteral(segmentId)}, ${sqlLiteral(templateId)}, ${Number(estimate.estimatedAudience || 0)}, ${Number(estimate.suppressedCount || 0)}, now())
+        RETURNING ${campaignSelect};
+      `);
+      return {
+        ok: true,
+        mode: 'postgresql-campaign-draft',
+        campaign: pgRowToCampaign(rows[0]),
+        estimate,
+        persistenceMode: 'postgresql-local-psql-repository'
+      };
+    } catch (error) {
+      // Safe fallback keeps campaign drafting available if the local psql adapter is unavailable.
+    }
+  }
+
   const campaign = {
     id: `cmp_${(++sequence).toString().padStart(6, '0')}`,
     name: cleanName,
@@ -72,23 +145,38 @@ export const createCampaign = ({ name, segmentId, templateId, actorEmail = null 
     ok: true,
     mode: 'in-memory-campaign-draft',
     campaign: { ...campaign },
-    estimate
+    estimate,
+    persistenceMode: isPgRepositoryEnabled('campaigns') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
   };
 };
 
-export const listCampaigns = () => ({
-  ok: true,
-  count: campaigns.size,
-  campaigns: [...campaigns.values()].map((campaign) => ({ ...campaign }))
-});
+export const listCampaigns = () => {
+  if (isPgRepositoryEnabled('campaigns')) {
+    try {
+      const pgCampaigns = listCampaignsFromPostgres();
+      return { ok: true, count: pgCampaigns.length, campaigns: pgCampaigns, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    count: campaigns.size,
+    campaigns: [...campaigns.values()].map((campaign) => ({ ...campaign })),
+    persistenceMode: isPgRepositoryEnabled('campaigns') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
+  };
+};
 
 export const getCampaign = (id) => {
+  if (isPgRepositoryEnabled('campaigns')) {
+    try { return getCampaignFromPostgres(id); } catch (error) { /* fall through */ }
+  }
   const campaign = campaigns.get(String(id || '').trim());
   return campaign ? { ...campaign } : null;
 };
 
 export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
-  const campaign = campaigns.get(String(campaignId || '').trim());
+  const campaign = getCampaign(campaignId);
   if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
   if (campaign.status !== 'draft') return { ok: false, errors: ['campaign_must_be_draft'] };
 
@@ -104,12 +192,25 @@ export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
     realDeliveryAllowed: false,
     updatedAt: nowIso()
   };
-  campaigns.set(campaign.id, updated);
+  let saved = updated;
+  if (isPgRepositoryEnabled('campaigns')) {
+    try {
+      saved = updateCampaignInPostgres(campaign, {
+        status: sqlLiteral('approved_dry_run'),
+        approved_by: sqlLiteral(actorEmail),
+        approved_at: 'now()'
+      }) || updated;
+    } catch (error) {
+      campaigns.set(campaign.id, updated);
+    }
+  } else {
+    campaigns.set(campaign.id, updated);
+  }
 
   return {
     ok: true,
     mode: 'campaign-dry-run-approval',
-    campaign: { ...updated },
+    campaign: { ...saved },
     compliance: {
       consentSource: 'segment_contacts_prevalidated',
       suppressionsExcluded: true,
@@ -123,7 +224,7 @@ export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
 };
 
 export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, senderDomain = 'stuffprettygood.com', actorEmail = null }) => {
-  const campaign = campaigns.get(String(campaignId || '').trim());
+  const campaign = getCampaign(campaignId);
   if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
   if (campaign.status !== 'approved_dry_run') return { ok: false, errors: ['campaign_must_be_approved_dry_run'] };
 
@@ -151,12 +252,29 @@ export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, senderDomain =
     realDeliveryAllowed: false,
     updatedAt: nowIso()
   };
-  campaigns.set(campaign.id, updated);
+  let saved = updated;
+  if (isPgRepositoryEnabled('campaigns')) {
+    try {
+      saved = updateCampaignInPostgres(campaign, {
+        status: sqlLiteral('scheduled_dry_run'),
+        scheduled_at: sqlLiteral(scheduledDate.toISOString()),
+        sender_domain: sqlLiteral(warmupCap.domain),
+        warmup_day: Number(warmupCap.dayNumber || 0),
+        warmup_daily_cap: Number(warmupCap.dailyCap || 0),
+        warmup_planned_count: Number(warmupCap.plannedCount || 0),
+        scheduled_by: sqlLiteral(actorEmail)
+      }) || updated;
+    } catch (error) {
+      campaigns.set(campaign.id, updated);
+    }
+  } else {
+    campaigns.set(campaign.id, updated);
+  }
 
   return {
     ok: true,
     mode: 'campaign-dry-run-schedule',
-    campaign: { ...updated },
+    campaign: { ...saved },
     compliance: {
       consentSource: 'segment_contacts_prevalidated',
       suppressionsExcluded: true,
@@ -181,7 +299,7 @@ const contactRenderData = (contact) => ({
 });
 
 export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = process.env }) => {
-  const campaign = campaigns.get(String(campaignId || '').trim());
+  const campaign = getCampaign(campaignId);
   if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
   if (!['approved_dry_run', 'scheduled_dry_run'].includes(campaign.status)) return { ok: false, errors: ['campaign_must_be_approved_or_scheduled_dry_run'] };
 
@@ -238,12 +356,24 @@ export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = pro
     realDeliveryAllowed: false,
     updatedAt: nowIso()
   };
-  campaigns.set(campaign.id, updated);
+  let saved = updated;
+  if (isPgRepositoryEnabled('campaigns')) {
+    try {
+      saved = updateCampaignInPostgres(campaign, {
+        status: sqlLiteral('queued_dry_run'),
+        queued_dry_run_count: Number(jobs.length || 0)
+      }) || updated;
+    } catch (error) {
+      campaigns.set(campaign.id, updated);
+    }
+  } else {
+    campaigns.set(campaign.id, updated);
+  }
 
   return {
     ok: true,
     mode: 'campaign-dry-run-queue',
-    campaign: { ...updated },
+    campaign: { ...saved },
     enqueuedCount: jobs.length,
     jobs,
     realDelivery: false

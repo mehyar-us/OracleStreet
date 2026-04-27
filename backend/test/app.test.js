@@ -308,6 +308,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(policyRepositoryMigration);
     assert.match(policyRepositoryMigration.description, /policy repository foundation/);
     assert.ok(policyRepositoryMigration.statements >= 7);
+    const campaignRepositoryMigration = res.body.migrations.find((migration) => migration.id === '005_campaign_repository_runtime_ids');
+    assert.ok(campaignRepositoryMigration);
+    assert.match(campaignRepositoryMigration.description, /campaign repository IDs/);
+    assert.ok(campaignRepositoryMigration.statements >= 7);
   });
 });
 
@@ -335,12 +339,12 @@ test('database repository readiness is protected and exposes PostgreSQL schema m
   });
 });
 
-test('database repository readiness reports enabled contacts and suppressions repositories from env without exposing secrets', async () => {
+test('database repository readiness reports enabled CMS repositories from env without exposing secrets', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -348,10 +352,12 @@ test('database repository readiness reports enabled contacts and suppressions re
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 2);
+    assert.equal(res.body.summary.liveRepositoryModules, 4);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'templates' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'campaigns' && module.liveRepositoryEnabled));
     assert.doesNotMatch(JSON.stringify(res.body), /super-secret/);
   });
 });

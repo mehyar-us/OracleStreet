@@ -36,7 +36,7 @@ Acceptance:
 
 Status:
 - PostgreSQL repository schema foundation now includes `004_policy_repository_foundation` for warm-up policies, reputation policies, and repository migration status, plus `GET /api/database/repositories` to expose audited module readiness without secrets.
-- Contacts and suppressions now have a local `psql` runtime repository adapter enabled on VPS via `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions`, with in-memory fallback for tests/local adapter failure.
+- Contacts, suppressions, templates, and campaigns now have local `psql` runtime repository adapters enabled on VPS via `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions,templates,campaigns`, with in-memory fallback for tests/local adapter failure.
 
 Verification:
 - backend tests pass.
@@ -116,13 +116,14 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. Wire templates/campaigns runtime repository adapter to local PostgreSQL with in-memory test fallback.
+1. Wire send queue/email events runtime repository adapters to local PostgreSQL with in-memory test fallback.
 2. Controlled one-recipient MTA live-test runbook/gate.
 3. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
 4. Multi-user/RBAC admin workflow.
 5. Campaign calendar UI over warm-up caps.
 
 Latest shipped slice:
+- Templates/campaigns PostgreSQL runtime adapter: local VPS runtime can persist template drafts and campaign draft/approval/schedule/queue state through the local `psql` adapter when `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions,templates,campaigns`; campaign runtime ID columns are relaxed for app-generated IDs while real delivery remains locked.
 - Contacts/suppressions PostgreSQL runtime adapter: local VPS runtime can persist contact imports and suppression writes through the local `psql` adapter when `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions`; list/segment/hygiene/queue gates read through the same repository and retain safe in-memory fallback for tests or adapter failure.
 - PostgreSQL repository foundation: migration `004_policy_repository_foundation` adds warm-up/reputation policy tables and repository migration status, while `GET /api/database/repositories` and the dashboard expose audited schema readiness for contacts/suppressions/templates/campaigns/send queue/events/users without secrets or live data mutation.
 - Warm-up policy persistence and campaign schedule cap enforcement: `GET/POST /api/email/warmup/policy` and `POST /api/email/warmup/schedule-cap` let operators persist in-memory warm-up profiles and block campaign dry-run schedules that exceed the sender-domain daily cap; queues/providers remain untouched and real delivery stays locked.

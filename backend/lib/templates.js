@@ -1,3 +1,5 @@
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
+
 const templates = new Map();
 let sequence = 0;
 
@@ -66,9 +68,56 @@ export const validateTemplate = (template = {}) => {
   };
 };
 
+const pgRowToTemplate = ([id, name, subject, html, text, createdAt, updatedAt]) => ({
+  id,
+  name,
+  subject,
+  html,
+  text: text || null,
+  status: 'draft',
+  actorEmail: null,
+  createdAt,
+  updatedAt: updatedAt || null
+});
+
+const listTemplatesFromPostgres = () => runLocalPgRows(`
+  SELECT id::text, name, subject, html_body, coalesce(text_body, ''), created_at::text, updated_at::text
+  FROM templates
+  ORDER BY created_at DESC, name ASC
+  LIMIT 1000;
+`).map(pgRowToTemplate);
+
+const getTemplateFromPostgres = (id) => {
+  const rows = runLocalPgRows(`
+    SELECT id::text, name, subject, html_body, coalesce(text_body, ''), created_at::text, updated_at::text
+    FROM templates
+    WHERE id::text = ${sqlLiteral(String(id || '').trim())}
+    LIMIT 1;
+  `);
+  return rows[0] ? pgRowToTemplate(rows[0]) : null;
+};
+
 export const createTemplate = ({ name, subject, html, text = null, actorEmail = null }) => {
   const validation = validateTemplate({ name, subject, html, text });
   if (!validation.ok) return { ok: false, errors: validation.errors };
+
+  if (isPgRepositoryEnabled('templates')) {
+    try {
+      const rows = runLocalPgRows(`
+        INSERT INTO templates (name, subject, html_body, text_body, updated_at)
+        VALUES (${sqlLiteral(validation.template.name)}, ${sqlLiteral(validation.template.subject)}, ${sqlLiteral(validation.template.html)}, ${sqlLiteral(validation.template.text)}, now())
+        ON CONFLICT (name) DO UPDATE SET
+          subject = EXCLUDED.subject,
+          html_body = EXCLUDED.html_body,
+          text_body = EXCLUDED.text_body,
+          updated_at = now()
+        RETURNING id::text, name, subject, html_body, coalesce(text_body, ''), created_at::text, updated_at::text;
+      `);
+      return { ok: true, mode: 'postgresql-template', template: pgRowToTemplate(rows[0]), persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // Safe fallback keeps template drafting available if the local psql adapter is unavailable.
+    }
+  }
 
   const template = {
     id: `tpl_${(++sequence).toString().padStart(6, '0')}`,
@@ -79,16 +128,32 @@ export const createTemplate = ({ name, subject, html, text = null, actorEmail = 
     updatedAt: null
   };
   templates.set(template.id, template);
-  return { ok: true, mode: 'in-memory-template', template: { ...template } };
+  return { ok: true, mode: 'in-memory-template', template: { ...template }, persistenceMode: isPgRepositoryEnabled('templates') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled' };
 };
 
-export const listTemplates = () => ({
-  ok: true,
-  count: templates.size,
-  templates: [...templates.values()].map((template) => ({ ...template }))
-});
+export const listTemplates = () => {
+  if (isPgRepositoryEnabled('templates')) {
+    try {
+      const pgTemplates = listTemplatesFromPostgres();
+      return { ok: true, count: pgTemplates.length, templates: pgTemplates, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    count: templates.size,
+    templates: [...templates.values()].map((template) => ({ ...template })),
+    persistenceMode: isPgRepositoryEnabled('templates') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
+  };
+};
 
-export const getTemplate = (id) => templates.get(String(id || '').trim()) || null;
+export const getTemplate = (id) => {
+  if (isPgRepositoryEnabled('templates')) {
+    try { return getTemplateFromPostgres(id); } catch (error) { /* fall through */ }
+  }
+  return templates.get(String(id || '').trim()) || null;
+};
 
 export const renderTemplateContent = (template, data = {}, options = {}) => {
   const unsubscribeUrl = options.unsubscribeUrl || data.unsubscribeUrl || null;

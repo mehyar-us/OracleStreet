@@ -51,7 +51,28 @@ ensure_secret ORACLESTREET_DOMAIN 'printf stuffprettygood.com'
 ensure_secret ORACLESTREET_PUBLIC_BASE_URL 'printf http://stuffprettygood.com'
 ensure_secret ORACLESTREET_SESSION_SECRET 'openssl rand -hex 32'
 ensure_secret ORACLESTREET_INTERNAL_API_KEY 'openssl rand -hex 24'
-ensure_secret ORACLESTREET_PG_REPOSITORIES 'printf contacts,suppressions'
+ensure_secret ORACLESTREET_PG_REPOSITORIES 'printf contacts,suppressions,templates,campaigns'
+pg_repositories="$(grep '^ORACLESTREET_PG_REPOSITORIES=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
+for repo in contacts suppressions templates campaigns; do
+  case ",$pg_repositories," in
+    *",$repo,"*) ;;
+    *) pg_repositories="${pg_repositories:+$pg_repositories,}$repo" ;;
+  esac
+done
+python3 - "$pg_repositories" <<'PY'
+from pathlib import Path
+import sys
+path = Path('/etc/oraclestreet/oraclestreet.env')
+lines = path.read_text().splitlines()
+value = sys.argv[1]
+for i, line in enumerate(lines):
+    if line.startswith('ORACLESTREET_PG_REPOSITORIES='):
+        lines[i] = f'ORACLESTREET_PG_REPOSITORIES={value}'
+        break
+else:
+    lines.append(f'ORACLESTREET_PG_REPOSITORIES={value}')
+path.write_text('\n'.join(lines) + '\n')
+PY
 ensure_secret ORACLESTREET_DATABASE_NAME 'printf oraclestreet'
 ensure_secret ORACLESTREET_DATABASE_USER 'printf oraclestreet_app'
 ensure_secret ORACLESTREET_DATABASE_PASSWORD 'openssl rand -hex 24'
