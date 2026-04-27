@@ -307,6 +307,65 @@ test('data source registry requires admin and stores redacted PostgreSQL source 
   });
 });
 
+test('data source registry can store encrypted PostgreSQL connection secrets without exposing plaintext', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATA_SOURCE_SECRET_KEY: 'test-data-source-secret-key-at-least-32-chars'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const created = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        name: 'Encrypted warehouse',
+        type: 'postgresql',
+        storeSecret: true,
+        connectionUrl: 'postgresql://reader:very-secret-source-password@warehouse.example.test:5432/affiliate?sslmode=require'
+      })
+    });
+
+    assert.equal(created.status, 200);
+    assert.equal(created.body.source.connection.secretStored, true);
+    assert.equal(created.body.source.connection.secretStorage, 'encrypted-secret-baseline');
+    assert.equal(created.body.source.connection.encryptedConnectionRef.algorithm, 'aes-256-gcm');
+    assert.equal(created.body.source.connection.encryptedConnectionRef.ciphertextStored, true);
+    assert.equal(created.body.source.connection.encryptedConnectionRef.plaintextReturned, false);
+    assert.equal(created.body.source.connection.encryption.keySource, 'ORACLESTREET_DATA_SOURCE_SECRET_KEY');
+    assert.equal(JSON.stringify(created.body).includes('very-secret-source-password'), false);
+
+    const list = await request('/api/data-sources', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.sources[0].connection.secretStored, true);
+    assert.equal(JSON.stringify(list.body).includes('very-secret-source-password'), false);
+  });
+});
+
+test('data source encrypted secret storage requires a configured encryption key', async () => {
+  resetDataSourcesForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const res = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: login.headers.get('set-cookie') },
+      body: JSON.stringify({
+        name: 'Needs key',
+        type: 'postgresql',
+        storeSecret: true,
+        connectionUrl: 'postgresql://reader:secret@warehouse.example.test:5432/affiliate'
+      })
+    });
+
+    assert.equal(res.status, 400);
+    assert.ok(res.body.errors.includes('data_source_secret_key_required'));
+    assert.equal(JSON.stringify(res.body).includes('reader:secret'), false);
+  });
+});
+
 test('data source registry endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/data-sources');
   assert.equal(res.status, 401);

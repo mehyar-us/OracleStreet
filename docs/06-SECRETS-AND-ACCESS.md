@@ -25,6 +25,10 @@ ssh oraclestreet-vps 'cat /etc/oraclestreet/initial-admin.env'
 
 Rotate after the real auth system is implemented.
 
+## Data source secret encryption key
+
+Remote PostgreSQL source URLs are never returned in plaintext. If an admin registers a data source with `storeSecret: true`, the backend requires `ORACLESTREET_DATA_SOURCE_SECRET_KEY` in `/etc/oraclestreet/oraclestreet.env` and stores only AES-256-GCM encrypted connection material plus a secret ref. Use a unique high-entropy value of at least 32 characters and do not commit it.
+
 ## Current SSH access
 
 Use:

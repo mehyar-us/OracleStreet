@@ -1,5 +1,9 @@
+import crypto from 'node:crypto';
+
 const dataSources = new Map();
+const encryptedConnectionSecrets = new Map();
 let sequence = 0;
+let secretSequence = 0;
 
 const nowIso = () => new Date().toISOString();
 
@@ -30,12 +34,62 @@ const parsePostgresUrl = (rawUrl) => {
   }
 };
 
-export const resetDataSourcesForTests = () => {
-  dataSources.clear();
-  sequence = 0;
+const secretKeyMaterial = () => String(process.env.ORACLESTREET_DATA_SOURCE_SECRET_KEY || '').trim();
+
+const encryptionReadiness = () => {
+  const keyMaterial = secretKeyMaterial();
+  const errors = [];
+  if (!keyMaterial) errors.push('data_source_secret_key_required');
+  if (keyMaterial && keyMaterial.length < 32) errors.push('data_source_secret_key_min_32_chars');
+  return {
+    ok: errors.length === 0,
+    errors,
+    configured: errors.length === 0,
+    algorithm: 'aes-256-gcm',
+    keySource: 'ORACLESTREET_DATA_SOURCE_SECRET_KEY'
+  };
 };
 
-export const validateDataSource = ({ name, type = 'postgresql', connectionUrl }) => {
+const deriveEncryptionKey = () => crypto.createHash('sha256').update(secretKeyMaterial()).digest();
+
+const encryptConnectionSecret = (plainText) => {
+  const readiness = encryptionReadiness();
+  if (!readiness.ok) return { ok: false, errors: readiness.errors };
+
+  const id = `ds_secret_${(++secretSequence).toString().padStart(6, '0')}`;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(readiness.algorithm, deriveEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(String(plainText), 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  encryptedConnectionSecrets.set(id, {
+    id,
+    algorithm: readiness.algorithm,
+    iv: iv.toString('base64url'),
+    ciphertext: ciphertext.toString('base64url'),
+    authTag: authTag.toString('base64url'),
+    createdAt: nowIso()
+  });
+  return {
+    ok: true,
+    ref: id,
+    metadata: {
+      ref: id,
+      algorithm: readiness.algorithm,
+      encryptedAt: encryptedConnectionSecrets.get(id).createdAt,
+      ciphertextStored: true,
+      plaintextReturned: false
+    }
+  };
+};
+
+export const resetDataSourcesForTests = () => {
+  dataSources.clear();
+  encryptedConnectionSecrets.clear();
+  sequence = 0;
+  secretSequence = 0;
+};
+
+export const validateDataSource = ({ name, type = 'postgresql', connectionUrl, storeSecret = false }) => {
   const cleanName = String(name || '').trim();
   const cleanType = String(type || '').trim().toLowerCase();
   const rawUrl = String(connectionUrl || '').trim();
@@ -53,6 +107,9 @@ export const validateDataSource = ({ name, type = 'postgresql', connectionUrl })
     if (!parsed.usernameConfigured) errors.push('database_username_required');
   }
 
+  const encryption = encryptionReadiness();
+  if (storeSecret && !encryption.ok) errors.push(...encryption.errors);
+
   return {
     ok: errors.length === 0,
     errors,
@@ -63,22 +120,39 @@ export const validateDataSource = ({ name, type = 'postgresql', connectionUrl })
         redactedUrl: redactUrl(rawUrl),
         parsed,
         secretStored: false,
+        secretStorage: storeSecret ? 'encrypted-secret-baseline' : 'metadata-only',
+        encryptedConnectionRef: null,
+        encryption: {
+          configured: encryption.configured,
+          algorithm: encryption.algorithm,
+          keySource: encryption.keySource
+        },
         connectionProbe: 'skipped_registry_validation_only'
       }
     }
   };
 };
 
-export const createDataSource = ({ name, type = 'postgresql', connectionUrl, actorEmail = null }) => {
-  const validation = validateDataSource({ name, type, connectionUrl });
+export const createDataSource = ({ name, type = 'postgresql', connectionUrl, storeSecret = false, actorEmail = null }) => {
+  const validation = validateDataSource({ name, type, connectionUrl, storeSecret });
   if (!validation.ok) return { ok: false, errors: validation.errors, source: validation.source };
+
+  let encryptedSecret = null;
+  if (storeSecret) {
+    encryptedSecret = encryptConnectionSecret(connectionUrl);
+    if (!encryptedSecret.ok) return { ok: false, errors: encryptedSecret.errors, source: validation.source };
+  }
 
   const source = {
     id: `ds_${(++sequence).toString().padStart(6, '0')}`,
     name: validation.source.name,
     type: validation.source.type,
     status: 'registered_safe',
-    connection: validation.source.connection,
+    connection: {
+      ...validation.source.connection,
+      secretStored: Boolean(encryptedSecret?.ok),
+      encryptedConnectionRef: encryptedSecret?.metadata || null
+    },
     syncEnabled: false,
     actorEmail,
     createdAt: nowIso(),
@@ -104,3 +178,5 @@ export const listDataSources = () => ({
   })),
   realSync: false
 });
+
+export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;

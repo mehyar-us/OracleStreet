@@ -119,7 +119,8 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 24. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
 25. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
 26. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
-27. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without saving secrets, probing networks, or syncing data.
+27. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
+28. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
 
 ## Current validation endpoints
 
@@ -149,7 +150,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/campaigns/reporting` requires an admin session and summarizes per-campaign dry-run queue, dispatch, event, engagement, and unsubscribe counts/rates without enabling delivery.
 - `GET /api/dashboard` includes the same safe email reporting summary plus campaign engagement reporting totals/rates without enabling delivery.
 - `/` frontend dashboard displays safe counters for queue, suppressions, events, bounce/complaint, open/click, rates, provider mode, and the locked real-sending state after admin login.
-- `GET`/`POST /api/data-sources` requires an admin session and registers remote PostgreSQL source metadata with redacted URLs only. It skips connection probes, stores no raw secrets, keeps `syncEnabled: false`, and does not pull data.
+- `GET`/`POST /api/data-sources` requires an admin session and registers remote PostgreSQL source metadata with redacted URLs only. Optional `storeSecret: true` stores the connection URL in the encrypted secret baseline when `ORACLESTREET_DATA_SOURCE_SECRET_KEY` is configured, returns only an encrypted secret ref/metadata, skips connection probes, keeps `syncEnabled: false`, and does not pull data.
 
 ## PMTA-first development priority
 

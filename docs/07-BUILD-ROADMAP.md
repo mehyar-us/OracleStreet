@@ -60,7 +60,7 @@
 ## Phase 4 — Remote PostgreSQL pulls
 
 - [x] Data source registry baseline
-- [ ] Encrypted connection secrets
+- [x] Encrypted connection secrets baseline
 - [ ] Sync jobs
 - [ ] Mapping UI
 - [ ] Sync audit logs
