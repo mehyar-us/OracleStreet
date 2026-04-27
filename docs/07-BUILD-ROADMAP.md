@@ -40,6 +40,7 @@
 - [x] Send queue dry-run dispatch baseline
 - [x] Suppression/unsubscribe handling baseline
 - [x] Campaign unsubscribe link injection baseline
+- [x] Tracked unsubscribe link suppression baseline
 - [x] Rate limits and warm-up controls baseline
 - [x] Bounce/complaint ingestion baseline
 - [x] Event tracking baseline

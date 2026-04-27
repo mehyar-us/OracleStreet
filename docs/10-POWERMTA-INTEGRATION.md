@@ -108,6 +108,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 13. [x] Real sending readiness safe-gate baseline that reports provider/config/compliance blockers while keeping delivery locked.
 14. [x] Safe provider adapter interface baseline that exposes adapter capability/readiness without enabling external delivery.
 15. [x] Campaign unsubscribe link injection baseline for dry-run queue jobs.
+16. [x] Tracked unsubscribe link suppression baseline that accepts per-campaign GET links and records suppressions without auth.
 
 ## Current validation endpoints
 
@@ -122,7 +123,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
 - `POST /api/send-queue/dispatch-next-dry-run` requires an admin session and dispatches exactly one queued dry-run job through the dry-run adapter path with `realDelivery: false`; successful dispatch records an internal `dispatched` email event.
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
-- `POST /api/unsubscribe` records an unsubscribe suppression without sending mail; this is the baseline for future tracked unsubscribe links.
+- `GET /api/unsubscribe` / `GET /unsubscribe` accepts tracked link query params (`email`, `source`, `campaignId`, `contactId`) and records an unsubscribe suppression without auth or delivery. `POST /api/unsubscribe` remains available for JSON smoke tests.
 - `GET /api/email/rate-limits` requires an admin session and returns dry-run warm-up caps. Queue enqueue enforces global and per-domain hourly limits before any provider path.
 - `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery. Internal `dispatched` events are recorded only by the dry-run dispatch path.
 - `GET /api/email/events` requires an admin session and lists in-memory event records until PostgreSQL persistence is wired.

@@ -1033,20 +1033,40 @@ test('suppressions require admin session and block dry-run queue recipients', as
 
 test('unsubscribe endpoint records suppression without admin session', async () => {
   resetSuppressionsForTests();
-  const res = await request('/api/unsubscribe', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'Reader@Example.test', source: 'link smoke' })
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const res = await request('/api/unsubscribe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'Reader@Example.test', source: 'link smoke' })
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.mode, 'tracked-unsubscribe');
+    assert.equal(res.body.suppression.email, 'reader@example.test');
+    assert.equal(res.body.suppression.reason, 'unsubscribe');
+
+    const tracked = await request('/unsubscribe?email=Tracked%40Example.test&source=campaign%3Acmp_123&campaignId=cmp_123&contactId=ct_123');
+    assert.equal(tracked.status, 200);
+    assert.equal(tracked.body.mode, 'tracked-unsubscribe');
+    assert.equal(tracked.body.suppression.email, 'tracked@example.test');
+    assert.equal(tracked.body.suppression.source, 'campaign:cmp_123');
+    assert.equal(tracked.body.campaignId, 'cmp_123');
+    assert.equal(tracked.body.contactId, 'ct_123');
+    assert.equal(tracked.body.realDelivery, false);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const list = await request('/api/suppressions', { headers: { cookie } });
+    assert.equal(list.body.count, 2);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'unsubscribe_record' && event.details.method === 'GET'));
   });
-  assert.equal(res.status, 200);
-  assert.equal(res.body.suppression.email, 'reader@example.test');
-  assert.equal(res.body.suppression.reason, 'unsubscribe');
 });
 
 test('suppression and unsubscribe endpoints also work behind nginx stripped api prefix', async () => {
   const suppressions = await request('/suppressions');
   assert.equal(suppressions.status, 401);
-  const unsubscribe = await request('/unsubscribe', { method: 'POST', body: JSON.stringify({ email: 'bad' }) });
+  const unsubscribe = await request('/unsubscribe?email=bad');
   assert.equal(unsubscribe.status, 400);
 });
 

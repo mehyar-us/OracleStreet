@@ -443,12 +443,27 @@ export const createHandler = () => {
     }
 
     if (url.pathname === '/api/unsubscribe' || url.pathname === '/unsubscribe') {
-      if (!requireMethod(req, res, 'POST')) return;
-      const body = await readJsonBody(req);
-      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
-      const result = recordUnsubscribe({ email: body.email, source: body.source || 'unsubscribe_endpoint' });
-      recordAuditEvent({ action: 'unsubscribe_record', actorEmail: null, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { source: body.source || 'unsubscribe_endpoint', errors: result.errors || [] } });
-      return jsonResponse(res, result.ok ? 200 : 400, result);
+      if (!['GET', 'POST'].includes(req.method)) return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+      const body = req.method === 'POST' ? await readJsonBody(req) : null;
+      if (req.method === 'POST' && body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const payload = req.method === 'GET'
+        ? {
+            email: url.searchParams.get('email'),
+            source: url.searchParams.get('source'),
+            campaignId: url.searchParams.get('campaignId'),
+            contactId: url.searchParams.get('contactId')
+          }
+        : body;
+      const source = payload.source || (payload.campaignId ? `campaign:${payload.campaignId}` : 'unsubscribe_endpoint');
+      const result = recordUnsubscribe({ email: payload.email, source });
+      recordAuditEvent({ action: 'unsubscribe_record', actorEmail: null, target: payload.email || null, status: result.ok ? 'ok' : 'rejected', details: { source, campaignId: payload.campaignId || null, contactId: payload.contactId || null, method: req.method, errors: result.errors || [] } });
+      return jsonResponse(res, result.ok ? 200 : 400, {
+        ...result,
+        mode: 'tracked-unsubscribe',
+        campaignId: payload.campaignId || null,
+        contactId: payload.contactId || null,
+        realDelivery: false
+      });
     }
 
     if (url.pathname === '/api/email/events' || url.pathname === '/email/events') {

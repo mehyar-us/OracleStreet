@@ -80,7 +80,7 @@ export const emailReportingSummary = (env = process.env) => {
       complianceGates: {
         consentSource: 'enforced_for_test_send_and_queue',
         suppression: 'enforced_for_queue',
-        unsubscribe: 'baseline_records_suppression',
+        unsubscribe: 'tracked_link_records_suppression',
         dispatchEvents: 'dry_run_dispatch_records_event',
         bounceComplaint: 'manual_ingest_records_event_and_suppression',
         rateLimits: 'dry_run_warmup_enforced',
