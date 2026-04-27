@@ -46,6 +46,7 @@
 - [x] Event tracking baseline
 - [x] Dry-run dispatch event tracking baseline
 - [x] Real sending readiness safe-gate baseline
+- [x] Sender domain readiness safe-gate baseline
 
 ## Phase 4 — Remote PostgreSQL pulls
 

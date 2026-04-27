@@ -109,6 +109,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 14. [x] Safe provider adapter interface baseline that exposes adapter capability/readiness without enabling external delivery.
 15. [x] Campaign unsubscribe link injection baseline for dry-run queue jobs.
 16. [x] Tracked unsubscribe link suppression baseline that accepts per-campaign GET links and records suppressions without auth.
+17. [x] Sender domain readiness safe-gate baseline for SPF/DKIM/DMARC/TLS planning without DNS probing or delivery.
 
 ## Current validation endpoints
 
@@ -130,6 +131,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/email/local-capture` requires an admin session and lists captured local-provider messages for controlled smoke tests only.
 - `GET /api/email/reporting` requires an admin session and summarizes queue, suppression, bounce/complaint, provider, rate-limit, and compliance-gate state without enabling delivery.
 - `GET /api/email/sending-readiness` requires an admin session and reports real-sending readiness blockers without exposing secrets. It always returns `readyForRealDelivery: false`/`realDeliveryAllowed: false` until explicit future live-test approval work exists.
+- `GET /api/email/domain-readiness` requires an admin session and reports default sender domain readiness, expected SPF/DKIM/DMARC records, and TLS requirements without DNS network probes or delivery.
 - `GET /api/dashboard` includes the same safe email reporting summary.
 
 ## PMTA-first development priority

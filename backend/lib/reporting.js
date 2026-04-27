@@ -1,5 +1,6 @@
 import { listAuditLog } from './auditLog.js';
 import { listEmailEvents } from './emailEvents.js';
+import { senderDomainReadiness } from './domainReadiness.js';
 import { getEmailProviderConfig, validateSelectedProviderConfig } from './emailProvider.js';
 import { getRateLimitConfig } from './rateLimits.js';
 import { listSendQueue } from './sendQueue.js';
@@ -9,6 +10,7 @@ export const sendingReadinessSummary = (env = process.env) => {
   const provider = getEmailProviderConfig(env);
   const providerValidation = validateSelectedProviderConfig(env);
   const rateLimits = getRateLimitConfig(env);
+  const domainReadiness = senderDomainReadiness(env);
   const blockers = [];
   const requiredGates = {
     providerConfigValid: providerValidation.ok,
@@ -17,6 +19,7 @@ export const sendingReadinessSummary = (env = process.env) => {
     unsubscribeRequired: true,
     bounceComplaintSuppression: true,
     rateLimitsConfigured: rateLimits.globalPerWindow > 0 && rateLimits.perDomainPerWindow > 0,
+    senderDomainReady: domainReadiness.ok,
     auditLogging: true,
     manualDryRunProofRequired: true,
     realSendingFlagEnabled: provider.realSendingEnabled,
@@ -25,6 +28,7 @@ export const sendingReadinessSummary = (env = process.env) => {
 
   if (!providerValidation.ok) blockers.push('provider_config_invalid');
   if (!requiredGates.rateLimitsConfigured) blockers.push('valid_rate_limits_required');
+  if (!domainReadiness.ok) blockers.push('sender_domain_not_ready');
   if (!provider.realSendingEnabled) blockers.push('real_email_flag_disabled');
   if (!requiredGates.nonDryRunProviderSelected) blockers.push('live_provider_not_selected');
 
@@ -34,6 +38,7 @@ export const sendingReadinessSummary = (env = process.env) => {
     readyForRealDelivery: false,
     provider,
     providerValidation,
+    domainReadiness,
     requiredGates,
     blockers,
     nextSafeStep: blockers.length > 0 ? 'resolve_blockers_then_repeat_controlled_dry_run' : 'manual_controlled_live_test_requires_explicit_human_approval',
@@ -85,7 +90,8 @@ export const emailReportingSummary = (env = process.env) => {
         bounceComplaint: 'manual_ingest_records_event_and_suppression',
         rateLimits: 'dry_run_warmup_enforced',
         audit: 'baseline_in_memory',
-        sendingReadiness: 'explicit_safe_gate_endpoint'
+        sendingReadiness: 'explicit_safe_gate_endpoint',
+        senderDomain: 'safe_readiness_gate_no_dns_probe'
       }
     }
   };

@@ -3,6 +3,7 @@ import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
+import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { ingestEmailEvents, listEmailEvents, recordEmailEvent } from './lib/emailEvents.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
@@ -210,6 +211,15 @@ export const createHandler = () => {
       if (!session) return;
       const readiness = sendingReadinessSummary();
       recordAuditEvent({ action: 'email_sending_readiness_view', actorEmail: session.email, target: readiness.provider.provider, details: { readyForRealDelivery: readiness.readyForRealDelivery, blockers: readiness.blockers } });
+      return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/email/domain-readiness' || url.pathname === '/email/domain-readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = senderDomainReadiness();
+      recordAuditEvent({ action: 'email_domain_readiness_view', actorEmail: session.email, target: readiness.senderDomain || readiness.primaryDomain, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, readiness);
     }
 

@@ -1273,11 +1273,54 @@ test('sending readiness endpoint requires admin session and keeps real delivery 
     assert.equal(readiness.body.requiredGates.consentSourceEnforced, true);
     assert.equal(readiness.body.requiredGates.suppressionEnforced, true);
     assert.equal(readiness.body.requiredGates.unsubscribeRequired, true);
+    assert.equal(readiness.body.requiredGates.senderDomainReady, false);
+    assert.equal(readiness.body.domainReadiness.mode, 'sender-domain-readiness-safe-gate');
     assert.ok(readiness.body.blockers.includes('real_email_flag_disabled'));
     assert.ok(readiness.body.blockers.includes('live_provider_not_selected'));
+    assert.ok(readiness.body.blockers.includes('sender_domain_not_ready'));
 
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'email_sending_readiness_view'));
+  });
+});
+
+test('sender domain readiness endpoint requires admin session and reports safe DNS plan', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DEFAULT_FROM_EMAIL: 'sender@stuffprettygood.com',
+    ORACLESTREET_PRIMARY_DOMAIN: 'stuffprettygood.com'
+  }, async () => {
+    const unauth = await request('/api/email/domain-readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/email/domain-readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'sender-domain-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.senderDomain, 'stuffprettygood.com');
+    assert.equal(readiness.body.checks.senderDomainMatchesPrimary, true);
+    assert.equal(readiness.body.checks.dnsNetworkProbe, 'skipped_safe_default');
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+    assert.match(readiness.body.expectedDns.dmarc, /_dmarc\.stuffprettygood\.com/);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_domain_readiness_view'));
+  });
+});
+
+test('sender domain readiness reports missing sender without delivery', async () => {
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const readiness = await request('/api/email/domain-readiness', { headers: { cookie: login.headers.get('set-cookie') } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.ok, false);
+    assert.ok(readiness.body.errors.includes('valid_default_from_email_required'));
+    assert.equal(readiness.body.realDeliveryAllowed, false);
   });
 });
 
@@ -1308,4 +1351,6 @@ test('sending readiness reports provider blockers without exposing secrets', asy
 test('sending readiness endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/sending-readiness');
   assert.equal(res.status, 401);
+  const domain = await request('/email/domain-readiness');
+  assert.equal(domain.status, 401);
 });
