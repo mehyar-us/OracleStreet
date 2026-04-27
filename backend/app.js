@@ -4,6 +4,7 @@ import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from '.
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
+import { campaignCalendar } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts } from './lib/contactBrowser.js';
@@ -615,6 +616,15 @@ export const createHandler = () => {
       const result = createCampaign({ ...body, actorEmail: session.email });
       recordAuditEvent({ action: 'campaign_create', actorEmail: session.email, target: body.name || null, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.campaign?.estimatedAudience, suppressedCount: result.campaign?.suppressedCount, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/campaigns/calendar' || url.pathname === '/campaigns/calendar') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = campaignCalendar(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'campaign_calendar_view', actorEmail: session.email, status: 'ok', details: { domain: result.domain, days: result.days, scheduledCampaigns: result.totals.scheduledCampaigns, overCapDays: result.totals.overCapDays, noQueueMutation: true, realDelivery: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/campaigns/estimate' || url.pathname === '/campaigns/estimate') {

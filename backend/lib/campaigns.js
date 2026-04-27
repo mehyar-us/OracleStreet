@@ -175,6 +175,24 @@ export const getCampaign = (id) => {
   return campaign ? { ...campaign } : null;
 };
 
+const campaignDate = (campaign) => {
+  const parsed = new Date(String(campaign.scheduledAt || ''));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+};
+
+const scheduledWarmupCount = ({ domain = 'stuffprettygood.com', scheduledAt, excludeCampaignId = null } = {}) => {
+  const cleanDomain = String(domain || 'stuffprettygood.com').trim().toLowerCase();
+  const scheduledDate = new Date(String(scheduledAt || ''));
+  if (Number.isNaN(scheduledDate.getTime())) return 0;
+  const scheduleDay = scheduledDate.toISOString().slice(0, 10);
+  return (listCampaigns().campaigns || [])
+    .filter((campaign) => campaign.id !== excludeCampaignId)
+    .filter((campaign) => campaign.status === 'scheduled_dry_run')
+    .filter((campaign) => String(campaign.senderDomain || cleanDomain).trim().toLowerCase() === cleanDomain)
+    .filter((campaign) => campaignDate(campaign) === scheduleDay)
+    .reduce((total, campaign) => total + Number(campaign.warmupPlannedCount || campaign.estimatedAudience || 0), 0);
+};
+
 export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
   const campaign = getCampaign(campaignId);
   if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
@@ -235,7 +253,8 @@ export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, senderDomain =
   const estimate = estimateCampaign({ segmentId: campaign.segmentId, templateId: campaign.templateId });
   if (!estimate.ok) errors.push(...estimate.errors);
   if (estimate.ok && estimate.estimatedAudience < 1) errors.push('campaign_audience_required');
-  const warmupCap = estimate.ok ? evaluateWarmupScheduleCap({ domain: senderDomain, scheduledAt, estimatedAudience: estimate.estimatedAudience }) : null;
+  const existingScheduledCount = estimate.ok ? scheduledWarmupCount({ domain: senderDomain, scheduledAt, excludeCampaignId: campaign.id }) : 0;
+  const warmupCap = estimate.ok ? evaluateWarmupScheduleCap({ domain: senderDomain, scheduledAt, estimatedAudience: estimate.estimatedAudience, existingScheduledCount }) : null;
   if (warmupCap && !warmupCap.ok) errors.push(...warmupCap.errors);
   if (warmupCap?.capExceeded) errors.push('warmup_daily_cap_exceeded');
   if (errors.length > 0) return { ok: false, errors, warmupCap, realDelivery: false };

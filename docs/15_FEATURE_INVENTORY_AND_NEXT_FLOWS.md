@@ -180,6 +180,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Warm-up planner API/UI for sender-domain caps and ramp schedule.
 - Warm-up policy persistence in PostgreSQL runtime adapter.
 - Campaign schedule cap enforcement baseline.
+- Campaign calendar API/UI showing scheduled dry-runs against sender-domain warm-up caps, remaining capacity, and over-cap days.
 - Reputation policy persistence in PostgreSQL runtime adapter.
 - Auto-pause threshold controls for bounce, complaint, deferral, and provider-error signals.
 - Recommendation-only auto-pause evaluation without mutating queues/providers.
@@ -244,12 +245,12 @@ Acceptance:
 
 ### Flow B — Campaign calendar over warm-up caps
 
-Goal: show scheduled campaigns against domain/provider warm-up capacity.
+Status: shipped baseline. The Campaigns workbench now calls `/api/campaigns/calendar` to show scheduled dry-run campaigns against warm-up policy caps, including per-day planned count, daily cap, remaining capacity, and over-cap state. Scheduling now accounts for already scheduled dry-run campaigns on the same sender-domain/day before allowing another campaign.
 
-Build:
+Shipped:
 - calendar/list of scheduled dry-run campaigns
 - per-day sender-domain cap usage
-- over-cap warning before schedule/enqueue
+- over-cap warning/blocking before schedule
 - campaign schedule-cap API linked to warm-up policy
 - dashboard widget for remaining capacity
 

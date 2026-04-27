@@ -2790,6 +2790,93 @@ test('warm-up policy persistence and schedule cap checks are protected and dry-r
   });
 });
 
+test('campaign calendar shows scheduled dry-runs against warmup caps without queue or provider mutation', async () => {
+  resetAuditLogForTests();
+  resetContactsForTests();
+  resetSegmentsForTests();
+  resetTemplatesForTests();
+  resetCampaignsForTests();
+  resetWarmupPoliciesForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/campaigns/calendar?days=7');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const startDate = new Date().toISOString().slice(0, 10);
+    await request('/api/email/warmup/policy', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ domain: 'calendar.test', startDate, startDailyCap: 1, maxDailyCap: 4, rampPercent: 100, days: 4 })
+    });
+    await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [{ email: 'calendar-one@calendar.test', consentStatus: 'opt_in', source: 'owned calendar smoke' }] })
+    });
+    const segment = await request('/api/segments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Calendar test', criteria: { domain: 'calendar.test' } })
+    });
+    const template = await request('/api/templates', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Calendar Template', subject: 'Calendar', html: '<p>Hello</p><p>unsubscribe here</p>' })
+    });
+    const campaign = await request('/api/campaigns', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Calendar dry-run', segmentId: segment.body.segment.id, templateId: template.body.template.id })
+    });
+    await request('/api/campaigns/approve-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: campaign.body.campaign.id })
+    });
+    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const scheduled = await request('/api/campaigns/schedule-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: campaign.body.campaign.id, senderDomain: 'calendar.test', scheduledAt })
+    });
+    assert.equal(scheduled.status, 200);
+
+    const calendar = await request('/api/campaigns/calendar?domain=calendar.test&days=7', { headers: { cookie } });
+    assert.equal(calendar.status, 200);
+    assert.equal(calendar.body.mode, 'campaign-calendar-warmup-caps');
+    assert.equal(calendar.body.safety.noQueueMutation, true);
+    assert.equal(calendar.body.safety.noProviderMutation, true);
+    assert.equal(calendar.body.realDeliveryAllowed, false);
+    assert.equal(calendar.body.totals.scheduledCampaigns, 1);
+    assert.ok(calendar.body.calendar.some((day) => day.scheduledCount === 1 && day.dailyCap >= 1 && day.campaigns.some((entry) => entry.name === 'Calendar dry-run')));
+
+    const second = await request('/api/campaigns', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Calendar over cap', segmentId: segment.body.segment.id, templateId: template.body.template.id })
+    });
+    await request('/api/campaigns/approve-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: second.body.campaign.id })
+    });
+    const overCap = await request('/api/campaigns/schedule-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: second.body.campaign.id, senderDomain: 'calendar.test', scheduledAt })
+    });
+    assert.equal(overCap.status, 400);
+    assert.ok(overCap.body.errors.includes('warmup_daily_cap_exceeded'));
+    assert.equal(overCap.body.warmupCap.existingScheduledCount, 1);
+
+    const queue = await request('/api/send-queue', { headers: { cookie } });
+    assert.equal(queue.body.count, 0);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_view'));
+  });
+});
+
 test('reputation auto-pause threshold controls are protected, recommendation-only, and auditable', async () => {
   resetAuditLogForTests();
   resetEmailEventsForTests();

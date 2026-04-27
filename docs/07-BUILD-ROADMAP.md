@@ -36,7 +36,8 @@
 - [x] Add remote PostgreSQL import preview and field mapping into contact validation
 - [x] Add remote PostgreSQL approved import execution into contacts
 - [x] Add contact browser search/filter and source-quality drilldowns
-- [ ] Add campaign calendar UI over warm-up caps
+- [x] Add campaign calendar UI over warm-up caps
+- [ ] Add multi-user/RBAC admin workflow
 - [x] Add warm-up planner controls UI
 - [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI
