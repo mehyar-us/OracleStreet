@@ -10,7 +10,7 @@ import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/contr
 import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, validateDataSourceQuery } from './lib/dataSources.js';
+import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -240,6 +240,24 @@ export const createHandler = () => {
         if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
         const result = createDataSourceSyncRun({ ...body, actorEmail: session.email });
         recordAuditEvent({ action: 'data_source_sync_dry_run', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], rowsPulled: 0, realSync: false } });
+        return jsonResponse(res, result.ok ? 200 : 400, result);
+      }
+      return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/data-source-import-schedules' || url.pathname === '/data-source-import-schedules') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') {
+        const result = listDataSourceImportSchedules();
+        recordAuditEvent({ action: 'data_source_import_schedules_list', actorEmail: session.email, details: { count: result.count, realSync: false, automaticPulls: false } });
+        return jsonResponse(res, 200, result);
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+        const result = createDataSourceImportSchedule({ ...body, actorEmail: session.email });
+        recordAuditEvent({ action: 'data_source_import_schedule_plan', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], scheduleMutation: Boolean(result.scheduleMutation), enabled: Boolean(result.schedule?.enabled), realSync: false, automaticPulls: false } });
         return jsonResponse(res, result.ok ? 200 : 400, result);
       }
       return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });

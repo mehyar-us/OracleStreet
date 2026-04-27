@@ -593,6 +593,103 @@ test('data source sync dry-run requires admin and validates registered sources w
   });
 });
 
+test('remote PostgreSQL import scheduler plans recurring imports without pulling rows or exposing secrets', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATA_SOURCE_SECRET_KEY: 'test-data-source-secret-key-at-least-32-chars'
+  }, async () => {
+    const unauth = await request('/api/data-source-import-schedules', { method: 'POST', body: JSON.stringify({ dataSourceId: 'ds_missing' }) });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const created = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        name: 'Schedule warehouse',
+        type: 'postgresql',
+        storeSecret: true,
+        connectionUrl: 'postgresql://reader:schedule-secret@warehouse.example.test:5432/affiliate?sslmode=require'
+      })
+    });
+
+    const rejected = await request('/api/data-source-import-schedules', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        dataSourceId: created.body.source.id,
+        sql: 'update contacts set email = email',
+        mapping: { emailColumn: 'email', defaults: { consentStatus: 'opt_in', source: 'remote-schedule' } },
+        intervalHours: 0,
+        enabled: true
+      })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('valid_interval_hours_1_720_required'));
+    assert.ok(rejected.body.errors.includes('select_only_sql_required'));
+    assert.ok(rejected.body.errors.includes('destructive_sql_rejected'));
+    assert.ok(rejected.body.errors.includes('exact_remote_import_schedule_approval_phrase_required'));
+    assert.equal(rejected.body.scheduleMutation, false);
+    assert.equal(rejected.body.realSync, false);
+    assert.equal(rejected.body.automaticPulls, false);
+    assert.equal(JSON.stringify(rejected.body).includes('schedule-secret'), false);
+
+    const planned = await request('/api/data-source-import-schedules', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        dataSourceId: created.body.source.id,
+        sql: 'select email, consent_status, source, first_name from contacts',
+        limit: 50,
+        timeoutMs: 3000,
+        intervalHours: 12,
+        enabled: true,
+        approvalPhrase: 'I_APPROVE_REMOTE_POSTGRESQL_IMPORT_SCHEDULE_PLAN',
+        mapping: {
+          emailColumn: 'email',
+          consentStatusColumn: 'consent_status',
+          sourceColumn: 'source',
+          firstNameColumn: 'first_name',
+          defaults: { consentStatus: 'opt_in', source: 'remote-schedule' }
+        }
+      })
+    });
+    assert.equal(planned.status, 200);
+    assert.equal(planned.body.mode, 'data-source-import-schedule-plan');
+    assert.equal(planned.body.schedule.status, 'approved_manual_schedule_plan');
+    assert.equal(planned.body.schedule.enabled, true);
+    assert.equal(planned.body.schedule.intervalHours, 12);
+    assert.equal(planned.body.schedule.query.selectOnly, true);
+    assert.match(planned.body.schedule.query.projectedSql, /LIMIT 50$/);
+    assert.equal(planned.body.schedule.mapping.emailColumn, 'email');
+    assert.equal(planned.body.schedule.safety.noImmediateRemotePull, true);
+    assert.equal(planned.body.schedule.safety.noAutomaticWorker, true);
+    assert.equal(planned.body.schedule.safety.noContactImportMutation, true);
+    assert.equal(planned.body.realSync, false);
+    assert.equal(planned.body.automaticPulls, false);
+    assert.equal(planned.body.realDeliveryAllowed, false);
+    assert.ok(planned.body.schedule.validation.requiredGates.includes('manual_execution_only'));
+    assert.ok(planned.body.schedule.validation.blockers.includes('automatic_worker_not_enabled'));
+    assert.equal(JSON.stringify(planned.body).includes('schedule-secret'), false);
+
+    const list = await request('/api/data-source-import-schedules', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.count, 1);
+    assert.equal(list.body.schedules[0].dataSourceName, 'Schedule warehouse');
+    assert.equal(list.body.realSync, false);
+    assert.equal(list.body.automaticPulls, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_plan'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
+  });
+});
+
 test('data source schema discovery planner requires admin and returns safe information-schema plan without probing', async () => {
   resetAuditLogForTests();
   resetDataSourcesForTests();

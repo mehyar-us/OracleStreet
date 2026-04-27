@@ -100,9 +100,9 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Remote PostgreSQL scheduled sync controls over the approved import path.
+1. Controlled one-recipient MTA proof audit path.
 2. Reporting dashboard depth.
-3. Controlled one-recipient MTA proof audit path.
+3. PostgreSQL persistence for remote import schedules.
 4. Multi-user/RBAC enforcement hardening beyond the safe invite-plan baseline.
 5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
 

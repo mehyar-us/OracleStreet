@@ -5,9 +5,11 @@ import { importContacts, validateContactImport } from './contacts.js';
 const dataSources = new Map();
 const encryptedConnectionSecrets = new Map();
 const syncRuns = new Map();
+const importSchedules = new Map();
 let sequence = 0;
 let secretSequence = 0;
 let syncRunSequence = 0;
+let scheduleSequence = 0;
 
 const nowIso = () => new Date().toISOString();
 
@@ -47,6 +49,14 @@ const cloneSyncRun = (run) => ({
   ...run,
   validation: { ...run.validation, requiredGates: [...run.validation.requiredGates], blockers: [...run.validation.blockers] },
   mapping: { ...run.mapping, fields: [...run.mapping.fields] }
+});
+
+const cloneImportSchedule = (schedule) => ({
+  ...schedule,
+  query: { ...schedule.query },
+  mapping: { ...schedule.mapping, defaults: { ...schedule.mapping.defaults } },
+  validation: { ...schedule.validation, requiredGates: [...schedule.validation.requiredGates], blockers: [...schedule.validation.blockers] },
+  safety: { ...schedule.safety }
 });
 
 const secretKeyMaterial = () => String(process.env.ORACLESTREET_DATA_SOURCE_SECRET_KEY || '').trim();
@@ -119,6 +129,7 @@ const hasLimit = (sql) => /\blimit\s+\d+\b/i.test(sql);
 const liveExecutionEnabled = (env = process.env) => String(env.ORACLESTREET_REMOTE_PG_EXECUTION_ENABLED || '').trim().toLowerCase() === 'true';
 const requiredRemoteApprovalPhrase = 'I_APPROVE_REMOTE_POSTGRESQL_READ_ONLY_EXECUTION';
 const requiredRemoteContactImportApprovalPhrase = 'I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT';
+const requiredRemoteImportScheduleApprovalPhrase = 'I_APPROVE_REMOTE_POSTGRESQL_IMPORT_SCHEDULE_PLAN';
 const quoteSqlLiteral = (value) => `'${String(value).replaceAll("'", "''")}'`;
 
 const psqlEnvFromUrl = (rawUrl, env = process.env) => {
@@ -606,9 +617,11 @@ export const resetDataSourcesForTests = () => {
   dataSources.clear();
   encryptedConnectionSecrets.clear();
   syncRuns.clear();
+  importSchedules.clear();
   sequence = 0;
   secretSequence = 0;
   syncRunSequence = 0;
+  scheduleSequence = 0;
 };
 
 export const validateDataSource = ({ name, type = 'postgresql', connectionUrl, storeSecret = false }) => {
@@ -763,6 +776,116 @@ export const listDataSourceSyncRuns = () => ({
   count: syncRuns.size,
   runs: [...syncRuns.values()].map(cloneSyncRun),
   realSync: false
+});
+
+const validateImportScheduleMapping = (mapping = {}) => {
+  const clean = {
+    emailColumn: String(mapping.emailColumn || 'email').trim(),
+    consentStatusColumn: String(mapping.consentStatusColumn || '').trim(),
+    sourceColumn: String(mapping.sourceColumn || '').trim(),
+    firstNameColumn: String(mapping.firstNameColumn || '').trim(),
+    lastNameColumn: String(mapping.lastNameColumn || '').trim(),
+    defaults: {
+      consentStatus: String(mapping.defaults?.consentStatus || mapping.defaultConsentStatus || 'opt_in').trim(),
+      source: String(mapping.defaults?.source || mapping.defaultSource || '').trim()
+    }
+  };
+  const errors = [];
+  if (!clean.emailColumn) errors.push('email_mapping_column_required');
+  if (!clean.consentStatusColumn && !clean.defaults.consentStatus) errors.push('consent_status_column_or_default_required');
+  if (!clean.sourceColumn && !clean.defaults.source) errors.push('source_column_or_default_required');
+  if (clean.defaults.consentStatus && !['opt_in', 'double_opt_in'].includes(clean.defaults.consentStatus)) errors.push('explicit_consent_default_required');
+  return { ok: errors.length === 0, errors, mapping: clean };
+};
+
+export const createDataSourceImportSchedule = ({ dataSourceId, sql, limit = 100, timeoutMs = 5000, intervalHours = 24, mapping = {}, approvalPhrase = '', enabled = false, actorEmail = null } = {}) => {
+  const source = dataSources.get(String(dataSourceId || '').trim());
+  const parsedInterval = Number(intervalHours);
+  const errors = [];
+  if (!source) errors.push('data_source_not_found');
+  if (!Number.isInteger(parsedInterval) || parsedInterval < 1 || parsedInterval > 720) errors.push('valid_interval_hours_1_720_required');
+  const queryPlan = validateDataSourceQuery({ dataSourceId, sql, limit, timeoutMs, explain: false, actorEmail });
+  if (!queryPlan.ok) errors.push(...queryPlan.errors);
+  const mappingPlan = validateImportScheduleMapping(mapping);
+  if (!mappingPlan.ok) errors.push(...mappingPlan.errors);
+  const wantsEnabled = Boolean(enabled);
+  if (wantsEnabled && approvalPhrase !== requiredRemoteImportScheduleApprovalPhrase) errors.push('exact_remote_import_schedule_approval_phrase_required');
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      mode: 'data-source-import-schedule-plan',
+      errors,
+      scheduleMutation: false,
+      realSync: false,
+      automaticPulls: false,
+      source: sourcePublicView(source),
+      queryPlan,
+      mapping: mappingPlan.mapping || mapping
+    };
+  }
+
+  const schedule = {
+    id: `sync_schedule_${(++scheduleSequence).toString().padStart(6, '0')}`,
+    dataSourceId: source.id,
+    dataSourceName: source.name,
+    status: wantsEnabled ? 'approved_manual_schedule_plan' : 'planned_disabled',
+    enabled: wantsEnabled,
+    intervalHours: parsedInterval,
+    nextRunPreviewAt: new Date(Date.now() + parsedInterval * 60 * 60 * 1000).toISOString(),
+    query: {
+      projectedSql: queryPlan.query.projectedSql,
+      limit: queryPlan.query.limit,
+      timeoutMs: queryPlan.query.timeoutMs,
+      selectOnly: true
+    },
+    mapping: mappingPlan.mapping,
+    validation: {
+      ok: true,
+      requiredGates: [
+        'admin_session',
+        'registered_postgresql_source',
+        'select_only_query',
+        'bounded_limit_timeout',
+        'contact_field_mapping',
+        'explicit_consent_and_source',
+        'exact_schedule_approval_if_enabled',
+        'manual_execution_only'
+      ],
+      blockers: source.connection.secretStored ? ['automatic_worker_not_enabled', 'remote_pull_requires_per_run_execution_gate'] : ['encrypted_connection_secret_required_for_future_live_sync', 'automatic_worker_not_enabled', 'remote_pull_requires_per_run_execution_gate']
+    },
+    safety: {
+      noImmediateRemotePull: true,
+      noAutomaticWorker: true,
+      noContactImportMutation: true,
+      noSecretOutput: true,
+      redactedErrors: true,
+      realDeliveryAllowed: false
+    },
+    actorEmail,
+    createdAt: nowIso(),
+    updatedAt: null
+  };
+  importSchedules.set(schedule.id, schedule);
+  return {
+    ok: true,
+    mode: 'data-source-import-schedule-plan',
+    schedule: cloneImportSchedule(schedule),
+    scheduleMutation: true,
+    realSync: false,
+    automaticPulls: false,
+    source: sourcePublicView(source),
+    realDeliveryAllowed: false
+  };
+};
+
+export const listDataSourceImportSchedules = () => ({
+  ok: true,
+  mode: 'data-source-import-schedule-plan',
+  count: importSchedules.size,
+  schedules: [...importSchedules.values()].map(cloneImportSchedule),
+  realSync: false,
+  automaticPulls: false,
+  realDeliveryAllowed: false
 });
 
 export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;

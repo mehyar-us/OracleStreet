@@ -38,7 +38,8 @@
 - [x] Add contact browser search/filter and source-quality drilldowns
 - [x] Add campaign calendar UI over warm-up caps
 - [x] Add multi-user/RBAC admin workflow
-- [ ] Add remote PostgreSQL import scheduler
+- [x] Add remote PostgreSQL import scheduler
+- [ ] Deepen controlled one-recipient MTA proof path/runbook
 - [x] Add warm-up planner controls UI
 - [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI

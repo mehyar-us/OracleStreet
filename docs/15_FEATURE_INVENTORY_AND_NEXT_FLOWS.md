@@ -51,7 +51,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Campaign builder workflow.
 - Send queue dry-run dispatch workflow.
 - Suppression management workflow.
-- Remote PostgreSQL source/query/schema/import surfaces.
+- Remote PostgreSQL source/query/schema/import/scheduler surfaces.
 - Reputation/readiness panel.
 - Warm-up planner controls.
 - Warm-up policy controls.
@@ -171,7 +171,8 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
   - destructive SQL rejection
 - Remote PostgreSQL contact import preview with field mapping.
 - Approved remote contact import execution with exact approval phrase.
-- Sync-run history for preview/execution.
+- Remote import schedule planner with SELECT-only query, mapping profile, interval, approval phrase, and no automatic pulls.
+- Sync-run/schedule history for preview/execution/planned recurrence.
 - Live remote writes/destructive queries are not supported.
 
 ### Reputation, warm-up, and safety gates
@@ -282,17 +283,17 @@ Acceptance:
 
 ### Flow D — Remote PostgreSQL import scheduler
 
-Goal: move from one-off preview/import to recurring sync planning.
+Status: shipped safe baseline. The Remote PostgreSQL workbench now plans recurring contact import schedules over the existing SELECT-only query and contact mapping surfaces. Schedule plans are protected, audited, approval-gated when marked enabled, store redacted metadata only, and do not start background pulls or mutate contacts.
 
-Build:
+Shipped:
 - source sync schedule form
-- mapping profile persistence
-- dry-run next-sync preview
-- sync run history UI with imported/rejected counts
-- exact approval gate for enabling a schedule
+- mapping profile persistence in safe schedule memory baseline
+- dry-run next-sync preview timestamp
+- sync schedule history UI with interval/status/query/mapping metadata
+- exact approval gate for marking a schedule plan enabled
 
 Acceptance:
-- no automatic live pulls unless env/operator gates pass
+- no automatic live pulls unless future env/operator/worker gates pass
 - all errors redacted
 - tests for mapping/schedule validation
 - no raw credentials in logs/UI
