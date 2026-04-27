@@ -136,6 +136,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 41. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
 42. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
 43. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
+44. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
 
 ## Current validation endpoints
 
@@ -167,6 +168,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/email/local-capture` requires an admin session and lists captured local-provider messages for controlled smoke tests only.
 - `GET /api/email/reporting` requires an admin session and summarizes queue, suppression, bounce/complaint, provider, rate-limit, and compliance-gate state without enabling delivery.
 - `GET /api/email/sending-readiness` requires an admin session and reports real-sending readiness blockers without exposing secrets. It always returns `readyForRealDelivery: false`/`realDeliveryAllowed: false` until explicit future live-test approval work exists.
+- `GET /api/email/controlled-live-test/readiness` requires an admin session and reports the blocker checklist for a future one-message owned-recipient live proof. It checks provider config, owned recipient metadata, sender domain readiness, bounce mailbox readiness, and single-message rate limits while never sending, mutating queues/suppressions, probing networks, exposing secrets, or enabling delivery.
 - `GET /api/email/domain-readiness` requires an admin session and reports default sender domain readiness, expected SPF/DKIM/DMARC records, and TLS requirements without DNS network probes or delivery.
 - `GET /api/web/domain-readiness` requires an admin session and reports expected web DNS records, primary/fallback health URLs, TLS mode planning, and smoke-test commands without DNS/network probes, HTTPS changes, or delivery unlocks.
 - `GET /api/web/tls-readiness` requires an admin session and reports selected TLS mode, certificate candidate domains, prerequisites, and HTTP/HTTPS smoke-test commands without requesting certificates, editing Nginx, probing certificates, or delivery unlocks.

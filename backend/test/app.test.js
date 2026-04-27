@@ -1991,6 +1991,53 @@ test('sending readiness endpoint requires admin session and keeps real delivery 
   });
 });
 
+test('controlled live test readiness requires all gates and never sends', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MAIL_PROVIDER: 'powermta',
+    ORACLESTREET_REAL_EMAIL_ENABLED: 'true',
+    ORACLESTREET_POWERMTA_HOST: 'pmta.example.test',
+    ORACLESTREET_POWERMTA_PORT: '587',
+    ORACLESTREET_POWERMTA_USERNAME: 'pmta-user',
+    ORACLESTREET_POWERMTA_PASSWORD: 'pmta-secret',
+    ORACLESTREET_POWERMTA_FROM_EMAIL: 'sender@stuffprettygood.com',
+    ORACLESTREET_DEFAULT_FROM_EMAIL: 'sender@stuffprettygood.com',
+    ORACLESTREET_PRIMARY_DOMAIN: 'stuffprettygood.com',
+    ORACLESTREET_BOUNCE_MAILBOX_HOST: 'imap.example.test',
+    ORACLESTREET_BOUNCE_MAILBOX_USERNAME: 'bounces@example.test',
+    ORACLESTREET_BOUNCE_MAILBOX_PASSWORD: 'mailbox-secret',
+    ORACLESTREET_CONTROLLED_TEST_RECIPIENT_EMAIL: 'owned-inbox@example.test',
+    ORACLESTREET_CONTROLLED_TEST_RECIPIENT_OWNED: 'true',
+    ORACLESTREET_CONTROLLED_LIVE_TEST_APPROVED: 'false',
+    ORACLESTREET_RATE_LIMIT_GLOBAL_PER_HOUR: '1',
+    ORACLESTREET_RATE_LIMIT_DOMAIN_PER_HOUR: '1'
+  }, async () => {
+    const unauth = await request('/api/email/controlled-live-test/readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/email/controlled-live-test/readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'controlled-live-test-readiness-safe-gate');
+    assert.equal(readiness.body.provider.provider, 'powermta');
+    assert.equal(readiness.body.recipient.email, 'ow***@example.test');
+    assert.equal(readiness.body.readyForControlledLiveTest, false);
+    assert.equal(readiness.body.safety.noSend, true);
+    assert.equal(readiness.body.safety.maxMessagesIfLaterApproved, 1);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+    assert.ok(readiness.body.blockers.includes('explicit_human_approval_required'));
+    assert.equal(JSON.stringify(readiness.body).includes('pmta-secret'), false);
+    assert.equal(JSON.stringify(readiness.body).includes('mailbox-secret'), false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_readiness_view'));
+  });
+});
+
 test('sender domain readiness endpoint requires admin session and reports safe DNS plan', async () => {
   resetAuditLogForTests();
   await withEnv({
@@ -2267,6 +2314,8 @@ test('sending readiness reports provider blockers without exposing secrets', asy
 test('sending readiness endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/sending-readiness');
   assert.equal(res.status, 401);
+  const controlledLiveTest = await request('/email/controlled-live-test/readiness');
+  assert.equal(controlledLiveTest.status, 401);
   const domain = await request('/email/domain-readiness');
   assert.equal(domain.status, 401);
   const webDomain = await request('/web/domain-readiness');

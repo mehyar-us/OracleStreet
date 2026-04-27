@@ -74,6 +74,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - [x] campaign dry-run scheduling baseline that records a future schedule without delivery
 - [x] campaign-to-queue dry-run enqueue baseline with suppression/rate-limit gates
 - [x] send queue readiness safe-gate baseline with dry-run dispatch posture and no mutation
+- [x] controlled live-test readiness safe-gate baseline for one owned recipient with no send/mutation path
 - [x] safe provider adapter interface baseline
 - dry-run provider first
 - PowerMTA SMTP provider after safety controls exist
@@ -98,6 +99,7 @@ PowerMTA or any real mail provider must not send production mail until these exi
 - rate limits per domain/provider
 - audit log for send jobs
 - real-sending readiness gate that reports blockers without exposing secrets
+- controlled one-recipient live-test readiness gate that still does not send without explicit human approval
 - manual dry-run proof
 
 ## PMTA-first development priority

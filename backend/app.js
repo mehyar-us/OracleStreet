@@ -4,6 +4,7 @@ import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
+import { controlledLiveTestReadiness } from './lib/controlledLiveTestReadiness.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns } from './lib/dataSources.js';
@@ -289,6 +290,15 @@ export const createHandler = () => {
       if (!session) return;
       const readiness = sendingReadinessSummary();
       recordAuditEvent({ action: 'email_sending_readiness_view', actorEmail: session.email, target: readiness.provider.provider, details: { readyForRealDelivery: readiness.readyForRealDelivery, blockers: readiness.blockers } });
+      return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/email/controlled-live-test/readiness' || url.pathname === '/email/controlled-live-test/readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = controlledLiveTestReadiness();
+      recordAuditEvent({ action: 'email_controlled_live_test_readiness_view', actorEmail: session.email, target: 'controlled-live-test', status: readiness.ok ? 'ok' : 'blocked', details: { blockers: readiness.blockers, noSend: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, readiness);
     }
 

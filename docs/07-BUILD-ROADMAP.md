@@ -61,6 +61,7 @@
 - [x] Dashboard campaign engagement summary baseline
 - [x] Frontend safe metrics dashboard baseline
 - [x] Real sending readiness safe-gate baseline
+- [x] Controlled live-test readiness safe-gate baseline
 - [x] Sender domain readiness safe-gate baseline
 
 ## Phase 4 — Remote PostgreSQL pulls
