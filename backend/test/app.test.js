@@ -170,6 +170,9 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.campaignReporting.mode, 'campaign-reporting-safe-summary');
     assert.equal(dashboard.body.dataSourceReporting.mode, 'data-source-mapping-ui-safe-baseline');
     assert.equal(dashboard.body.dataSourceReporting.mappingUi, 'safe-validation-only');
+    assert.equal(dashboard.body.listHygiene.mode, 'list-hygiene-cleanup-planner');
+    assert.equal(dashboard.body.listHygiene.cleanupMutation, false);
+    assert.equal(dashboard.body.listHygiene.realDeliveryAllowed, false);
     assert.equal(dashboard.body.dataSourceReporting.realSync, false);
     assert.equal(dashboard.body.safetyGates.engagementTracking, 'dry-run-events-only');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
@@ -223,6 +226,9 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /mode === 'validate' \? '\/validate'/);
   assert.match(html, /Validate contacts/);
   assert.match(html, /Import valid batch/);
+  assert.match(html, /api\/list-hygiene\/plan/);
+  assert.match(html, /Cleanup planner/);
+  assert.match(html, /Source quality/);
   assert.match(html, /templates-screen/);
   assert.match(html, /template-create-screen/);
   assert.match(html, /api\/templates/);
@@ -812,6 +818,48 @@ test('contact import validation enforces consent source and duplicate gates', as
   });
 });
 
+test('list hygiene cleanup planner requires admin session and returns safe read-only recommendations', async () => {
+  resetAuditLogForTests();
+  resetContactsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/list-hygiene/plan');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'support@gmail.com', consentStatus: 'opt_in', source: 'owned signup form' },
+        { email: 'reader@company.test', consentStatus: 'double_opt_in', source: 'owned signup form', sourceDetail: 'spring form' }
+      ] })
+    });
+    await request('/api/suppressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'reader@company.test', reason: 'manual', source: 'qa-test' })
+    });
+
+    const plan = await request('/api/list-hygiene/plan?staleAfterDays=180', { headers: { cookie } });
+    assert.equal(plan.status, 200);
+    assert.equal(plan.body.mode, 'list-hygiene-cleanup-planner');
+    assert.equal(plan.body.cleanupMutation, false);
+    assert.equal(plan.body.realDeliveryAllowed, false);
+    assert.equal(plan.body.totals.contacts, 2);
+    assert.equal(plan.body.totals.riskyContacts, 1);
+    assert.equal(plan.body.totals.suppressedContacts, 1);
+    assert.ok(plan.body.recommendations.some((item) => item.action === 'exclude_suppressed_contacts'));
+    assert.ok(plan.body.recommendations.some((item) => item.action === 'review_risky_contacts'));
+    assert.ok(plan.body.sourceQuality.some((source) => source.source === 'owned signup form'));
+    assert.ok(plan.body.domainConcentration.some((domain) => domain.domain === 'gmail.com'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'list_hygiene_plan_view'));
+  });
+});
+
 test('contact endpoints also work behind nginx stripped api prefix', async () => {
   const list = await request('/contacts');
   assert.equal(list.status, 401);
@@ -819,6 +867,8 @@ test('contact endpoints also work behind nginx stripped api prefix', async () =>
   assert.equal(imported.status, 401);
   const validate = await request('/contacts/import/validate', { method: 'POST' });
   assert.equal(validate.status, 401);
+  const hygiene = await request('/list-hygiene/plan');
+  assert.equal(hygiene.status, 401);
 });
 
 test('segment endpoints require admin session', async () => {

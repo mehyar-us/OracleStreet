@@ -153,6 +153,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 58. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
 59. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
 60. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
+61. [x] List hygiene cleanup planner API/UI for duplicate/risky/suppressed/stale/source-quality/domain-concentration recommendations without mutation, probes, or delivery unlock.
 
 ## Current validation endpoints
 
@@ -208,6 +209,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/email/warmup/plan` requires an admin session and returns a safe sender-domain warm-up preview with daily/hourly caps and bounce/complaint pause thresholds; it rejects invalid domains/limits, audits preview actions, mutates no queues/providers/DNS, and keeps `realDeliveryAllowed: false`.
 - `/` frontend reporting panel builds CSV export previews through `/api/email/reporting/export` for reporting datasets without unlocking delivery.
 - `/` frontend reputation panel includes a warm-up planner wired to `/api/email/warmup/plan` after loading reputation gates, without external writes or delivery unlocks.
+- `GET /api/list-hygiene/plan` requires an admin session and returns a safe list cleanup plan with duplicate groups, suppressed contacts, risky role/free-mail/thin-provenance contacts, stale contacts, source quality scores, domain concentration, and recommendations. It audits the view, mutates no contacts/suppressions, performs no network/MX checks, and keeps `realDeliveryAllowed: false`.
 - `GET`/`POST /api/data-sources` requires an admin session and registers remote PostgreSQL source metadata with redacted URLs only. Optional `storeSecret: true` stores the connection URL in the encrypted secret baseline when `ORACLESTREET_DATA_SOURCE_SECRET_KEY` is configured, returns only an encrypted secret ref/metadata, skips connection probes, keeps `syncEnabled: false`, and does not pull data.
 - `GET`/`POST /api/data-source-sync-runs` requires an admin session and creates/lists dry-run sync validation records for registered sources. It validates source existence and optional mapping fields, records blockers for future live sync, skips network probes, pulls/imports zero rows, and keeps `realSync: false`.
 - `/` frontend dashboard displays a protected remote PostgreSQL mapping/status panel using redacted source metadata and dry-run sync counts only. It does not expose secrets, enable sync, or pull remote rows.

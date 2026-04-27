@@ -373,7 +373,7 @@
 
     const loadWorkbench = async () => {
       workbenchStatus.textContent = 'Loading CMS screens…';
-      const [contacts, templates, campaigns, segments, queue, suppressions, dataSources, syncRuns, audit] = await Promise.all([
+      const [contacts, templates, campaigns, segments, queue, suppressions, dataSources, syncRuns, audit, hygiene] = await Promise.all([
         safeJson('/api/contacts', { contacts: [], count: 0 }),
         safeJson('/api/templates', { templates: [], count: 0 }),
         safeJson('/api/campaigns', { campaigns: [], count: 0 }),
@@ -382,9 +382,11 @@
         safeJson('/api/suppressions', { suppressions: [], count: 0 }),
         safeJson('/api/data-sources', { sources: [], count: 0 }),
         safeJson('/api/data-source-sync-runs', { runs: [], count: 0 }),
-        safeJson('/api/audit-log', { events: [], count: 0 })
+        safeJson('/api/audit-log', { events: [], count: 0 }),
+        safeJson('/api/list-hygiene/plan', { totals: {}, recommendations: [], sourceQuality: [], domainConcentration: [] })
       ]);
-      setScreen('#contacts-screen', 'Contacts', `<div class="kv"><span>Total contacts</span><strong>${contacts.count || 0}</strong></div>${listItems(contacts.contacts || [], 'No contacts imported yet. Use the backend CSV import API with consent/source fields.', (c) => `<li>${c.email} · ${c.consentStatus || 'consent'} · ${c.source || 'source missing'}</li>`)}`);
+      const hygieneTotals = hygiene.totals || {};
+      setScreen('#contacts-screen', 'Contacts + list hygiene', `<div class="kv"><span>Total contacts</span><strong>${contacts.count || 0}</strong><span>Risky</span><strong>${hygieneTotals.riskyContacts || 0}</strong><span>Suppressed</span><strong>${hygieneTotals.suppressedContacts || 0}</strong><span>Stale</span><strong>${hygieneTotals.staleContacts || 0}</strong><span>Duplicate groups</span><strong>${hygieneTotals.duplicateGroups || 0}</strong></div>${listItems(contacts.contacts || [], 'No contacts imported yet. Use the backend CSV import API with consent/source fields.', (c) => `<li>${c.email} · ${c.consentStatus || 'consent'} · ${c.source || 'source missing'}</li>`)}<h4>Cleanup planner</h4><p>Safe read-only hygiene dashboard: no contacts are changed, no network/MX checks run, and real delivery stays locked.</p>${listItems(hygiene.recommendations || [], 'No cleanup recommendations yet.', (r) => `<li>${r.priority}: ${r.action} · ${r.count} · ${r.note}</li>`)}<h4>Source quality</h4>${listItems(hygiene.sourceQuality || [], 'No source scores yet.', (s) => `<li>${s.source}: score ${s.score}/100 · total ${s.total} · risky ${s.risky} · suppressed ${s.suppressed}</li>`)}<h4>Top domains</h4>${listItems(hygiene.domainConcentration || [], 'No domain concentration yet.', (d) => `<li>${d.domain}: ${d.count} contacts · ${Math.round((d.share || 0) * 1000) / 10}%</li>`)}`);
       setScreen('#contact-import-screen', 'Contact import', `<p>Paste one contact per line as <code>email,consentStatus,source,firstName,lastName</code>. Explicit consent and source are required; validation can run without storing rows.</p><textarea id="contact-import-csv" placeholder="reader@example.test,opt_in,owned newsletter,Ada,Lovelace"></textarea><div class="toolbar"><button id="validate-contact-import" type="button">Validate contacts</button><button id="run-contact-import" class="secondary" type="button">Import valid batch</button></div><div id="contact-import-result" class="status"></div>`);
       document.querySelector('#validate-contact-import').addEventListener('click', () => submitContactImport('validate'));
       document.querySelector('#run-contact-import').addEventListener('click', () => submitContactImport('import'));
@@ -478,7 +480,9 @@
         ['bounces', metrics.bounces],
         ['complaints', metrics.complaints],
         ['opens', metrics.opens],
-        ['clicks', metrics.clicks]
+        ['clicks', metrics.clicks],
+        ['hygieneRiskContacts', metrics.hygieneRiskContacts],
+        ['hygieneCleanupActions', metrics.hygieneCleanupActions]
       ];
       dashboardMetrics.innerHTML = metricCards
         .map(([label, value]) => `<div class="metric"><strong>${value ?? 0}</strong>${label}</div>`)

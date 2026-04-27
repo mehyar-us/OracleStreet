@@ -12,6 +12,7 @@ import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
+import { buildListHygienePlan } from './lib/listHygiene.js';
 import { listMigrations } from './lib/migrations.js';
 import { monitoringReadiness } from './lib/monitoringReadiness.js';
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
@@ -124,6 +125,7 @@ const dashboardSummary = (session) => {
   const campaignList = listCampaigns();
   const dataSourceList = listDataSources();
   const dataSourceSyncRunList = listDataSourceSyncRuns();
+  const listHygiene = buildListHygienePlan();
   const campaignEngagement = campaignReporting.campaigns.reduce((totals, campaign) => {
     totals.opens += campaign.engagement?.opens || 0;
     totals.clicks += campaign.engagement?.clicks || 0;
@@ -150,6 +152,8 @@ const dashboardSummary = (session) => {
       clicks: emailReporting.totals.clicks,
       campaignOpenRate: campaignEngagement.denominator > 0 ? campaignEngagement.opens / campaignEngagement.denominator : 0,
       campaignClickRate: campaignEngagement.denominator > 0 ? campaignEngagement.clicks / campaignEngagement.denominator : 0,
+      hygieneRiskContacts: listHygiene.totals.riskyContacts,
+      hygieneCleanupActions: listHygiene.recommendations.length,
       emailProvider: emailReporting.provider.provider,
       sendMode: emailReporting.provider.sendMode
     },
@@ -162,6 +166,13 @@ const dashboardSummary = (session) => {
       latestSyncRun: dataSourceSyncRunList.runs[0] || null,
       mappingUi: 'safe-validation-only',
       realSync: false
+    },
+    listHygiene: {
+      mode: listHygiene.mode,
+      totals: listHygiene.totals,
+      recommendations: listHygiene.recommendations.slice(0, 5),
+      cleanupMutation: false,
+      realDeliveryAllowed: false
     },
     safetyGates: {
       consentTracking: 'baseline-enforced',
@@ -448,6 +459,16 @@ export const createHandler = () => {
       const result = importContacts(body.contacts, session.email);
       recordAuditEvent({ action: 'contact_import', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { importedCount: result.importedCount, updatedCount: result.updatedCount, rejectedCount: result.rejectedCount, error: result.error } });
       return jsonResponse(res, result.error ? 400 : 200, result);
+    }
+
+    if (url.pathname === '/api/list-hygiene/plan' || url.pathname === '/list-hygiene/plan') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const staleAfterDays = Number(url.searchParams.get('staleAfterDays') || 180);
+      const result = buildListHygienePlan({ staleAfterDays });
+      recordAuditEvent({ action: 'list_hygiene_plan_view', actorEmail: session.email, status: 'ok', details: { riskyContacts: result.totals.riskyContacts, staleContacts: result.totals.staleContacts, cleanupMutation: false, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/segments' || url.pathname === '/segments') {

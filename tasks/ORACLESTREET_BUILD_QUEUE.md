@@ -41,7 +41,7 @@ Verification:
 
 ### O3 — Visible admin CMS screens
 
-Status: initial safe-read workbench shipped; contact import, template creation/preview, campaign dry-run builder, send queue dry-run dispatch, suppression management, and reporting CSV export workflows shipped; remaining CRUD workflows still pending.
+Status: initial safe-read workbench shipped; contact import, template creation/preview, campaign dry-run builder, send queue dry-run dispatch, suppression management, reporting CSV export workflows, and list hygiene cleanup planner dashboard shipped; remaining CRUD workflows still pending.
 
 Acceptance:
 - Boss can log in and see actual modules, not just placeholder cards.
@@ -112,8 +112,11 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. List hygiene dashboard + cleanup planner API/UI.
-2. Reputation auto-pause threshold controls.
-3. Warm-up policy persistence and campaign schedule cap enforcement.
-4. PostgreSQL-backed repositories for remaining in-memory modules.
-5. Controlled one-recipient MTA live-test runbook/gate.
+1. Reputation auto-pause threshold controls.
+2. Warm-up policy persistence and campaign schedule cap enforcement.
+3. PostgreSQL-backed repositories for remaining in-memory modules.
+4. Controlled one-recipient MTA live-test runbook/gate.
+5. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
+
+Latest shipped slice:
+- List hygiene dashboard + cleanup planner API/UI: `GET /api/list-hygiene/plan` computes duplicate/risky/suppressed/stale/source-quality/domain-concentration signals without mutating contacts, probing networks, or unlocking delivery; the Contacts workbench now surfaces cleanup recommendations.
