@@ -29,6 +29,17 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 10. System records send/open/click/bounce/unsubscribe/complaint events.
 11. Dashboard reports campaign and affiliate performance.
 
+## Feature inventory and next flows
+
+The current shipped feature inventory and next autonomous build flows live in `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`. The build loop must use that file as the durable source of truth for what exists and what to build next, especially:
+
+1. Contact browser search/filter and source-quality drilldowns.
+2. Campaign calendar over warm-up caps.
+3. Multi-user/RBAC admin workflow.
+4. Remote PostgreSQL import scheduler.
+5. Controlled one-recipient MTA proof path.
+6. Reporting dashboard depth.
+
 ## MVP build order
 
 ### 1. Auth + admin shell

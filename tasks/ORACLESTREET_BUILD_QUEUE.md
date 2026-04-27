@@ -8,7 +8,7 @@ Last reset: 2026-04-27
 
 Build OracleStreet into a full private email sending CMS with PostgreSQL-backed persistence, remote PostgreSQL connectors/query tools, reputation-safe sending, PowerMTA integration, visible admin UI, and hard operational gates.
 
-Reference target: `docs/13_FULL_EMAIL_CMS_TARGET.md` and `docs/14_MTA_WARMUP_LIST_HYGIENE_PLAN.md`.
+Reference target: `docs/13_FULL_EMAIL_CMS_TARGET.md`, `docs/14_MTA_WARMUP_LIST_HYGIENE_PLAN.md`, and `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`.
 
 ## Current priority stack
 
@@ -96,7 +96,8 @@ Acceptance:
 
 ## Loop rules
 
-- Every run must read this queue and `docs/13_FULL_EMAIL_CMS_TARGET.md` and `docs/14_MTA_WARMUP_LIST_HYGIENE_PLAN.md` before choosing work.
+- Every run must read this queue, `docs/13_FULL_EMAIL_CMS_TARGET.md`, `docs/14_MTA_WARMUP_LIST_HYGIENE_PLAN.md`, and `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md` before choosing work.
+- Prefer the next unshipped flow from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md` over passive health checks.
 - Prefer shipping one real product slice over only checking health.
 - If Boss says “I see no features,” prioritize visible UI affordances tied to existing backend capability.
 - Install/repair VPS PostgreSQL and deploy migrations autonomously when safe.
@@ -115,12 +116,13 @@ Acceptance:
 - Build feedback loop: bounces/complaints/unsubscribes/events update suppressions, list health, source risk, and reputation dashboards.
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
-Next slices:
-1. Contact browser search/filter and source-quality drilldowns.
-2. Multi-user/RBAC admin workflow.
-3. Campaign calendar UI over warm-up caps.
-4. Contact browser search/filter and source-quality drilldowns.
-5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
+Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
+1. Flow A — Contact browser search/filter and source-quality drilldowns.
+2. Flow B — Campaign calendar UI over warm-up caps.
+3. Flow C — Multi-user/RBAC admin workflow.
+4. Flow D — Remote PostgreSQL import scheduler.
+5. Flow E — Controlled one-recipient MTA proof path/runbook, still manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
+6. Flow F — Reporting dashboard depth.
 
 Latest shipped slice:
 - Remote PostgreSQL approved contact import: `/api/data-source-import/execute` reruns the preview validation, requires exact import approval phrase `I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT`, imports only zero-rejection mapped contacts through the normal contact repository, records imported/updated counts plus sync-run history, and keeps delivery locked.

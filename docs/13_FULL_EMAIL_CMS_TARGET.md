@@ -167,6 +167,8 @@ Boss specifically wants sending while maintaining reputation. Required gates:
 
 The OracleStreet cron must stop treating the project as “health check only.” Every run should ship one real slice or advance one durable blocker.
 
+Current shipped feature inventory and the next mandated build flows are maintained in `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`. The loop must read that file every run and use it to pick the next feature slice after checking the queue.
+
 Priority order:
 
 1. VPS PostgreSQL installation and migration automation.
