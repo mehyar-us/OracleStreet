@@ -4,6 +4,8 @@ import { getEmailProviderConfig, validateSelectedProviderConfig } from './emailP
 import { getRateLimitConfig } from './rateLimits.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const proofAuditRecords = [];
+let proofAuditSequence = 0;
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const maskEmail = (email) => {
@@ -75,6 +77,75 @@ export const controlledLiveTestReadiness = (env = process.env) => {
     },
     realDeliveryAllowed: false
   };
+};
+
+export const listControlledLiveTestProofAudits = () => ({
+  ok: true,
+  mode: 'controlled-live-test-proof-audit-log',
+  count: proofAuditRecords.length,
+  records: proofAuditRecords.map((record) => ({ ...record, recipient: { ...record.recipient }, safety: { ...record.safety } })),
+  realDeliveryAllowed: false
+});
+
+export const recordControlledLiveTestProofAudit = ({ recipientEmail, dryRunProofId, providerMessageId, outcome = 'not_sent', notes = '', actorEmail } = {}, env = process.env) => {
+  const configuredRecipient = normalizeEmail(env.ORACLESTREET_CONTROLLED_TEST_RECIPIENT_EMAIL);
+  const requestedRecipient = normalizeEmail(recipientEmail || configuredRecipient);
+  const cleanProofId = String(dryRunProofId || '').trim();
+  const cleanProviderMessageId = String(providerMessageId || '').trim();
+  const cleanOutcome = String(outcome || '').trim().toLowerCase();
+  const allowedOutcomes = new Set(['not_sent', 'manual_one_message_sent', 'blocked_before_send', 'delivered_observed', 'bounce_observed', 'complaint_observed']);
+  const errors = [];
+
+  if (!EMAIL_RE.test(requestedRecipient)) errors.push('valid_owned_recipient_email_required');
+  if (configuredRecipient && requestedRecipient !== configuredRecipient) errors.push('recipient_must_match_configured_controlled_test_recipient');
+  if (!cleanProofId) errors.push('dry_run_or_local_capture_proof_id_required');
+  if (!allowedOutcomes.has(cleanOutcome)) errors.push('valid_controlled_test_outcome_required');
+  if (cleanOutcome === 'manual_one_message_sent' && !cleanProviderMessageId) errors.push('provider_message_id_required_for_manual_send_record');
+  if (String(notes || '').length > 1000) errors.push('notes_max_1000_chars');
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      mode: 'controlled-live-test-proof-audit-log',
+      errors,
+      recordMutation: false,
+      sendMutation: false,
+      realDeliveryAllowed: false
+    };
+  }
+
+  const record = {
+    id: `controlled_live_proof_${(++proofAuditSequence).toString().padStart(6, '0')}`,
+    outcome: cleanOutcome,
+    recipient: {
+      email: maskEmail(requestedRecipient),
+      owned: String(env.ORACLESTREET_CONTROLLED_TEST_RECIPIENT_OWNED || '').trim().toLowerCase() === 'true',
+      matchesConfiguredRecipient: configuredRecipient ? requestedRecipient === configuredRecipient : false
+    },
+    dryRunProofId: cleanProofId,
+    providerMessageId: cleanProviderMessageId || null,
+    notes: String(notes || '').trim() || null,
+    actorEmail: actorEmail || null,
+    createdAt: new Date().toISOString(),
+    safety: {
+      auditOnly: true,
+      noSend: true,
+      noNetworkProbe: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSuppressionMutation: true,
+      noSecretOutput: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+  proofAuditRecords.push(record);
+  return { ok: true, mode: 'controlled-live-test-proof-audit-log', record: { ...record, recipient: { ...record.recipient }, safety: { ...record.safety } }, recordMutation: true, sendMutation: false, realDeliveryAllowed: false };
+};
+
+export const resetControlledLiveTestProofAuditsForTests = () => {
+  proofAuditRecords.length = 0;
+  proofAuditSequence = 0;
 };
 
 export const planControlledLiveTest = ({ recipientEmail, approvalPhrase, dryRunProofId, actorEmail } = {}, env = process.env) => {

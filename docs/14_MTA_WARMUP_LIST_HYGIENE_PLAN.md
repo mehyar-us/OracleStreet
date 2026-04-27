@@ -100,10 +100,9 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Controlled one-recipient MTA proof audit path.
-2. Reporting dashboard depth.
-3. PostgreSQL persistence for remote import schedules.
-4. Multi-user/RBAC enforcement hardening beyond the safe invite-plan baseline.
+1. Reporting dashboard depth.
+2. PostgreSQL persistence for remote import schedules and controlled proof audits.
+3. Multi-user/RBAC enforcement hardening beyond the safe invite-plan baseline.
 5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
 
 Latest warm-up calendar slice: `GET /api/campaigns/calendar` now renders scheduled dry-run campaigns against sender-domain warm-up caps with planned count, daily cap, remaining capacity, and over-cap days. `POST /api/campaigns/schedule-dry-run` counts already scheduled campaigns on the same sender-domain/day and blocks over-cap schedules before any queue/provider mutation.

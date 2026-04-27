@@ -4,6 +4,7 @@ import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
 import { resetAuditLogForTests } from '../lib/auditLog.js';
+import { resetControlledLiveTestProofAuditsForTests } from '../lib/controlledLiveTestReadiness.js';
 import { resetCampaignsForTests } from '../lib/campaigns.js';
 import { resetContactsForTests } from '../lib/contacts.js';
 import { validateDatabaseConfig } from '../lib/database.js';
@@ -3178,6 +3179,60 @@ test('controlled live test runbook gate requires explicit proof and never sends'
 
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_plan'));
+  });
+});
+
+test('controlled live test proof audit records manual outcomes without sending or leaking secrets', async () => {
+  resetAuditLogForTests();
+  resetControlledLiveTestProofAuditsForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_POWERMTA_PASSWORD: 'pmta-secret',
+    ORACLESTREET_CONTROLLED_TEST_RECIPIENT_EMAIL: 'owned-inbox@example.test',
+    ORACLESTREET_CONTROLLED_TEST_RECIPIENT_OWNED: 'true'
+  }, async () => {
+    const unauth = await request('/api/email/controlled-live-test/proof-audit');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/email/controlled-live-test/proof-audit', {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ recipientEmail: 'owned-inbox@example.test', dryRunProofId: 'dryrun_123', outcome: 'manual_one_message_sent' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('provider_message_id_required_for_manual_send_record'));
+    assert.equal(rejected.body.sendMutation, false);
+    assert.equal(rejected.body.realDeliveryAllowed, false);
+
+    const recorded = await request('/api/email/controlled-live-test/proof-audit', {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ recipientEmail: 'owned-inbox@example.test', dryRunProofId: 'dryrun_123', providerMessageId: 'pmta-proof-001', outcome: 'manual_one_message_sent', notes: 'Manual out-of-band one-message proof recorded after operator action.' })
+    });
+    assert.equal(recorded.status, 200);
+    assert.equal(recorded.body.mode, 'controlled-live-test-proof-audit-log');
+    assert.equal(recorded.body.record.outcome, 'manual_one_message_sent');
+    assert.equal(recorded.body.record.recipient.email, 'ow***@example.test');
+    assert.equal(recorded.body.record.safety.auditOnly, true);
+    assert.equal(recorded.body.record.safety.noSend, true);
+    assert.equal(recorded.body.record.safety.noProviderMutation, true);
+    assert.equal(recorded.body.sendMutation, false);
+    assert.equal(recorded.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(recorded.body).includes('pmta-secret'), false);
+
+    const list = await request('/api/email/controlled-live-test/proof-audit', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.count, 1);
+    assert.equal(list.body.records[0].providerMessageId, 'pmta-proof-001');
+    assert.equal(list.body.realDeliveryAllowed, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_record'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_list'));
   });
 });
 

@@ -6,7 +6,7 @@ import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { campaignCalendar } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
-import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/controlledLiveTestReadiness.js';
+import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
@@ -433,6 +433,24 @@ export const createHandler = () => {
       const result = planControlledLiveTest({ ...body, actorEmail: session.email });
       recordAuditEvent({ action: 'email_controlled_live_test_plan', actorEmail: session.email, target: 'controlled-live-test', status: result.ok ? 'ok' : 'rejected', details: { blockers: result.blockers, noSend: true, noProviderMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/email/controlled-live-test/proof-audit' || url.pathname === '/email/controlled-live-test/proof-audit') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') {
+        const result = listControlledLiveTestProofAudits();
+        recordAuditEvent({ action: 'email_controlled_live_test_proof_audit_list', actorEmail: session.email, target: 'controlled-live-test', status: 'ok', details: { count: result.count, noSend: true, realDeliveryAllowed: false } });
+        return jsonResponse(res, 200, result);
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+        const result = recordControlledLiveTestProofAudit({ ...body, actorEmail: session.email });
+        recordAuditEvent({ action: 'email_controlled_live_test_proof_audit_record', actorEmail: session.email, target: 'controlled-live-test', status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], outcome: result.record?.outcome || body.outcome || null, noSend: true, noNetworkProbe: true, realDeliveryAllowed: false } });
+        return jsonResponse(res, result.ok ? 200 : 400, result);
+      }
+      return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
     }
 
     if (url.pathname === '/api/email/domain-readiness' || url.pathname === '/email/domain-readiness') {

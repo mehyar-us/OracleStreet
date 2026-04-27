@@ -189,6 +189,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Auto-pause threshold controls for bounce, complaint, deferral, and provider-error signals.
 - Recommendation-only auto-pause evaluation without mutating queues/providers.
 - Controlled one-recipient MTA live-test runbook gate without sending.
+- Controlled live-test proof audit log for manual/out-of-band one-recipient outcomes, provider message IDs, and dry-run/local-capture proof IDs without sending or mutating providers/queues.
 - Bounce/complaint ingestion updates suppressions and event state.
 - Real delivery remains locked until final human approval.
 
@@ -300,18 +301,18 @@ Acceptance:
 
 ### Flow E — MTA controlled proof path
 
-Goal: approach a one-owned-recipient live proof without enabling scale sending.
+Status: shipped safe baseline. The Reputation/readiness workbench now includes the controlled live-test runbook gate plus a protected proof-audit workflow for manual/out-of-band one-owned-recipient proof metadata. The proof audit records dry-run/local-capture proof IDs, optional provider message IDs, outcomes, notes, masked recipient metadata, and audit events without sending, probing networks, mutating providers/queues/suppressions, exposing secrets, or unlocking real delivery.
 
-Build:
-- readiness checklist that combines provider config, sender domain readiness, warm-up policy, suppression, consent, and controlled-recipient proof
-- one-message runbook export
+Shipped:
+- readiness checklist that combines provider config, sender domain readiness, rate-limit, bounce mailbox, and controlled-recipient proof gates
+- one-message runbook output
 - manual completion/audit record
 - provider message trace stub for the proof
 
 Acceptance:
 - still does not send automatically
-- requires explicit Boss/human approval phrase for every proof
-- tests prove no queue/provider mutation on planning
+- requires explicit Boss/human approval phrase for every proof runbook
+- tests prove no queue/provider mutation on planning or proof audit recording
 
 ### Flow F — Reporting dashboard depth
 
