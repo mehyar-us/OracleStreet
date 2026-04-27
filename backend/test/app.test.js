@@ -772,9 +772,12 @@ test('send queue requires admin session', async () => {
     body: JSON.stringify({})
   });
   assert.equal(enqueue.status, 401);
+  const dispatch = await request('/api/send-queue/dispatch-next-dry-run', { method: 'POST' });
+  assert.equal(dispatch.status, 401);
 });
 
-test('send queue enqueues only compliant dry-run messages without delivery', async () => {
+test('send queue enqueues and dispatches only compliant dry-run messages without delivery', async () => {
+  resetAuditLogForTests();
   resetSendQueueForTests();
   resetSuppressionsForTests();
   await withAdminEnv(async () => {
@@ -812,12 +815,30 @@ test('send queue enqueues only compliant dry-run messages without delivery', asy
     assert.equal(list.status, 200);
     assert.equal(list.body.count, 1);
     assert.equal(list.body.jobs[0].id, enqueued.body.job.id);
+
+    const dispatched = await request('/api/send-queue/dispatch-next-dry-run', {
+      method: 'POST',
+      headers: { cookie }
+    });
+    assert.equal(dispatched.status, 200);
+    assert.equal(dispatched.body.mode, 'dry-run-dispatch');
+    assert.equal(dispatched.body.job.status, 'dispatched_dry_run');
+    assert.equal(dispatched.body.job.safety.dispatchMode, 'no_external_delivery');
+    assert.equal(dispatched.body.realDelivery, false);
+
+    const afterDispatch = await request('/api/send-queue', { headers: { cookie } });
+    assert.equal(afterDispatch.body.jobs[0].status, 'dispatched_dry_run');
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'send_queue_dispatch_dry_run'));
   });
 });
 
 test('send queue endpoints also work behind nginx stripped api prefix', async () => {
   const res = await request('/send-queue/enqueue', { method: 'POST' });
   assert.equal(res.status, 401);
+  const dispatch = await request('/send-queue/dispatch-next-dry-run', { method: 'POST' });
+  assert.equal(dispatch.status, 401);
 });
 
 test('suppressions require admin session and block dry-run queue recipients', async () => {

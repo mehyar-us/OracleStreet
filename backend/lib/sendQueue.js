@@ -17,8 +17,38 @@ export const listSendQueue = () => ({
   mode: 'dry-run-queue',
   count: queue.length,
   rateLimits: getRateLimitConfig(),
-  jobs: queue.map((job) => ({ ...job }))
+  jobs: queue.map((job) => ({ ...job, safety: { ...job.safety } }))
 });
+
+export const dispatchNextDryRunJob = ({ actorEmail = null } = {}) => {
+  const jobIndex = queue.findIndex((job) => job.status === 'queued_dry_run');
+  if (jobIndex === -1) {
+    return { ok: false, mode: 'dry-run-dispatch', errors: ['no_queued_dry_run_jobs'] };
+  }
+
+  const job = queue[jobIndex];
+  const dispatched = {
+    ...job,
+    status: 'dispatched_dry_run',
+    providerMessageId: `dryrun_dispatch_${Date.now().toString(36)}`,
+    dispatchedBy: actorEmail,
+    dispatchedAt: nowIso(),
+    safety: {
+      ...job.safety,
+      providerAdapter: 'dry-run',
+      dispatchMode: 'no_external_delivery',
+      realDelivery: false
+    }
+  };
+  queue[jobIndex] = dispatched;
+
+  return {
+    ok: true,
+    mode: 'dry-run-dispatch',
+    job: { ...dispatched, safety: { ...dispatched.safety } },
+    realDelivery: false
+  };
+};
 
 export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
   const validation = validateTestMessage(message);

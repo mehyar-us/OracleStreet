@@ -9,7 +9,7 @@ import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { emailReportingSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
-import { enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
+import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
 import { createTemplate, listTemplates, renderTemplatePreview } from './lib/templates.js';
 
@@ -371,6 +371,15 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, { ok: true, mode: 'dry-run-warmup', rateLimits: getRateLimitConfig() });
+    }
+
+    if (url.pathname === '/api/send-queue/dispatch-next-dry-run' || url.pathname === '/send-queue/dispatch-next-dry-run') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = dispatchNextDryRunJob({ actorEmail: session.email });
+      recordAuditEvent({ action: 'send_queue_dispatch_dry_run', actorEmail: session.email, target: result.job?.id || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/send-queue/enqueue' || url.pathname === '/send-queue/enqueue') {
