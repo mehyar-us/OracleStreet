@@ -3,6 +3,7 @@ import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
 import { resetAuditLogForTests } from '../lib/auditLog.js';
+import { resetContactsForTests } from '../lib/contacts.js';
 import { validateDatabaseConfig } from '../lib/database.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
@@ -124,6 +125,7 @@ test('dashboard route requires an admin session', async () => {
 
 test('dashboard route returns protected safe-test summary for admin session', async () => {
   resetAuditLogForTests();
+  resetContactsForTests();
   resetSendQueueForTests();
   resetSuppressionsForTests();
   resetEmailEventsForTests();
@@ -144,6 +146,7 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.user.email, 'admin@example.test');
     assert.equal(dashboard.body.summary.emailProvider, 'dry-run');
     assert.equal(dashboard.body.summary.sendMode, 'safe-test-only');
+    assert.equal(dashboard.body.summary.contacts, 0);
     assert.equal(dashboard.body.summary.queuedSends, 0);
     assert.equal(dashboard.body.emailReporting.mode, 'safe-reporting');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
@@ -272,6 +275,70 @@ test('contact import validation requires admin session', async () => {
   assert.equal(res.body.error, 'unauthorized');
 });
 
+test('contact list and import require admin session', async () => {
+  const list = await request('/api/contacts');
+  assert.equal(list.status, 401);
+  const imported = await request('/api/contacts/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contacts: [] })
+  });
+  assert.equal(imported.status, 401);
+});
+
+test('contact import stores valid consented contacts and updates dashboard count', async () => {
+  resetAuditLogForTests();
+  resetContactsForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const imported = await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'Person@Example.test', consentStatus: 'opt_in', source: 'owned signup form', firstName: 'Pat' },
+        { email: 'two@example.test', consentStatus: 'double_opt_in', source: 'owned controlled import' }
+      ] })
+    });
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.mode, 'in-memory-contact-import');
+    assert.equal(imported.body.importedCount, 2);
+    assert.equal(imported.body.persistenceMode, 'in-memory-until-postgresql-connection-enabled');
+
+    const list = await request('/api/contacts', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.count, 2);
+    assert.equal(list.body.contacts[0].email, 'person@example.test');
+
+    const dashboard = await request('/api/dashboard', { headers: { cookie } });
+    assert.equal(dashboard.body.summary.contacts, 2);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_import'));
+  });
+});
+
+test('contact import rejects invalid rows before storing any contact', async () => {
+  resetContactsForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const imported = await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'bad@example.test', consentStatus: 'unknown', source: 'unknown' },
+        { email: 'good@example.test', consentStatus: 'opt_in', source: 'owned controlled import' }
+      ] })
+    });
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.ok, false);
+    assert.equal(imported.body.mode, 'import-rejected');
+    const list = await request('/api/contacts', { headers: { cookie } });
+    assert.equal(list.body.count, 0);
+  });
+});
+
 test('contact import validation enforces consent source and duplicate gates', async () => {
   await withAdminEnv(async () => {
     const login = await loginAsAdmin();
@@ -298,9 +365,13 @@ test('contact import validation enforces consent source and duplicate gates', as
   });
 });
 
-test('contact import validation endpoint also works behind nginx stripped api prefix', async () => {
-  const res = await request('/contacts/import/validate', { method: 'POST' });
-  assert.equal(res.status, 401);
+test('contact endpoints also work behind nginx stripped api prefix', async () => {
+  const list = await request('/contacts');
+  assert.equal(list.status, 401);
+  const imported = await request('/contacts/import', { method: 'POST' });
+  assert.equal(imported.status, 401);
+  const validate = await request('/contacts/import/validate', { method: 'POST' });
+  assert.equal(validate.status, 401);
 });
 
 

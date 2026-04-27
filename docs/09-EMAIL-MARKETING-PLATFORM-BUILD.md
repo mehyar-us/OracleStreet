@@ -47,8 +47,9 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 
 ### 3. Contacts and suppressions
 
-- [ ] contacts CRUD/import
+- [x] contacts list/import baseline
   - [x] validate-only import endpoint requiring admin session, explicit consent, source metadata, valid email, and no duplicate emails
+  - [x] in-memory contact import/list endpoint until PostgreSQL persistence is wired
 - [ ] suppression list
 - [ ] unsubscribe endpoint
 - [x] source/consent fields required in import validation

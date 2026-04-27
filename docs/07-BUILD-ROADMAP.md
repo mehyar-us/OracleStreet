@@ -19,7 +19,7 @@
 
 ## Phase 2 — CMS core
 
-- [ ] Contacts CRUD/import
+- [x] Contacts list/import baseline
 - [ ] Segments
 - [ ] Campaign CRUD
 - [ ] Templates

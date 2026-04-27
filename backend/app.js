@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
-import { validateContactImport } from './lib/contacts.js';
+import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
 import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
@@ -100,11 +100,12 @@ const requireSession = (req, res) => {
 
 const dashboardSummary = (session) => {
   const emailReporting = emailReportingSummary();
+  const contactList = listContacts();
   return {
     ok: true,
     user: { email: session.email },
     summary: {
-      contacts: 0,
+      contacts: contactList.count,
       segments: 0,
       templates: 0,
       campaigns: 0,
@@ -220,6 +221,13 @@ export const createHandler = () => {
       return jsonResponse(res, 200, listAuditLog());
     }
 
+    if (url.pathname === '/api/contacts' || url.pathname === '/contacts') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, listContacts());
+    }
+
     if (url.pathname === '/api/contacts/import/validate' || url.pathname === '/contacts/import/validate') {
       if (!requireMethod(req, res, 'POST')) return;
       const session = requireSession(req, res);
@@ -228,6 +236,17 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = validateContactImport(body.contacts);
       recordAuditEvent({ action: 'contact_import_validate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { acceptedCount: result.acceptedCount, rejectedCount: result.rejectedCount } });
+      return jsonResponse(res, result.error ? 400 : 200, result);
+    }
+
+    if (url.pathname === '/api/contacts/import' || url.pathname === '/contacts/import') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = importContacts(body.contacts, session.email);
+      recordAuditEvent({ action: 'contact_import', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { importedCount: result.importedCount, updatedCount: result.updatedCount, rejectedCount: result.rejectedCount, error: result.error } });
       return jsonResponse(res, result.error ? 400 : 200, result);
     }
 

@@ -1,7 +1,17 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_CONSENT = new Set(['opt_in', 'double_opt_in']);
 
+const contacts = new Map();
+let sequence = 0;
+
+const nowIso = () => new Date().toISOString();
+
 export const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+export const resetContactsForTests = () => {
+  contacts.clear();
+  sequence = 0;
+};
 
 export const validateContact = (contact = {}, index = 0) => {
   const errors = [];
@@ -28,13 +38,13 @@ export const validateContact = (contact = {}, index = 0) => {
   };
 };
 
-export const validateContactImport = (contacts) => {
-  if (!Array.isArray(contacts)) {
+export const validateContactImport = (incomingContacts) => {
+  if (!Array.isArray(incomingContacts)) {
     return { ok: false, error: 'contacts_array_required' };
   }
 
   const seen = new Set();
-  const rows = contacts.map((contact, index) => {
+  const rows = incomingContacts.map((contact, index) => {
     const row = validateContact(contact, index);
     if (row.contact.email) {
       if (seen.has(row.contact.email)) {
@@ -58,3 +68,51 @@ export const validateContactImport = (contacts) => {
     rejected: rejected.map(({ index, errors, contact }) => ({ index, email: contact.email || null, errors }))
   };
 };
+
+const materializeContact = (contact, actorEmail) => {
+  const existing = contacts.get(contact.email);
+  const id = existing?.id || `ct_${(++sequence).toString().padStart(6, '0')}`;
+  const createdAt = existing?.createdAt || nowIso();
+  const saved = {
+    id,
+    ...contact,
+    status: 'active',
+    actorEmail,
+    createdAt,
+    updatedAt: nowIso()
+  };
+  contacts.set(contact.email, saved);
+  return { ...saved };
+};
+
+export const importContacts = (incomingContacts, actorEmail = null) => {
+  const validation = validateContactImport(incomingContacts);
+  if (validation.error) return validation;
+  if (!validation.ok) return { ...validation, mode: 'import-rejected' };
+
+  const imported = [];
+  const updated = [];
+  validation.accepted.forEach((contact) => {
+    const existed = contacts.has(contact.email);
+    const saved = materializeContact(contact, actorEmail);
+    if (existed) updated.push(saved);
+    else imported.push(saved);
+  });
+
+  return {
+    ok: true,
+    mode: 'in-memory-contact-import',
+    importedCount: imported.length,
+    updatedCount: updated.length,
+    totalContacts: contacts.size,
+    imported,
+    updated,
+    persistenceMode: 'in-memory-until-postgresql-connection-enabled'
+  };
+};
+
+export const listContacts = () => ({
+  ok: true,
+  count: contacts.size,
+  contacts: [...contacts.values()].map((contact) => ({ ...contact }))
+});
