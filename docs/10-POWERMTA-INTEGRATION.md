@@ -105,6 +105,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 10. [x] Campaign-to-send-queue dry-run enqueue baseline with rendered templates, segment audience, suppression exclusion, and no delivery.
 11. [x] Send queue dry-run dispatch baseline that marks queued jobs as dispatched through the dry-run adapter without external delivery.
 12. [x] Dry-run dispatch event tracking baseline that records internal `dispatched` events while keeping manual ingest limited to bounce/complaint.
+13. [x] Real sending readiness safe-gate baseline that reports provider/config/compliance blockers while keeping delivery locked.
 
 ## Current validation endpoints
 
@@ -124,6 +125,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/email/events` requires an admin session and lists in-memory event records until PostgreSQL persistence is wired.
 - `GET /api/email/local-capture` requires an admin session and lists captured local-provider messages for controlled smoke tests only.
 - `GET /api/email/reporting` requires an admin session and summarizes queue, suppression, bounce/complaint, provider, rate-limit, and compliance-gate state without enabling delivery.
+- `GET /api/email/sending-readiness` requires an admin session and reports real-sending readiness blockers without exposing secrets. It always returns `readyForRealDelivery: false`/`realDeliveryAllowed: false` until explicit future live-test approval work exists.
 - `GET /api/dashboard` includes the same safe email reporting summary.
 
 ## PMTA-first development priority

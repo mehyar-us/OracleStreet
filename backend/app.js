@@ -7,7 +7,7 @@ import { ingestEmailEvents, listEmailEvents, recordEmailEvent } from './lib/emai
 import { dryRunSend, getEmailProviderConfig, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
-import { emailReportingSummary } from './lib/reporting.js';
+import { emailReportingSummary, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
@@ -202,6 +202,15 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, emailReportingSummary());
+    }
+
+    if (url.pathname === '/api/email/sending-readiness' || url.pathname === '/email/sending-readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = sendingReadinessSummary();
+      recordAuditEvent({ action: 'email_sending_readiness_view', actorEmail: session.email, target: readiness.provider.provider, details: { readyForRealDelivery: readiness.readyForRealDelivery, blockers: readiness.blockers } });
+      return jsonResponse(res, 200, readiness);
     }
 
     if (url.pathname === '/api/schema/migrations' || url.pathname === '/schema/migrations') {

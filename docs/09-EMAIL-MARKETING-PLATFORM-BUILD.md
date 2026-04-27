@@ -87,6 +87,7 @@ PowerMTA or any real mail provider must not send production mail until these exi
 - bounce mailbox or webhook ingestion plan
 - rate limits per domain/provider
 - audit log for send jobs
+- real-sending readiness gate that reports blockers without exposing secrets
 - manual dry-run proof
 
 ## PMTA-first development priority

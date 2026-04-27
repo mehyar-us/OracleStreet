@@ -1169,6 +1169,8 @@ test('email reporting requires admin session and summarizes safe sending state',
     assert.ok(report.body.totals.auditEvents >= 3);
     assert.equal(report.body.safety.realDeliveryAllowed, false);
     assert.equal(report.body.safety.complianceGates.rateLimits, 'dry_run_warmup_enforced');
+    assert.equal(report.body.sendingReadiness.readyForRealDelivery, false);
+    assert.ok(report.body.sendingReadiness.blockers.includes('real_email_flag_disabled'));
 
     const dashboard = await request('/api/dashboard', { headers: { cookie } });
     assert.equal(dashboard.body.summary.queuedSends, 1);
@@ -1178,5 +1180,58 @@ test('email reporting requires admin session and summarizes safe sending state',
 
 test('email reporting endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/reporting');
+  assert.equal(res.status, 401);
+});
+
+test('sending readiness endpoint requires admin session and keeps real delivery locked', async () => {
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/sending-readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/email/sending-readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'sending-readiness-safe-gate');
+    assert.equal(readiness.body.readyForRealDelivery, false);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+    assert.equal(readiness.body.requiredGates.consentSourceEnforced, true);
+    assert.equal(readiness.body.requiredGates.suppressionEnforced, true);
+    assert.equal(readiness.body.requiredGates.unsubscribeRequired, true);
+    assert.ok(readiness.body.blockers.includes('real_email_flag_disabled'));
+    assert.ok(readiness.body.blockers.includes('live_provider_not_selected'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_sending_readiness_view'));
+  });
+});
+
+test('sending readiness reports provider blockers without exposing secrets', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MAIL_PROVIDER: 'powermta',
+    ORACLESTREET_REAL_EMAIL_ENABLED: 'true',
+    ORACLESTREET_POWERMTA_HOST: 'pmta.example.test',
+    ORACLESTREET_POWERMTA_USERNAME: 'pmta-user',
+    ORACLESTREET_POWERMTA_PASSWORD: 'super-secret-value'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/email/sending-readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.provider.provider, 'powermta');
+    assert.equal(readiness.body.requiredGates.nonDryRunProviderSelected, true);
+    assert.equal(readiness.body.requiredGates.realSendingFlagEnabled, true);
+    assert.equal(readiness.body.readyForRealDelivery, false);
+    assert.ok(readiness.body.blockers.includes('provider_config_invalid'));
+    assert.ok(!JSON.stringify(readiness.body).includes('super-secret-value'));
+  });
+});
+
+test('sending readiness endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/email/sending-readiness');
   assert.equal(res.status, 401);
 });
