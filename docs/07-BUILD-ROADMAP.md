@@ -70,7 +70,7 @@
 - [x] Domain readiness safe-gate baseline
 - [x] TLS readiness safe-gate baseline
 - [x] Backup readiness safe-gate baseline
-- [ ] Monitoring
+- [x] Monitoring readiness safe-gate baseline
 - [ ] Rate limits
 - [ ] Role-based access controls
 

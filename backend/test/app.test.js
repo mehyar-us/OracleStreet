@@ -1888,6 +1888,42 @@ test('backup readiness endpoint requires admin and reports safe plan without dum
   });
 });
 
+test('monitoring readiness endpoint requires admin and reports safe checks without probing', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_PRIMARY_URL: 'http://stuffprettygood.com',
+    ORACLESTREET_FALLBACK_URL: 'http://187.124.147.49',
+    ORACLESTREET_MONITOR_INTERVAL_SECONDS: '300',
+    ORACLESTREET_MONITOR_ALERT_TARGET: 'ops-internal'
+  }, async () => {
+    const unauth = await request('/api/monitoring/readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/monitoring/readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'monitoring-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.endpoints.primaryHealth, 'http://stuffprettygood.com/api/health');
+    assert.equal(readiness.body.endpoints.endpointProbe, 'skipped_readiness_only');
+    assert.equal(readiness.body.services.backend, 'oraclestreet-backend');
+    assert.equal(readiness.body.services.serviceProbe, 'skipped_readiness_only');
+    assert.equal(readiness.body.schedule.intervalSeconds, 300);
+    assert.equal(readiness.body.alerts.targetConfigured, true);
+    assert.equal(readiness.body.safety.noNetworkProbe, true);
+    assert.equal(readiness.body.safety.noServiceMutation, true);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+    assert.ok(readiness.body.recommendedCommands.some((command) => command.includes('nginx -t')));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'monitoring_readiness_view'));
+  });
+});
+
 test('sending readiness reports provider blockers without exposing secrets', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
@@ -1923,4 +1959,6 @@ test('sending readiness endpoint also works behind nginx stripped api prefix', a
   assert.equal(webTls.status, 401);
   const backups = await request('/backups/readiness');
   assert.equal(backups.status, 401);
+  const monitoring = await request('/monitoring/readiness');
+  assert.equal(monitoring.status, 401);
 });

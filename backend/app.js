@@ -10,6 +10,7 @@ import { ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEve
 import { validateEventImportCsv } from './lib/eventImport.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
+import { monitoringReadiness } from './lib/monitoringReadiness.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { campaignReportingSummary, emailReportingSummary, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
@@ -319,6 +320,15 @@ export const createHandler = () => {
       if (!session) return;
       const readiness = backupReadiness();
       recordAuditEvent({ action: 'backup_readiness_view', actorEmail: session.email, target: readiness.storage.path, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, retentionDays: readiness.schedule.retentionDays, noDumpCreated: true } });
+      return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/monitoring/readiness' || url.pathname === '/monitoring/readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = monitoringReadiness();
+      recordAuditEvent({ action: 'monitoring_readiness_view', actorEmail: session.email, target: readiness.endpoints.primaryHealth, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, intervalSeconds: readiness.schedule.intervalSeconds, noNetworkProbe: true } });
       return jsonResponse(res, 200, readiness);
     }
 
