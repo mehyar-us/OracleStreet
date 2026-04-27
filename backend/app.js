@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
+import { createCampaign, estimateCampaign, listCampaigns } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
@@ -105,6 +106,7 @@ const dashboardSummary = (session) => {
   const contactList = listContacts();
   const segmentList = listSegments();
   const templateList = listTemplates();
+  const campaignList = listCampaigns();
   return {
     ok: true,
     user: { email: session.email },
@@ -112,7 +114,7 @@ const dashboardSummary = (session) => {
       contacts: contactList.count,
       segments: segmentList.count,
       templates: templateList.count,
-      campaigns: 0,
+      campaigns: campaignList.count,
       queuedSends: emailReporting.totals.queuedDryRuns,
       suppressions: emailReporting.totals.suppressions,
       emailEvents: emailReporting.totals.emailEvents,
@@ -297,6 +299,29 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = renderTemplatePreview({ id: body.id, data: body.data || {} });
       recordAuditEvent({ action: 'template_preview', actorEmail: session.email, target: body.id || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/campaigns' || url.pathname === '/campaigns') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') return jsonResponse(res, 200, listCampaigns());
+      if (req.method !== 'POST') return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = createCampaign({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'campaign_create', actorEmail: session.email, target: body.name || null, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.campaign?.estimatedAudience, suppressedCount: result.campaign?.suppressedCount, errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/campaigns/estimate' || url.pathname === '/campaigns/estimate') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = estimateCampaign({ segmentId: body.segmentId, templateId: body.templateId });
+      recordAuditEvent({ action: 'campaign_estimate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.estimatedAudience, suppressedCount: result.suppressedCount, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

@@ -3,6 +3,7 @@ import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
 import { resetAuditLogForTests } from '../lib/auditLog.js';
+import { resetCampaignsForTests } from '../lib/campaigns.js';
 import { resetContactsForTests } from '../lib/contacts.js';
 import { validateDatabaseConfig } from '../lib/database.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
@@ -127,6 +128,7 @@ test('dashboard route requires an admin session', async () => {
 
 test('dashboard route returns protected safe-test summary for admin session', async () => {
   resetAuditLogForTests();
+  resetCampaignsForTests();
   resetContactsForTests();
   resetSegmentsForTests();
   resetSendQueueForTests();
@@ -153,6 +155,7 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.summary.contacts, 0);
     assert.equal(dashboard.body.summary.segments, 0);
     assert.equal(dashboard.body.summary.templates, 0);
+    assert.equal(dashboard.body.summary.campaigns, 0);
     assert.equal(dashboard.body.summary.queuedSends, 0);
     assert.equal(dashboard.body.emailReporting.mode, 'safe-reporting');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
@@ -531,6 +534,95 @@ test('template endpoints also work behind nginx stripped api prefix', async () =
   assert.equal(list.status, 401);
   const preview = await request('/templates/preview', { method: 'POST' });
   assert.equal(preview.status, 401);
+});
+
+test('campaign endpoints require admin session', async () => {
+  const list = await request('/api/campaigns');
+  assert.equal(list.status, 401);
+  const create = await request('/api/campaigns', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Campaign', segmentId: 'seg_000001', templateId: 'tpl_000001' })
+  });
+  assert.equal(create.status, 401);
+  const estimate = await request('/api/campaigns/estimate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ segmentId: 'seg_000001', templateId: 'tpl_000001' })
+  });
+  assert.equal(estimate.status, 401);
+});
+
+test('campaign draft baseline estimates safe audience without delivery', async () => {
+  resetAuditLogForTests();
+  resetCampaignsForTests();
+  resetContactsForTests();
+  resetSegmentsForTests();
+  resetSuppressionsForTests();
+  resetTemplatesForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'buyer-a@example.test', consentStatus: 'opt_in', source: 'owned campaign import' },
+        { email: 'buyer-b@example.test', consentStatus: 'double_opt_in', source: 'owned campaign import' }
+      ] })
+    });
+    await request('/api/suppressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'buyer-a@example.test', reason: 'manual', source: 'campaign smoke' })
+    });
+    const segment = await request('/api/segments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Campaign audience', criteria: { sourceIncludes: 'campaign', emailDomain: 'example.test' } })
+    });
+    const template = await request('/api/templates', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Campaign template', subject: 'Hi {{firstName}}', html: '<p>Hello</p><p>unsubscribe anytime</p>' })
+    });
+
+    const estimate = await request('/api/campaigns/estimate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ segmentId: segment.body.segment.id, templateId: template.body.template.id })
+    });
+    assert.equal(estimate.status, 200);
+    assert.equal(estimate.body.mode, 'safe-campaign-estimate');
+    assert.equal(estimate.body.estimatedAudience, 1);
+    assert.equal(estimate.body.suppressedCount, 1);
+    assert.equal(estimate.body.realDelivery, false);
+    assert.equal(estimate.body.compliance.suppressionsExcluded, true);
+
+    const campaign = await request('/api/campaigns', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Draft campaign', segmentId: segment.body.segment.id, templateId: template.body.template.id })
+    });
+    assert.equal(campaign.status, 200);
+    assert.equal(campaign.body.mode, 'in-memory-campaign-draft');
+    assert.equal(campaign.body.campaign.status, 'draft');
+    assert.equal(campaign.body.campaign.realDeliveryAllowed, false);
+
+    const list = await request('/api/campaigns', { headers: { cookie } });
+    assert.equal(list.body.count, 1);
+    const dashboard = await request('/api/dashboard', { headers: { cookie } });
+    assert.equal(dashboard.body.summary.campaigns, 1);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_create'));
+  });
+});
+
+test('campaign endpoints also work behind nginx stripped api prefix', async () => {
+  const list = await request('/campaigns');
+  assert.equal(list.status, 401);
+  const estimate = await request('/campaigns/estimate', { method: 'POST' });
+  assert.equal(estimate.status, 401);
 });
 
 

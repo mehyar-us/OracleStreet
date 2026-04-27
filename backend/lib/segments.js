@@ -85,3 +85,8 @@ export const listSegments = () => ({
   count: segments.size,
   segments: [...segments.values()].map((segment) => ({ ...segment, criteria: { ...segment.criteria } }))
 });
+
+export const getSegment = (id) => {
+  const segment = segments.get(String(id || '').trim());
+  return segment ? { ...segment, criteria: { ...segment.criteria } } : null;
+};

@@ -21,7 +21,7 @@
 
 - [x] Contacts list/import baseline
 - [x] Segments/safe audience estimate baseline
-- [ ] Campaign CRUD
+- [x] Campaign draft/estimate baseline
 - [x] Templates safe preview baseline
 - [x] Audit log baseline
 
