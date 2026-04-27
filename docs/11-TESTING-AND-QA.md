@@ -92,6 +92,7 @@ npm test --prefix backend
 - Encrypted data source secret baseline: `POST /api/data-sources` with `storeSecret: true` must require `ORACLESTREET_DATA_SOURCE_SECRET_KEY`, store only encrypted connection material with AES-256-GCM, return only redacted URL metadata plus an encrypted secret ref, and never expose plaintext secrets in create/list/error responses.
 - Data source sync dry-run baseline: `GET`/`POST /api/data-source-sync-runs` must require admin auth, reject unknown source IDs, validate optional mapping fields, create listable dry-run validation records, skip network probes, import/pull zero remote rows, record future-live-sync blockers, audit actions, and keep `realSync: false`.
 - Frontend remote PostgreSQL mapping/status UI baseline: `/` after admin login must show data source/sync dry-run counters and a redacted mapping/status panel, call only protected metadata endpoints, avoid plaintext secrets, and keep remote row pulls disabled.
+- Data source sync audit log baseline: `GET /api/data-source-sync-audit` must require admin auth, return sanitized `data_source_sync*` events only, audit the view action, avoid plaintext secrets, and keep `realSync: false`.
 - Audit log baseline: `GET /api/audit-log` must require admin auth, sanitize sensitive fields, and record key admin/compliance actions such as login attempts, provider validation, queue enqueue, suppression, unsubscribe, event ingest, and database status checks.
 
 ## Domain readiness checklist

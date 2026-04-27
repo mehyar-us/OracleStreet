@@ -48,6 +48,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - [x] encrypted remote PostgreSQL connection secret baseline with AES-256-GCM secret refs and no plaintext exposure
 - [x] remote PostgreSQL sync dry-run job baseline with source/mapping validation and no network probes or row pulls
 - [x] safe mapping/status UI baseline for remote PostgreSQL sources and sync dry-runs
+- [x] sync audit log baseline for remote PostgreSQL dry-run actions
 
 ### 3. Contacts and suppressions
 

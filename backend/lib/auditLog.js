@@ -29,8 +29,22 @@ export const recordAuditEvent = ({ action, actorEmail = null, target = null, sta
   return { ...event };
 };
 
+const cloneEvent = (event) => ({ ...event, details: { ...event.details } });
+
 export const listAuditLog = () => ({
   ok: true,
   count: auditLog.length,
-  events: auditLog.map((event) => ({ ...event, details: { ...event.details } }))
+  events: auditLog.map(cloneEvent)
 });
+
+export const listAuditEventsByActionPrefix = (prefix) => {
+  const cleanPrefix = String(prefix || '').trim();
+  const events = auditLog.filter((event) => event.action.startsWith(cleanPrefix)).map(cloneEvent);
+  return {
+    ok: true,
+    mode: 'filtered-audit-log',
+    prefix: cleanPrefix,
+    count: events.length,
+    events
+  };
+};

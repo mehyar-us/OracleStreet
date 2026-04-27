@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
+import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
@@ -212,6 +212,15 @@ export const createHandler = () => {
         return jsonResponse(res, result.ok ? 200 : 400, result);
       }
       return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/data-source-sync-audit' || url.pathname === '/data-source-sync-audit') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const audit = listAuditEventsByActionPrefix('data_source_sync');
+      recordAuditEvent({ action: 'data_source_sync_audit_view', actorEmail: session.email, details: { count: audit.count, realSync: false } });
+      return jsonResponse(res, 200, { ...audit, mode: 'data-source-sync-audit-baseline', realSync: false });
     }
 
     if (url.pathname === '/api/email/config' || url.pathname === '/email/config') {

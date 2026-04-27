@@ -436,8 +436,54 @@ test('data source sync dry-run requires admin and validates registered sources w
   });
 });
 
+test('data source sync audit log requires admin and returns sanitized sync events only', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATA_SOURCE_SECRET_KEY: 'test-data-source-secret-key-at-least-32-chars'
+  }, async () => {
+    const unauth = await request('/api/data-source-sync-audit');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const created = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        name: 'Audit warehouse',
+        type: 'postgresql',
+        storeSecret: true,
+        connectionUrl: 'postgresql://reader:audit-secret@warehouse.example.test:5432/affiliate?sslmode=require'
+      })
+    });
+    await request('/api/data-source-sync-runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ dataSourceId: created.body.source.id, mapping: { fields: ['email'] } })
+    });
+
+    const audit = await request('/api/data-source-sync-audit', { headers: { cookie } });
+    assert.equal(audit.status, 200);
+    assert.equal(audit.body.mode, 'data-source-sync-audit-baseline');
+    assert.equal(audit.body.realSync, false);
+    assert.ok(audit.body.events.length >= 1);
+    assert.ok(audit.body.events.every((event) => event.action.startsWith('data_source_sync')));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_dry_run'));
+    assert.equal(JSON.stringify(audit.body).includes('audit-secret'), false);
+  });
+});
+
 test('data source sync run endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/data-source-sync-runs');
+  assert.equal(res.status, 401);
+});
+
+test('data source sync audit endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/data-source-sync-audit');
   assert.equal(res.status, 401);
 });
 
