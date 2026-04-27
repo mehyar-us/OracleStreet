@@ -5,7 +5,7 @@ import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { campaignCalendar } from './lib/campaignCalendar.js';
-import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
+import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
@@ -700,7 +700,7 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = createCampaign({ ...body, actorEmail: session.email });
-      recordAuditEvent({ action: 'campaign_create', actorEmail: session.email, target: body.name || null, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.campaign?.estimatedAudience, suppressedCount: result.campaign?.suppressedCount, errors: result.errors || [], realDelivery: false } });
+      recordAuditEvent({ action: 'campaign_create', actorEmail: session.email, target: result.campaign?.id || body.name || null, status: result.ok ? 'ok' : 'rejected', details: { campaignId: result.campaign?.id || null, estimatedAudience: result.campaign?.estimatedAudience, suppressedCount: result.campaign?.suppressedCount, hasAffiliateMetadata: Boolean(result.affiliate?.affiliateProgram || result.affiliate?.affiliateOfferId), errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
@@ -755,6 +755,26 @@ export const createHandler = () => {
       const result = enqueueCampaignDryRun({ campaignId: body.campaignId, actorEmail: session.email });
       recordAuditEvent({ action: 'campaign_enqueue_dry_run', actorEmail: session.email, target: body.campaignId || null, status: result.ok ? 'ok' : 'rejected', details: { enqueuedCount: result.enqueuedCount, rejectedCount: result.rejectedCount, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/campaigns/affiliate-summary' || url.pathname === '/campaigns/affiliate-summary') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const summary = campaignAffiliateSummary();
+      recordAuditEvent({ action: 'campaign_affiliate_summary_view', actorEmail: session.email, details: { campaignCount: summary.count, programs: summary.programs.length, noSecretOutput: true, realDelivery: false } });
+      return jsonResponse(res, 200, summary);
+    }
+
+    if (url.pathname === '/api/campaigns/audit-timeline' || url.pathname === '/campaigns/audit-timeline') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const campaignId = url.searchParams.get('campaignId') || '';
+      const campaignEvents = listAuditLog().events.filter((event) => !campaignId || event.target === campaignId || event.details?.campaignId === campaignId || event.target === campaignId).filter((event) => event.action.startsWith('campaign_'));
+      const result = { ok: true, mode: 'campaign-audit-timeline-safe-summary', campaignId: campaignId || null, count: campaignEvents.length, events: campaignEvents.slice(0, 100), safety: { adminSessionRequired: true, noSecretsIncluded: true, noUserMutation: true, realDeliveryAllowed: false }, realDeliveryAllowed: false };
+      recordAuditEvent({ action: 'campaign_audit_timeline_view', actorEmail: session.email, target: campaignId || 'all-campaigns', details: { count: result.count, noSecretOutput: true, realDelivery: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/campaigns/reporting' || url.pathname === '/campaigns/reporting') {

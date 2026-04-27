@@ -243,6 +243,10 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/campaigns\/approve-dry-run/);
   assert.match(html, /api\/campaigns\/schedule-dry-run/);
   assert.match(html, /api\/campaigns\/enqueue-dry-run/);
+  assert.match(html, /api\/campaigns\/affiliate-summary/);
+  assert.match(html, /api\/campaigns\/audit-timeline/);
+  assert.match(html, /Affiliate metadata rollup/);
+  assert.match(html, /campaign-affiliate-program/);
   assert.match(html, /Estimate audience/);
   assert.match(html, /Enqueue dry-run/);
   assert.match(html, /send-queue-screen/);
@@ -331,6 +335,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(scheduleProofMigration);
     assert.match(scheduleProofMigration.description, /remote import schedules and controlled proof audits/);
     assert.ok(scheduleProofMigration.statements >= 7);
+    const affiliateMetadataMigration = res.body.migrations.find((migration) => migration.id === '010_campaign_affiliate_metadata');
+    assert.ok(affiliateMetadataMigration);
+    assert.match(affiliateMetadataMigration.description, /affiliate\/campaign metadata/);
+    assert.ok(affiliateMetadataMigration.statements >= 2);
   });
 });
 
@@ -1522,11 +1530,25 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     const campaign = await request('/api/campaigns', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ name: 'Draft campaign', segmentId: segment.body.segment.id, templateId: template.body.template.id })
+      body: JSON.stringify({
+        name: 'Draft campaign',
+        segmentId: segment.body.segment.id,
+        templateId: template.body.template.id,
+        affiliateProgram: 'owned-affiliate',
+        affiliateOfferId: 'offer-123',
+        payoutModel: 'CPA',
+        trackingTemplate: 'https://tracker.example.test/click?offer=offer-123',
+        utmSource: 'oraclestreet-test',
+        utmCampaign: 'draft-campaign',
+        campaignNotes: 'planning metadata only'
+      })
     });
     assert.equal(campaign.status, 200);
     assert.equal(campaign.body.mode, 'in-memory-campaign-draft');
     assert.equal(campaign.body.campaign.status, 'draft');
+    assert.equal(campaign.body.campaign.affiliateProgram, 'owned-affiliate');
+    assert.equal(campaign.body.campaign.affiliate.affiliateOfferId, 'offer-123');
+    assert.equal(campaign.body.campaign.affiliate.trackingTemplateConfigured, true);
     assert.equal(campaign.body.campaign.realDeliveryAllowed, false);
 
     const prematureEnqueue = await request('/api/campaigns/enqueue-dry-run', {
@@ -1618,6 +1640,21 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(unsubscribe.status, 200);
     assert.equal(unsubscribe.body.campaignId, campaign.body.campaign.id);
 
+    const affiliateSummary = await request('/api/campaigns/affiliate-summary', { headers: { cookie } });
+    assert.equal(affiliateSummary.status, 200);
+    assert.equal(affiliateSummary.body.mode, 'campaign-affiliate-metadata-safe-summary');
+    assert.equal(affiliateSummary.body.programs[0].affiliateProgram, 'owned-affiliate');
+    assert.equal(affiliateSummary.body.campaigns[0].affiliate.affiliateOfferId, 'offer-123');
+    assert.equal(affiliateSummary.body.safety.noExternalDelivery, true);
+    assert.equal(affiliateSummary.body.realDeliveryAllowed, false);
+
+    const campaignTimeline = await request(`/api/campaigns/audit-timeline?campaignId=${campaign.body.campaign.id}`, { headers: { cookie } });
+    assert.equal(campaignTimeline.status, 200);
+    assert.equal(campaignTimeline.body.mode, 'campaign-audit-timeline-safe-summary');
+    assert.ok(campaignTimeline.body.events.some((event) => event.action === 'campaign_create'));
+    assert.equal(campaignTimeline.body.safety.noSecretsIncluded, true);
+    assert.equal(campaignTimeline.body.realDeliveryAllowed, false);
+
     const campaignReport = await request('/api/campaigns/reporting', { headers: { cookie } });
     assert.equal(campaignReport.status, 200);
     assert.equal(campaignReport.body.mode, 'campaign-reporting-safe-summary');
@@ -1631,6 +1668,7 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(campaignReport.body.campaigns[0].engagement.clickRate, 1);
     assert.equal(campaignReport.body.campaigns[0].engagement.deliveryMode, 'dry-run-events-only');
     assert.equal(campaignReport.body.campaigns[0].unsubscribes, 1);
+    assert.equal(campaignReport.body.campaigns[0].affiliate.affiliateProgram, 'owned-affiliate');
 
     const dashboard = await request('/api/dashboard', { headers: { cookie } });
     assert.equal(dashboard.body.summary.campaigns, 1);
@@ -1645,6 +1683,8 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_schedule_dry_run'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_enqueue_dry_run'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_reporting_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_affiliate_summary_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_audit_timeline_view'));
   });
 });
 
@@ -1661,6 +1701,10 @@ test('campaign endpoints also work behind nginx stripped api prefix', async () =
   assert.equal(enqueue.status, 401);
   const reporting = await request('/campaigns/reporting');
   assert.equal(reporting.status, 401);
+  const affiliate = await request('/campaigns/affiliate-summary');
+  assert.equal(affiliate.status, 401);
+  const timeline = await request('/campaigns/audit-timeline');
+  assert.equal(timeline.status, 401);
 });
 
 

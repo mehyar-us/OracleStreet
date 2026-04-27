@@ -117,11 +117,12 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Affiliate/campaign metadata and audit timeline depth.
-2. Remote source persistence for source registry/encrypted secret metadata.
-3. Password reset/invite acceptance workflow for full multi-user activation.
+1. Remote source persistence for source registry/encrypted secret metadata.
+2. Password reset/invite acceptance workflow for full multi-user activation.
+3. Saved segment filters/snapshots for reproducible campaign audiences.
 
 Latest shipped slice:
+- Affiliate/campaign metadata and audit timeline depth: migration `010_campaign_affiliate_metadata` adds campaign planning metadata columns; campaign drafts can capture affiliate program, offer ID, payout model, tracking-template configured flag, UTM source/campaign, and notes; `/api/campaigns/affiliate-summary` and `/api/campaigns/audit-timeline` expose protected no-secret/no-delivery rollups in the Campaigns UI; reporting carries affiliate metadata without unlocking delivery.
 - RBAC enforcement hardening: added a protected route-permission policy endpoint, visible Users/RBAC policy surface, permission checks for hardened admin/user/audit/contact-import/data-source write paths, and audited `rbac_permission_denied` responses with no user mutation, role mutation, secret output, or delivery unlock.
 - PostgreSQL persistence hardening for remote import schedules and controlled proof audits: migration `009_schedule_proof_runtime` adds `data_source_import_schedules` and `controlled_live_test_proof_audits`; both runtime paths now use local `psql` repositories on VPS when enabled, keep safe in-memory fallback for tests/adapter failure, never print secrets, and preserve no-pull/no-send/no-mutation posture.
 - Flow F reporting dashboard depth safe baseline: `/api/email/reporting/dashboard` provides protected aggregate campaign leaderboard, source performance, domain performance, event trend, queue-status, and export-link metadata; the Reporting UI exposes the cards/lists after login, audits dashboard views, includes no secrets, probes no networks, sends no email, and keeps real delivery locked.

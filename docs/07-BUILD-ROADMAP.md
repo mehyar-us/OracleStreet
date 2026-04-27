@@ -43,7 +43,8 @@
 - [x] Deepen reporting dashboard
 - [x] PostgreSQL-persist remote import schedules and controlled proof audits
 - [x] Harden RBAC enforcement beyond safe planning baseline
-- [ ] Add affiliate/campaign metadata and audit timeline depth
+- [x] Add affiliate/campaign metadata and audit timeline depth
+- [ ] Persist remote source registry/encrypted secret metadata beyond safe baseline
 - [x] Add warm-up planner controls UI
 - [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI

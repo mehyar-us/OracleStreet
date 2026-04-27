@@ -9,7 +9,48 @@ let sequence = 0;
 
 const nowIso = () => new Date().toISOString();
 
-const pgRowToCampaign = ([id, name, status, segmentId, templateId, estimatedAudience, suppressedCount, approvedBy, approvedAt, scheduledAt, senderDomain, warmupDay, warmupDailyCap, warmupPlannedCount, scheduledBy, queuedDryRunCount, createdAt, updatedAt]) => ({
+const cleanText = (value, max = 160) => String(value || '').trim().slice(0, max);
+
+const normalizeAffiliateMetadata = (input = {}) => {
+  const affiliate = input.affiliate || {};
+  const metadata = input.metadata || {};
+  const normalized = {
+    affiliateProgram: cleanText(input.affiliateProgram || affiliate.program || metadata.affiliateProgram),
+    affiliateOfferId: cleanText(input.affiliateOfferId || affiliate.offerId || metadata.affiliateOfferId),
+    payoutModel: cleanText(input.payoutModel || affiliate.payoutModel || metadata.payoutModel, 80),
+    trackingTemplate: cleanText(input.trackingTemplate || affiliate.trackingTemplate || metadata.trackingTemplate, 500),
+    utmSource: cleanText(input.utmSource || metadata.utmSource, 120),
+    utmCampaign: cleanText(input.utmCampaign || metadata.utmCampaign, 120),
+    campaignNotes: cleanText(input.campaignNotes || input.notes || metadata.campaignNotes, 600)
+  };
+  return {
+    ...normalized,
+    hasAffiliateMetadata: Object.values(normalized).some(Boolean),
+    metadata: {
+      affiliateProgram: normalized.affiliateProgram || null,
+      affiliateOfferId: normalized.affiliateOfferId || null,
+      payoutModel: normalized.payoutModel || null,
+      trackingTemplateConfigured: Boolean(normalized.trackingTemplate),
+      utmSource: normalized.utmSource || null,
+      utmCampaign: normalized.utmCampaign || null,
+      campaignNotesConfigured: Boolean(normalized.campaignNotes),
+      realDeliveryAllowed: false
+    }
+  };
+};
+
+const affiliateSummary = (campaign) => ({
+  affiliateProgram: campaign.affiliateProgram || null,
+  affiliateOfferId: campaign.affiliateOfferId || null,
+  payoutModel: campaign.payoutModel || null,
+  trackingTemplateConfigured: Boolean(campaign.trackingTemplate),
+  utmSource: campaign.utmSource || null,
+  utmCampaign: campaign.utmCampaign || null,
+  campaignNotesConfigured: Boolean(campaign.campaignNotes),
+  realDeliveryAllowed: false
+});
+
+const pgRowToCampaign = ([id, name, status, segmentId, templateId, estimatedAudience, suppressedCount, approvedBy, approvedAt, scheduledAt, senderDomain, warmupDay, warmupDailyCap, warmupPlannedCount, scheduledBy, queuedDryRunCount, affiliateProgram, affiliateOfferId, payoutModel, trackingTemplate, utmSource, utmCampaign, campaignNotes, metadataJson, createdAt, updatedAt]) => ({
   id,
   name,
   status,
@@ -26,13 +67,22 @@ const pgRowToCampaign = ([id, name, status, segmentId, templateId, estimatedAudi
   warmupPlannedCount: warmupPlannedCount ? Number(warmupPlannedCount) : null,
   scheduledBy: scheduledBy || null,
   queuedDryRunCount: Number(queuedDryRunCount || 0),
+  affiliateProgram: affiliateProgram || null,
+  affiliateOfferId: affiliateOfferId || null,
+  payoutModel: payoutModel || null,
+  trackingTemplate: trackingTemplate || null,
+  utmSource: utmSource || null,
+  utmCampaign: utmCampaign || null,
+  campaignNotes: campaignNotes || null,
+  metadata: metadataJson ? JSON.parse(metadataJson) : {},
+  affiliate: affiliateSummary({ affiliateProgram, affiliateOfferId, payoutModel, trackingTemplate, utmSource, utmCampaign, campaignNotes }),
   realDeliveryAllowed: false,
   actorEmail: null,
   createdAt,
   updatedAt: updatedAt || null
 });
 
-const campaignSelect = `id::text, name, status, coalesce(segment_id, ''), coalesce(template_id, ''), estimated_audience::text, suppressed_count::text, coalesce(approved_by, ''), coalesce(approved_at::text, ''), coalesce(scheduled_at::text, ''), coalesce(sender_domain, ''), coalesce(warmup_day::text, ''), coalesce(warmup_daily_cap::text, ''), coalesce(warmup_planned_count::text, ''), coalesce(scheduled_by, ''), queued_dry_run_count::text, created_at::text, updated_at::text`;
+const campaignSelect = `id::text, name, status, coalesce(segment_id, ''), coalesce(template_id, ''), estimated_audience::text, suppressed_count::text, coalesce(approved_by, ''), coalesce(approved_at::text, ''), coalesce(scheduled_at::text, ''), coalesce(sender_domain, ''), coalesce(warmup_day::text, ''), coalesce(warmup_daily_cap::text, ''), coalesce(warmup_planned_count::text, ''), coalesce(scheduled_by, ''), queued_dry_run_count::text, coalesce(affiliate_program, ''), coalesce(affiliate_offer_id, ''), coalesce(payout_model, ''), coalesce(tracking_template, ''), coalesce(utm_source, ''), coalesce(utm_campaign, ''), coalesce(campaign_notes, ''), metadata::text, created_at::text, updated_at::text`;
 
 const listCampaignsFromPostgres = () => runLocalPgRows(`
   SELECT ${campaignSelect}
@@ -99,19 +149,21 @@ export const estimateCampaign = ({ segmentId, templateId }) => {
   };
 };
 
-export const createCampaign = ({ name, segmentId, templateId, actorEmail = null }) => {
+export const createCampaign = ({ name, segmentId, templateId, actorEmail = null, ...metadataInput }) => {
   const cleanName = String(name || '').trim();
   const errors = [];
   if (!cleanName) errors.push('campaign_name_required');
   const estimate = estimateCampaign({ segmentId, templateId });
   if (!estimate.ok) errors.push(...estimate.errors);
+  const affiliate = normalizeAffiliateMetadata(metadataInput);
+  if (affiliate.trackingTemplate && !/^https?:\/\//i.test(affiliate.trackingTemplate)) errors.push('tracking_template_url_required');
   if (errors.length > 0) return { ok: false, errors };
 
   if (isPgRepositoryEnabled('campaigns')) {
     try {
       const rows = runLocalPgRows(`
-        INSERT INTO campaigns (name, status, segment_id, template_id, estimated_audience, suppressed_count, updated_at)
-        VALUES (${sqlLiteral(cleanName)}, 'draft', ${sqlLiteral(segmentId)}, ${sqlLiteral(templateId)}, ${Number(estimate.estimatedAudience || 0)}, ${Number(estimate.suppressedCount || 0)}, now())
+        INSERT INTO campaigns (name, status, segment_id, template_id, estimated_audience, suppressed_count, affiliate_program, affiliate_offer_id, payout_model, tracking_template, utm_source, utm_campaign, campaign_notes, metadata, updated_at)
+        VALUES (${sqlLiteral(cleanName)}, 'draft', ${sqlLiteral(segmentId)}, ${sqlLiteral(templateId)}, ${Number(estimate.estimatedAudience || 0)}, ${Number(estimate.suppressedCount || 0)}, ${sqlLiteral(affiliate.affiliateProgram || null)}, ${sqlLiteral(affiliate.affiliateOfferId || null)}, ${sqlLiteral(affiliate.payoutModel || null)}, ${sqlLiteral(affiliate.trackingTemplate || null)}, ${sqlLiteral(affiliate.utmSource || null)}, ${sqlLiteral(affiliate.utmCampaign || null)}, ${sqlLiteral(affiliate.campaignNotes || null)}, ${sqlLiteral(JSON.stringify(affiliate.metadata))}::jsonb, now())
         RETURNING ${campaignSelect};
       `);
       return {
@@ -119,6 +171,7 @@ export const createCampaign = ({ name, segmentId, templateId, actorEmail = null 
         mode: 'postgresql-campaign-draft',
         campaign: pgRowToCampaign(rows[0]),
         estimate,
+        affiliate: affiliate.metadata,
         persistenceMode: 'postgresql-local-psql-repository'
       };
     } catch (error) {
@@ -134,6 +187,15 @@ export const createCampaign = ({ name, segmentId, templateId, actorEmail = null 
     status: 'draft',
     estimatedAudience: estimate.estimatedAudience,
     suppressedCount: estimate.suppressedCount,
+    affiliateProgram: affiliate.affiliateProgram || null,
+    affiliateOfferId: affiliate.affiliateOfferId || null,
+    payoutModel: affiliate.payoutModel || null,
+    trackingTemplate: affiliate.trackingTemplate || null,
+    utmSource: affiliate.utmSource || null,
+    utmCampaign: affiliate.utmCampaign || null,
+    campaignNotes: affiliate.campaignNotes || null,
+    metadata: affiliate.metadata,
+    affiliate: affiliate.metadata,
     realDeliveryAllowed: false,
     actorEmail,
     createdAt: nowIso(),
@@ -146,6 +208,7 @@ export const createCampaign = ({ name, segmentId, templateId, actorEmail = null 
     mode: 'in-memory-campaign-draft',
     campaign: { ...campaign },
     estimate,
+    affiliate: affiliate.metadata,
     persistenceMode: isPgRepositoryEnabled('campaigns') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
   };
 };
@@ -316,6 +379,36 @@ const contactRenderData = (contact) => ({
   source: contact.source,
   consentStatus: contact.consentStatus
 });
+
+export const campaignAffiliateSummary = () => {
+  const rows = (listCampaigns().campaigns || []).map((campaign) => ({
+    campaignId: campaign.id,
+    name: campaign.name,
+    status: campaign.status,
+    estimatedAudience: campaign.estimatedAudience || 0,
+    affiliate: affiliateSummary(campaign),
+    hasAffiliateMetadata: Boolean(campaign.affiliateProgram || campaign.affiliateOfferId || campaign.payoutModel || campaign.utmCampaign || campaign.utmSource),
+    realDeliveryAllowed: false
+  }));
+  const byProgram = rows.reduce((map, row) => {
+    const key = row.affiliate.affiliateProgram || 'unassigned';
+    const existing = map.get(key) || { affiliateProgram: key, campaigns: 0, estimatedAudience: 0, offers: new Set() };
+    existing.campaigns += 1;
+    existing.estimatedAudience += row.estimatedAudience;
+    if (row.affiliate.affiliateOfferId) existing.offers.add(row.affiliate.affiliateOfferId);
+    map.set(key, existing);
+    return map;
+  }, new Map());
+  return {
+    ok: true,
+    mode: 'campaign-affiliate-metadata-safe-summary',
+    count: rows.length,
+    campaigns: rows,
+    programs: [...byProgram.values()].map((row) => ({ ...row, offers: [...row.offers], realDeliveryAllowed: false })),
+    safety: { adminSessionRequired: true, noSecretsIncluded: true, noExternalDelivery: true, realDeliveryAllowed: false },
+    realDeliveryAllowed: false
+  };
+};
 
 export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = process.env }) => {
   const campaign = getCampaign(campaignId);

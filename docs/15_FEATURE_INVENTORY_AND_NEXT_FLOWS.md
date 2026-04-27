@@ -113,7 +113,8 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Campaign-to-send-queue dry-run enqueue.
 - PostgreSQL runtime adapter for campaigns.
 - Campaign engagement reporting baseline.
-- Affiliate/campaign metadata remains a future expansion lane.
+- Affiliate/campaign metadata for program, offer, payout model, tracking-template configured flag, UTM source/campaign, and notes.
+- Campaign affiliate summary API/UI rollups and safe campaign audit timeline.
 
 ### Send queue and email engine
 
@@ -211,6 +212,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - RBAC route permission policy safe gate.
 - Secret redaction in config/status surfaces.
 - Runtime persistence migration `009_schedule_proof_runtime` for remote import schedules and controlled proof audits.
+- Runtime persistence migration `010_campaign_affiliate_metadata` for campaign affiliate/planning metadata.
 - Tests for every shipped slice.
 
 ## Current safety posture
@@ -324,13 +326,16 @@ Acceptance:
 
 ### Flow F — Reporting dashboard depth
 
-Status: shipped safe baseline. The Reporting workbench now calls `/api/email/reporting/dashboard` for aggregate campaign/source/domain/trend insight and still links to CSV export previews. The endpoint is admin-only, aggregate/read-only, contains no secrets, probes no networks, sends nothing, and never unlocks real delivery.
+Status: shipped safe baseline plus affiliate metadata depth. The Reporting workbench now calls `/api/email/reporting/dashboard` for aggregate campaign/source/domain/trend insight and still links to CSV export previews. Campaign reporting includes affiliate metadata summaries, and the Campaigns workbench includes `/api/campaigns/affiliate-summary` plus `/api/campaigns/audit-timeline`. The endpoints are admin-only, aggregate/read-only except campaign draft metadata capture, contain no secrets, probe no networks, send nothing, and never unlock real delivery.
 
 Shipped:
 - campaign/source/domain report cards and leaderboard
 - bounce/complaint/open/click event trend summaries
 - source-quality/domain impact on engagement and suppression risk
 - export buttons linked to existing CSV preview
+- campaign affiliate program/offer/payout/UTM planning metadata
+- campaign affiliate summary rollups
+- campaign audit timeline from safe audit events
 
 Acceptance:
 - visible reporting UI

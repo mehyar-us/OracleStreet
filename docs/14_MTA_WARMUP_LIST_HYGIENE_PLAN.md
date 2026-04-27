@@ -100,9 +100,11 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Affiliate/campaign metadata and audit timeline depth.
-2. Remote source persistence for source registry/encrypted secret metadata.
-3. Password reset/invite acceptance workflow for full multi-user activation.
-5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
+1. Remote source persistence for source registry/encrypted secret metadata.
+2. Password reset/invite acceptance workflow for full multi-user activation.
+3. Saved segment filters/snapshots for reproducible campaign audiences.
+4. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
+
+Latest affiliate/campaign slice: campaign drafts now capture safe affiliate program/offer/payout/UTM/planning metadata, `/api/campaigns/affiliate-summary` summarizes affiliate rollups, and `/api/campaigns/audit-timeline` exposes campaign audit history without secrets, probes, provider mutation, or delivery unlock.
 
 Latest warm-up calendar slice: `GET /api/campaigns/calendar` now renders scheduled dry-run campaigns against sender-domain warm-up caps with planned count, daily cap, remaining capacity, and over-cap days. `POST /api/campaigns/schedule-dry-run` counts already scheduled campaigns on the same sender-domain/day and blocks over-cap schedules before any queue/provider mutation.

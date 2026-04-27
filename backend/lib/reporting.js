@@ -133,6 +133,15 @@ export const campaignReportingSummary = () => {
         deliveryMode: 'dry-run-events-only'
       },
       unsubscribes: unsubscribeSuppressions.length,
+      affiliate: campaign.affiliate || {
+        affiliateProgram: campaign.affiliateProgram || null,
+        affiliateOfferId: campaign.affiliateOfferId || null,
+        payoutModel: campaign.payoutModel || null,
+        trackingTemplateConfigured: Boolean(campaign.trackingTemplate),
+        utmSource: campaign.utmSource || null,
+        utmCampaign: campaign.utmCampaign || null,
+        realDeliveryAllowed: false
+      },
       realDeliveryAllowed: false
     };
   });
@@ -205,6 +214,7 @@ export const reportingDashboardDepth = (env = process.env) => {
     openRate: campaign.engagement.openRate,
     clickRate: campaign.engagement.clickRate,
     unsubscribes: campaign.unsubscribes,
+    affiliate: campaign.affiliate,
     realDeliveryAllowed: false
   })).sort((a, b) => (b.opens + b.clicks) - (a.opens + a.clicks)).slice(0, 10);
   const eventCounts = eventCountsFor(events.events || []);
@@ -242,6 +252,7 @@ export const reportingDashboardDepth = (env = process.env) => {
       noExternalDelivery: true,
       noNetworkProbe: true,
       aggregateOnly: true,
+      affiliateMetadataOnly: true,
       realDeliveryAllowed: false
     },
     realDeliveryAllowed: false
