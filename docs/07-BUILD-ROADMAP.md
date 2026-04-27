@@ -32,7 +32,7 @@
 - [x] Controlled test-send dry-run endpoint
 - [x] SMTP/provider adapter config validation
 - [x] PowerMTA SMTP adapter config validation
-- [ ] Send queue
+- [x] Send queue dry-run enqueue baseline
 - [ ] Suppression/unsubscribe handling
 - [ ] Rate limits and warm-up controls
 - [ ] Bounce/complaint ingestion

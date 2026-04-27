@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
+import { resetSendQueueForTests } from '../lib/sendQueue.js';
 
 const request = async (path, options = {}) => {
   const server = http.createServer(createHandler());
@@ -342,5 +343,61 @@ test('SMTP provider validation rejects missing safe sender config', async () => 
 
 test('email provider validation endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/provider/validate', { method: 'POST' });
+  assert.equal(res.status, 401);
+});
+
+test('send queue requires admin session', async () => {
+  const list = await request('/api/send-queue');
+  assert.equal(list.status, 401);
+  const enqueue = await request('/api/send-queue/enqueue', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  assert.equal(enqueue.status, 401);
+});
+
+test('send queue enqueues only compliant dry-run messages without delivery', async () => {
+  resetSendQueueForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ to: 'owned@example.test', subject: 'Missing gates', html: '<p>Hello</p>' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('explicit_consent_required'));
+    assert.ok(rejected.body.errors.includes('unsubscribe_link_required'));
+
+    const enqueued = await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'Owned-Inbox@Example.test',
+        subject: 'OracleStreet queue smoke',
+        html: '<p>Controlled queue test.</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(enqueued.status, 200);
+    assert.equal(enqueued.body.ok, true);
+    assert.equal(enqueued.body.realDelivery, false);
+    assert.equal(enqueued.body.job.status, 'queued_dry_run');
+    assert.equal(enqueued.body.job.to, 'owned-inbox@example.test');
+    assert.equal(enqueued.body.job.safety.consentChecked, true);
+    assert.equal(enqueued.body.job.safety.realDelivery, false);
+
+    const list = await request('/api/send-queue', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.count, 1);
+    assert.equal(list.body.jobs[0].id, enqueued.body.job.id);
+  });
+});
+
+test('send queue endpoints also work behind nginx stripped api prefix', async () => {
+  const res = await request('/send-queue/enqueue', { method: 'POST' });
   assert.equal(res.status, 401);
 });

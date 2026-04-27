@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { validateContactImport } from './lib/contacts.js';
 import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
+import { enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 
 const SESSION_COOKIE = 'oraclestreet_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
@@ -208,6 +209,23 @@ export const createHandler = () => {
         validation: validateSelectedProviderConfig(),
         safeDefault: 'network_probe_skipped_no_delivery'
       });
+    }
+
+    if (url.pathname === '/api/send-queue' || url.pathname === '/send-queue') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, listSendQueue());
+    }
+
+    if (url.pathname === '/api/send-queue/enqueue' || url.pathname === '/send-queue/enqueue') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = enqueueDryRunSend(body, session.email);
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     return jsonResponse(res, 404, {
