@@ -102,6 +102,7 @@ npm test --prefix backend
 - Frontend remote PostgreSQL mapping/status UI baseline: `/` after admin login must show data source/sync dry-run counters and a redacted mapping/status panel, call only protected metadata endpoints, avoid plaintext secrets, and keep remote row pulls disabled.
 - Data source sync audit log baseline: `GET /api/data-source-sync-audit` must require admin auth, return sanitized `data_source_sync*` events only, audit the view action, avoid plaintext secrets, and keep `realSync: false`.
 - Audit log baseline: `GET /api/audit-log` must require admin auth, sanitize sensitive fields, and record key admin/compliance actions such as login attempts, provider validation, queue enqueue, suppression, unsubscribe, event ingest, and database status checks.
+- Email engine schema alignment migration: `GET /api/schema/migrations` must require admin auth and list `002_email_engine_alignment`, which aligns PostgreSQL campaign/send-job/event status constraints and dry-run queue metadata columns with the current safe email engine without applying migrations or mutating the database from the API.
 
 ## Domain readiness checklist
 

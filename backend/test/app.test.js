@@ -213,7 +213,7 @@ const withAdminEnv = async (fn) => withEnv({
   ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
 }, fn);
 
-test('migration manifest is protected and lists initial PostgreSQL schema', async () => {
+test('migration manifest is protected and lists initial PostgreSQL schema plus email engine alignment', async () => {
   await withAdminEnv(async () => {
     const unauth = await request('/api/schema/migrations');
     assert.equal(unauth.status, 401);
@@ -226,6 +226,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema', asyn
     assert.equal(res.body.migrations[0].id, '001_initial_schema');
     assert.match(res.body.migrations[0].description, /PostgreSQL schema/);
     assert.ok(res.body.migrations[0].statements >= 10);
+    const emailEngineMigration = res.body.migrations.find((migration) => migration.id === '002_email_engine_alignment');
+    assert.ok(emailEngineMigration);
+    assert.match(emailEngineMigration.description, /dry-run email engine safety gates/);
+    assert.ok(emailEngineMigration.statements >= 8);
   });
 });
 

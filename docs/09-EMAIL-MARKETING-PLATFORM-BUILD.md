@@ -43,6 +43,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - app database connection
 - migration system
 - tables from `docs/03-DATA-MODEL.md`
+- [x] email engine schema alignment migration for dry-run statuses, delivery events, tracking URLs, and queue safety metadata
 - seed first admin user
 - [x] remote PostgreSQL data source registry baseline with redacted metadata only and no sync/probe
 - [x] encrypted remote PostgreSQL connection secret baseline with AES-256-GCM secret refs and no plaintext exposure

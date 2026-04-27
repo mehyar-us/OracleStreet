@@ -132,10 +132,12 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 37. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
 38. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
 39. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
+40. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
 
 ## Current validation endpoints
 
 - `GET /api/audit-log` requires an admin session and lists sanitized in-memory audit events until PostgreSQL persistence is wired.
+- `GET /api/schema/migrations` requires an admin session and lists the PostgreSQL migration manifest including `002_email_engine_alignment` for current dry-run queue/event schema alignment. The API only lists migrations; it does not apply schema changes.
 - `GET /api/email/config` exposes redacted provider readiness only.
 - `POST /api/email/provider/validate` requires an admin session and validates selected provider configuration without sending mail or opening a network connection. `local-capture` validates an allowed controlled recipient domain and never opens a network connection.
 - `GET /api/email/provider/adapter` requires an admin session and reports the selected safe provider adapter capability/readiness. SMTP/PowerMTA adapters remain `configured-but-locked`, redact secrets, and return `realDeliveryAllowed: false`.
