@@ -3,6 +3,7 @@ import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
+import { resetSuppressionsForTests } from '../lib/suppressions.js';
 
 const request = async (path, options = {}) => {
   const server = http.createServer(createHandler());
@@ -359,6 +360,7 @@ test('send queue requires admin session', async () => {
 
 test('send queue enqueues only compliant dry-run messages without delivery', async () => {
   resetSendQueueForTests();
+  resetSuppressionsForTests();
   await withAdminEnv(async () => {
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -400,4 +402,65 @@ test('send queue enqueues only compliant dry-run messages without delivery', asy
 test('send queue endpoints also work behind nginx stripped api prefix', async () => {
   const res = await request('/send-queue/enqueue', { method: 'POST' });
   assert.equal(res.status, 401);
+});
+
+test('suppressions require admin session and block dry-run queue recipients', async () => {
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/suppressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'blocked@example.test', reason: 'manual', source: 'test' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const suppression = await request('/api/suppressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'Blocked@Example.test', reason: 'manual', source: 'admin smoke' })
+    });
+    assert.equal(suppression.status, 200);
+    assert.equal(suppression.body.suppression.email, 'blocked@example.test');
+
+    const enqueued = await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'blocked@example.test',
+        subject: 'Should be blocked',
+        html: '<p>Controlled queue test.</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(enqueued.status, 400);
+    assert.ok(enqueued.body.errors.includes('recipient_suppressed'));
+    assert.equal(enqueued.body.suppression.reason, 'manual');
+
+    const list = await request('/api/suppressions', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.count, 1);
+  });
+});
+
+test('unsubscribe endpoint records suppression without admin session', async () => {
+  resetSuppressionsForTests();
+  const res = await request('/api/unsubscribe', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'Reader@Example.test', source: 'link smoke' })
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.suppression.email, 'reader@example.test');
+  assert.equal(res.body.suppression.reason, 'unsubscribe');
+});
+
+test('suppression and unsubscribe endpoints also work behind nginx stripped api prefix', async () => {
+  const suppressions = await request('/suppressions');
+  assert.equal(suppressions.status, 401);
+  const unsubscribe = await request('/unsubscribe', { method: 'POST', body: JSON.stringify({ email: 'bad' }) });
+  assert.equal(unsubscribe.status, 400);
 });

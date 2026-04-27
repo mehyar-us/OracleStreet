@@ -33,7 +33,7 @@
 - [x] SMTP/provider adapter config validation
 - [x] PowerMTA SMTP adapter config validation
 - [x] Send queue dry-run enqueue baseline
-- [ ] Suppression/unsubscribe handling
+- [x] Suppression/unsubscribe handling baseline
 - [ ] Rate limits and warm-up controls
 - [ ] Bounce/complaint ingestion
 - [ ] Event tracking

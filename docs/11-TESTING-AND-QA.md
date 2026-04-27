@@ -69,6 +69,7 @@ npm test --prefix backend
 - Email config remains safe-test-only at `GET /api/email/config`; real sending stays disabled unless future safety gates pass.
 - SMTP/PowerMTA provider validation: `POST /api/email/provider/validate` must require admin auth, report redacted readiness, skip network probes by default, and never expose passwords.
 - Dry-run send queue: `POST /api/send-queue/enqueue` must require admin auth, reject messages missing consent/source/unsubscribe gates, enqueue compliant messages as `queued_dry_run`, and report `realDelivery: false`.
+- Suppression/unsubscribe baseline: `POST /api/suppressions` must require admin auth; `POST /api/unsubscribe` must record unsubscribe suppressions; suppressed recipients must be blocked from dry-run queue enqueue.
 
 ## Domain readiness checklist
 

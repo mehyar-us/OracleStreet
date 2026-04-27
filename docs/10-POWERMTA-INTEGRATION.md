@@ -95,9 +95,10 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 2. [x] Generic SMTP provider config validation using the same safe adapter interface.
 3. [x] PowerMTA provider config validation with no network probe or real delivery by default.
 4. [x] Dry-run send queue enqueue baseline with consent/source/unsubscribe gates and no real delivery.
-5. [ ] Rate limiting/warm-up controls.
-6. [ ] Bounce ingestion.
-7. [ ] Dashboard reporting.
+5. [x] Suppression/unsubscribe baseline that blocks queued dry-run recipients.
+6. [ ] Rate limiting/warm-up controls.
+7. [ ] Bounce ingestion.
+8. [ ] Dashboard reporting.
 
 ## Current validation endpoints
 
@@ -106,6 +107,8 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/email/test-send` requires an admin session and is dry-run only.
 - `POST /api/send-queue/enqueue` requires an admin session, applies the current safe test-message gates, and queues dry-run jobs only.
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
+- `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
+- `POST /api/unsubscribe` records an unsubscribe suppression without sending mail; this is the baseline for future tracked unsubscribe links.
 
 ## PMTA-first development priority
 

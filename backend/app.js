@@ -3,6 +3,7 @@ import { validateContactImport } from './lib/contacts.js';
 import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
+import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
 
 const SESSION_COOKIE = 'oraclestreet_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
@@ -225,6 +226,25 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = enqueueDryRunSend(body, session.email);
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/suppressions' || url.pathname === '/suppressions') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') return jsonResponse(res, 200, listSuppressions());
+      if (req.method !== 'POST') return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = addSuppression({ ...body, actorEmail: session.email });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/unsubscribe' || url.pathname === '/unsubscribe') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = recordUnsubscribe({ email: body.email, source: body.source || 'unsubscribe_endpoint' });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

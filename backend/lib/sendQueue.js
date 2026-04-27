@@ -1,4 +1,5 @@
 import { dryRunSend, validateTestMessage } from './emailProvider.js';
+import { getSuppression, isSuppressed } from './suppressions.js';
 
 const queue = [];
 let sequence = 0;
@@ -23,6 +24,16 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
     return { ok: false, mode: 'dry-run-queue', errors: validation.errors };
   }
 
+  if (isSuppressed(validation.normalized.to)) {
+    const suppression = getSuppression(validation.normalized.to);
+    return {
+      ok: false,
+      mode: 'dry-run-queue',
+      errors: ['recipient_suppressed'],
+      suppression: suppression ? { reason: suppression.reason, source: suppression.source } : null
+    };
+  }
+
   const dryRun = dryRunSend(message, env);
   if (!dryRun.ok) {
     return { ok: false, mode: 'dry-run-queue', provider: dryRun.provider, errors: dryRun.errors };
@@ -40,7 +51,7 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
       consentChecked: true,
       sourceChecked: true,
       unsubscribeChecked: true,
-      suppressionChecked: 'pending_database_enforcement',
+      suppressionChecked: true,
       rateLimitChecked: 'pending_warmup_controls',
       realDelivery: false
     },
