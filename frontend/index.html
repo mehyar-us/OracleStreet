@@ -553,6 +553,7 @@
       const dashboard = await res.json();
       const metrics = dashboard.summary;
       const migrations = await fetch('/api/schema/migrations', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { migrations: [] });
+      const repositories = await fetch('/api/database/repositories', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { summary: {}, modules: [] });
       const percent = (value) => `${Math.round((Number(value || 0) * 1000)) / 10}%`;
       const metricCards = [
         ['contacts', metrics.contacts],
@@ -579,14 +580,16 @@
         + `<div class="metric"><strong>${percent(metrics.campaignOpenRate)}</strong>campaign open rate<small>dry-run events only</small></div>`
         + `<div class="metric"><strong>${percent(metrics.campaignClickRate)}</strong>campaign click rate<small>dry-run events only</small></div>`
         + `<div class="metric"><strong>${metrics.emailProvider}</strong>${metrics.sendMode}<small>real sending locked</small></div>`
-        + `<div class="metric"><strong>${migrations.migrations.length}</strong>schema migrations</div>`;
+        + `<div class="metric"><strong>${migrations.migrations.length}</strong>schema migrations</div>`
+        + `<div class="metric"><strong>${repositories.summary?.schemaReadyModules || 0}/${repositories.summary?.totalModules || 0}</strong>repository schemas<small>${repositories.currentRuntimePersistence || 'postgresql foundation'}</small></div>`;
       const dataSources = await fetch('/api/data-sources', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { sources: [] });
       const syncRuns = await fetch('/api/data-source-sync-runs', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { runs: [] });
       const sourceItems = dataSources.sources.length
         ? dataSources.sources.map((source) => `<li>${source.name}: ${source.connection.parsed.host}/${source.connection.parsed.database} · secret ${source.connection.secretStored ? 'encrypted' : 'metadata-only'} · sync locked</li>`).join('')
         : '<li>No remote PostgreSQL sources registered yet.</li>';
       const latestRun = syncRuns.runs[0];
-      dataSourcePanel.innerHTML = `<h3>Remote PostgreSQL mapping</h3><p>Safe mapping/status view only. No remote rows are pulled from this UI.</p><ul>${sourceItems}</ul><p>Sync dry-runs: ${syncRuns.count || 0}${latestRun ? ` · latest ${latestRun.status} · rows pulled ${latestRun.rowsPulled}` : ''}</p>`;
+      const repositoryItems = (repositories.modules || []).slice(0, 6).map((module) => `<li>${module.module} → ${module.targetTable} · ${module.runtimeMode} · next ${module.nextAction}</li>`).join('') || '<li>Repository readiness not loaded.</li>';
+      dataSourcePanel.innerHTML = `<h3>Remote PostgreSQL mapping</h3><p>Safe mapping/status view only. No remote rows are pulled from this UI.</p><ul>${sourceItems}</ul><p>Sync dry-runs: ${syncRuns.count || 0}${latestRun ? ` · latest ${latestRun.status} · rows pulled ${latestRun.rowsPulled}` : ''}</p><h3>PostgreSQL repository migration</h3><p>Schema foundation is visible and audited while runtime modules keep in-memory fallback until the pg repository adapter is enabled.</p><ul>${repositoryItems}</ul>`;
       dataSourcePanel.classList.remove('hidden');
       dashboardCard.classList.remove('hidden');
     };

@@ -19,6 +19,7 @@ import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { rbacReadiness } from './lib/rbacReadiness.js';
+import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { evaluateWarmupScheduleCap, listWarmupPolicies, saveWarmupPolicy } from './lib/warmupPolicies.js';
@@ -428,6 +429,15 @@ export const createHandler = () => {
       const database = validateDatabaseConfig();
       recordAuditEvent({ action: 'database_status_view', actorEmail: session.email, target: 'database', details: { ok: database.ok, source: database.config.source } });
       return jsonResponse(res, 200, { ok: true, database });
+    }
+
+    if (url.pathname === '/api/database/repositories' || url.pathname === '/database/repositories') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = repositoryReadiness();
+      recordAuditEvent({ action: 'database_repository_readiness_view', actorEmail: session.email, target: 'postgresql-repositories', details: { schemaFoundationReady: readiness.schemaFoundationReady, liveRepositoryEnabled: readiness.liveRepositoryEnabled, modules: readiness.summary.totalModules, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, readiness);
     }
 
     if (url.pathname === '/api/audit-log' || url.pathname === '/audit-log') {

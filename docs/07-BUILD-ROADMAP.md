@@ -15,6 +15,7 @@
 - [x] Add persistent autonomous queue in `tasks/ORACLESTREET_BUILD_QUEUE.md`
 - [x] Teach deploy to preserve/generate `ORACLESTREET_DATABASE_URL` and apply migrations
 - [ ] Convert in-memory module baselines to PostgreSQL-backed persistence
+- [x] Add PostgreSQL repository foundation migration/readiness for policy tables and module status
 - [x] Build initial visible admin screens for contacts, data sources, templates, campaigns, send queue, reputation, and reporting
 - [x] Add visible contact import validate/store workflow to admin workbench
 - [x] Add visible template creation/preview workflow to admin workbench

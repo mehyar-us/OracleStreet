@@ -34,6 +34,9 @@ Acceptance:
 - Keep safe fallback only for local tests.
 - Add repository layer/tests for each module.
 
+Status:
+- PostgreSQL repository schema foundation now includes `004_policy_repository_foundation` for warm-up policies, reputation policies, and repository migration status, plus `GET /api/database/repositories` to expose audited module readiness without secrets.
+
 Verification:
 - backend tests pass.
 - migration tests pass.
@@ -112,13 +115,14 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. PostgreSQL-backed repositories for remaining in-memory modules.
+1. Wire contacts/suppressions runtime repository adapter to local PostgreSQL with in-memory test fallback.
 2. Controlled one-recipient MTA live-test runbook/gate.
 3. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
 4. Multi-user/RBAC admin workflow.
 5. Campaign calendar UI over warm-up caps.
 
 Latest shipped slice:
+- PostgreSQL repository foundation: migration `004_policy_repository_foundation` adds warm-up/reputation policy tables and repository migration status, while `GET /api/database/repositories` and the dashboard expose audited schema readiness for contacts/suppressions/templates/campaigns/send queue/events/users without secrets or live data mutation.
 - Warm-up policy persistence and campaign schedule cap enforcement: `GET/POST /api/email/warmup/policy` and `POST /api/email/warmup/schedule-cap` let operators persist in-memory warm-up profiles and block campaign dry-run schedules that exceed the sender-domain daily cap; queues/providers remain untouched and real delivery stays locked.
 - Reputation auto-pause threshold controls: `GET/POST /api/email/reputation/policy` and `GET /api/email/reputation/auto-pause` let operators configure recommendation-only bounce/complaint/deferral/provider-error thresholds and evaluate events without mutating queues/providers or unlocking delivery.
 - List hygiene dashboard + cleanup planner API/UI: `GET /api/list-hygiene/plan` computes duplicate/risky/suppressed/stale/source-quality/domain-concentration signals without mutating contacts, probing networks, or unlocking delivery; the Contacts workbench now surfaces cleanup recommendations.

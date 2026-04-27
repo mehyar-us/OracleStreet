@@ -263,6 +263,9 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/warmup\/plan/);
   assert.match(html, /Plan warm-up preview/);
   assert.match(html, /warmup-domain/);
+  assert.match(html, /api\/database\/repositories/);
+  assert.match(html, /PostgreSQL repository migration/);
+  assert.match(html, /repository schemas/);
   assert.match(html, /api\/email\/warmup\/policy/);
   assert.match(html, /api\/email\/warmup\/schedule-cap/);
   assert.match(html, /Save warm-up policy/);
@@ -301,7 +304,40 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(providerTraceabilityMigration);
     assert.match(providerTraceabilityMigration.description, /provider-message traceability/);
     assert.ok(providerTraceabilityMigration.statements >= 3);
+    const policyRepositoryMigration = res.body.migrations.find((migration) => migration.id === '004_policy_repository_foundation');
+    assert.ok(policyRepositoryMigration);
+    assert.match(policyRepositoryMigration.description, /policy repository foundation/);
+    assert.ok(policyRepositoryMigration.statements >= 7);
   });
+});
+
+test('database repository readiness is protected and exposes PostgreSQL schema migration plan without secrets', async () => {
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/database/repositories');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const res = await request('/api/database/repositories', { headers: { cookie } });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.mode, 'postgresql-repository-readiness');
+    assert.equal(res.body.migration, '004_policy_repository_foundation');
+    assert.equal(res.body.schemaFoundationReady, true);
+    assert.equal(res.body.liveRepositoryEnabled, false);
+    assert.equal(res.body.realDeliveryAllowed, false);
+    assert.ok(res.body.modules.some((module) => module.module === 'warmup_policies' && module.targetTable === 'warmup_policies'));
+    assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.nextAction === 'wire_contact_repository_to_postgresql_driver'));
+    assert.ok(res.body.blockers.includes('avoid_printing_or_logging_database_url'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'database_repository_readiness_view'));
+  });
+});
+
+test('database repository readiness endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/database/repositories');
+  assert.equal(res.status, 401);
 });
 
 test('database status is protected and redacts PostgreSQL URL secrets', async () => {
