@@ -3333,6 +3333,60 @@ test('RBAC readiness endpoint requires admin and reports planned roles without m
   });
 });
 
+test('admin user directory and invite-plan workflow require admin and avoid secrets or mutation', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+  }, async () => {
+    const unauthList = await request('/api/admin/users');
+    assert.equal(unauthList.status, 401);
+    const unauthInvite = await request('/api/admin/users/invite-plan', { method: 'POST' });
+    assert.equal(unauthInvite.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const users = await request('/api/admin/users', { headers: { cookie } });
+    assert.equal(users.status, 200);
+    assert.equal(users.body.mode, 'admin-user-directory');
+    assert.equal(users.body.count, 1);
+    assert.equal(users.body.users[0].email, 'admin@example.test');
+    assert.ok(users.body.roleMatrix.some((role) => role.role === 'operator'));
+    assert.equal(users.body.realDeliveryAllowed, false);
+    assert.ok(!JSON.stringify(users.body).includes('correct-horse-battery-staple'));
+
+    const rejected = await request('/api/admin/users/invite-plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'bad-email', role: 'operator' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('valid_user_email_required'));
+
+    const planned = await request('/api/admin/users/invite-plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'operator@example.test', role: 'operator' })
+    });
+    assert.equal(planned.status, 200);
+    assert.equal(planned.body.mode, 'admin-user-invite-plan');
+    assert.equal(planned.body.invite.status, 'planned_not_sent');
+    assert.equal(planned.body.invite.userMutation, false);
+    assert.equal(planned.body.safety.noEmailSent, true);
+    assert.equal(planned.body.safety.noTokenOutput, true);
+    assert.equal(planned.body.invite.tokenDisplayed, false);
+    assert.equal(planned.body.realDeliveryAllowed, false);
+    assert.ok(!JSON.stringify(planned.body).includes('correct-horse-battery-staple'));
+
+    const after = await request('/api/admin/users', { headers: { cookie } });
+    assert.equal(after.body.count, users.body.count);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_directory_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_plan'));
+  });
+});
+
 test('sending readiness reports provider blockers without exposing secrets', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',

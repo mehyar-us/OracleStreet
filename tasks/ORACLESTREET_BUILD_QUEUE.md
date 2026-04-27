@@ -117,14 +117,12 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Flow C — Multi-user/RBAC admin workflow.
-2. Flow D — Remote PostgreSQL import scheduler.
-3. Flow E — Controlled one-recipient MTA proof path/runbook.
-4. Flow D — Remote PostgreSQL import scheduler.
-5. Flow E — Controlled one-recipient MTA proof path/runbook, still manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
-6. Flow F — Reporting dashboard depth.
+1. Flow D — Remote PostgreSQL import scheduler.
+2. Flow E — Controlled one-recipient MTA proof path/runbook.
+3. Flow F — Reporting dashboard depth.
 
 Latest shipped slice:
+- Flow C Users/RBAC safe baseline: `/api/admin/users` lists admin users from PostgreSQL where enabled or bootstrap fallback otherwise; `/api/admin/users/invite-plan` validates a planned role invite/create workflow, records audit, sends no email, creates no token/password, mutates no users, and the Users/RBAC UI exposes the directory, role matrix, blockers, and safe invite-plan controls after login.
 - Flow B campaign calendar over warm-up caps: `/api/campaigns/calendar` shows scheduled dry-run campaigns by sender-domain/day, daily cap, planned count, remaining capacity, and over-cap state; scheduling now counts existing scheduled campaigns on the same day/domain before allowing another dry-run schedule, and the Campaigns UI exposes the calendar after login.
 - Flow A contact browser/search drilldowns: `/api/contacts/browser` provides protected email/name/source/domain/status search, consent/source/domain/suppression/risk filters, source-quality scores, domain concentration, and contact timeline stubs from imports/events/jobs; the Contacts UI exposes the controls after login and remains read-only/no-delivery.
 - Remote PostgreSQL approved contact import: `/api/data-source-import/execute` reruns the preview validation, requires exact import approval phrase `I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT`, imports only zero-rejection mapped contacts through the normal contact repository, records imported/updated counts plus sync-run history, and keeps delivery locked.

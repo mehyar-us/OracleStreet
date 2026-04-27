@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { recordAdminSession, revokeAdminSession, upsertAdminUser } from './lib/adminUsers.js';
+import { listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, upsertAdminUser } from './lib/adminUsers.js';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
@@ -478,6 +478,26 @@ export const createHandler = () => {
       const readiness = rbacReadiness();
       recordAuditEvent({ action: 'rbac_readiness_view', actorEmail: session.email, target: readiness.currentAccess.adminEmailDomain, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, noUserMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/admin/users' || url.pathname === '/admin/users') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = listAdminUsers();
+      recordAuditEvent({ action: 'admin_user_directory_view', actorEmail: session.email, status: 'ok', details: { count: result.count, noSecretOutput: true, realDelivery: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/admin/users/invite-plan' || url.pathname === '/admin/users/invite-plan') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = planAdminUserInvite({ email: body.email, role: body.role, requestedBy: session.email });
+      recordAuditEvent({ action: 'admin_user_invite_plan', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { role: body.role || null, errors: result.errors || [], noEmailSent: true, noUserMutation: true, noTokenOutput: true, realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/schema/migrations' || url.pathname === '/schema/migrations') {

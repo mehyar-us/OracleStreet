@@ -38,6 +38,8 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - PostgreSQL runtime adapter for audit log.
 - Audit log baseline and visible audit panel.
 - RBAC readiness endpoint and planned owner/admin/operator/analyst/read-only roles.
+- Admin user directory endpoint over the users repository/bootstrap admin fallback.
+- Safe admin invite-plan endpoint that validates role/email, audits the plan, sends no email, creates no password/token, and mutates no users.
 - Raw passwords/tokens are not stored or exposed by the runtime adapter.
 
 ### Visible admin CMS workbench
@@ -58,6 +60,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Reporting export panel.
 - List hygiene planner dashboard.
 - Audit panel.
+- Users/RBAC panel with user directory, role permission matrix, blockers, and safe invite-plan controls.
 
 ### Contacts, consent, and list hygiene
 
@@ -262,18 +265,18 @@ Acceptance:
 
 ### Flow C — Multi-user/RBAC admin workflow
 
-Goal: turn RBAC readiness into visible admin management.
+Status: shipped safe baseline. The admin workbench now includes a Users/RBAC panel backed by `GET /api/admin/users`, RBAC readiness, a role permission matrix, and `POST /api/admin/users/invite-plan` for validating a planned invite/create workflow without sending email, generating passwords/tokens, or mutating users.
 
-Build:
+Shipped:
 - user list/readiness panel
-- invite/create operator/read-only placeholder flow gated to owner/admin
+- invite/create operator/read-only placeholder flow gated by admin session
 - role permission matrix UI
-- audit events for role/user actions
-- password reset/rotation plan surface without emailing secrets
+- audit events for role/user plan actions
+- password/token-safe invite plan surface without emailing secrets
 
 Acceptance:
 - protected routes
-- PostgreSQL users table used where enabled
+- PostgreSQL users table used where enabled, bootstrap admin fallback otherwise
 - tests for role metadata and audit
 - no raw password/token display
 
