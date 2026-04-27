@@ -1,4 +1,5 @@
 import { listAuditLog } from './auditLog.js';
+import { listCampaigns } from './campaigns.js';
 import { listEmailEvents } from './emailEvents.js';
 import { senderDomainReadiness } from './domainReadiness.js';
 import { getEmailProviderConfig, validateSelectedProviderConfig } from './emailProvider.js';
@@ -42,6 +43,46 @@ export const sendingReadinessSummary = (env = process.env) => {
     requiredGates,
     blockers,
     nextSafeStep: blockers.length > 0 ? 'resolve_blockers_then_repeat_controlled_dry_run' : 'manual_controlled_live_test_requires_explicit_human_approval',
+    realDeliveryAllowed: false
+  };
+};
+
+const increment = (counts, key) => {
+  counts[key] = (counts[key] || 0) + 1;
+};
+
+export const campaignReportingSummary = () => {
+  const campaignList = listCampaigns();
+  const queue = listSendQueue();
+  const emailEvents = listEmailEvents();
+  const suppressions = listSuppressions();
+  const rows = campaignList.campaigns.map((campaign) => {
+    const jobs = queue.jobs.filter((job) => job.campaignId === campaign.id);
+    const events = emailEvents.events.filter((event) => event.campaignId === campaign.id);
+    const eventCounts = events.reduce((counts, event) => {
+      increment(counts, event.type);
+      return counts;
+    }, {});
+    const unsubscribeSuppressions = suppressions.suppressions.filter((suppression) => suppression.reason === 'unsubscribe' && suppression.source === `campaign:${campaign.id}`);
+
+    return {
+      campaignId: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      estimatedAudience: campaign.estimatedAudience,
+      queuedDryRuns: jobs.filter((job) => job.status === 'queued_dry_run').length,
+      dispatchedDryRuns: jobs.filter((job) => job.status === 'dispatched_dry_run').length,
+      events: eventCounts,
+      unsubscribes: unsubscribeSuppressions.length,
+      realDeliveryAllowed: false
+    };
+  });
+
+  return {
+    ok: true,
+    mode: 'campaign-reporting-safe-summary',
+    count: rows.length,
+    campaigns: rows,
     realDeliveryAllowed: false
   };
 };

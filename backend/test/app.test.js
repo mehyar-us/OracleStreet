@@ -668,12 +668,32 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(queue.body.count, 1);
     assert.equal(queue.body.jobs[0].safety.realDelivery, false);
     assert.equal(queue.body.jobs[0].safety.unsubscribeLinkInjected, true);
+
+    const dispatched = await request('/api/send-queue/dispatch-next-dry-run', { method: 'POST', headers: { cookie } });
+    assert.equal(dispatched.status, 200);
+    assert.equal(dispatched.body.event.campaignId, campaign.body.campaign.id);
+    assert.equal(dispatched.body.event.contactId, enqueued.body.jobs[0].contactId);
+
+    const unsubscribe = await request(enqueued.body.jobs[0].unsubscribeUrl);
+    assert.equal(unsubscribe.status, 200);
+    assert.equal(unsubscribe.body.campaignId, campaign.body.campaign.id);
+
+    const campaignReport = await request('/api/campaigns/reporting', { headers: { cookie } });
+    assert.equal(campaignReport.status, 200);
+    assert.equal(campaignReport.body.mode, 'campaign-reporting-safe-summary');
+    assert.equal(campaignReport.body.realDeliveryAllowed, false);
+    assert.equal(campaignReport.body.campaigns[0].campaignId, campaign.body.campaign.id);
+    assert.equal(campaignReport.body.campaigns[0].dispatchedDryRuns, 1);
+    assert.equal(campaignReport.body.campaigns[0].events.dispatched, 1);
+    assert.equal(campaignReport.body.campaigns[0].unsubscribes, 1);
+
     const dashboard = await request('/api/dashboard', { headers: { cookie } });
     assert.equal(dashboard.body.summary.campaigns, 1);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_create'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_approve_dry_run'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_enqueue_dry_run'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_reporting_view'));
   });
 });
 
@@ -686,6 +706,8 @@ test('campaign endpoints also work behind nginx stripped api prefix', async () =
   assert.equal(approve.status, 401);
   const enqueue = await request('/campaigns/enqueue-dry-run', { method: 'POST' });
   assert.equal(enqueue.status, 401);
+  const reporting = await request('/campaigns/reporting');
+  assert.equal(reporting.status, 401);
 });
 
 
@@ -919,6 +941,7 @@ test('send queue requires admin session', async () => {
 
 test('send queue enqueues and dispatches only compliant dry-run messages without delivery', async () => {
   resetAuditLogForTests();
+  resetEmailEventsForTests();
   resetSendQueueForTests();
   resetSuppressionsForTests();
   await withAdminEnv(async () => {

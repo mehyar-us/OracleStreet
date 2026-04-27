@@ -45,6 +45,7 @@
 - [x] Bounce/complaint ingestion baseline
 - [x] Event tracking baseline
 - [x] Dry-run dispatch event tracking baseline
+- [x] Campaign reporting safe summary baseline
 - [x] Real sending readiness safe-gate baseline
 - [x] Sender domain readiness safe-gate baseline
 

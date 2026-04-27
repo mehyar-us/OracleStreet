@@ -21,7 +21,7 @@ export const listEmailEvents = () => ({
   events: events.map((event) => ({ ...event }))
 });
 
-export const recordEmailEvent = ({ type, email, source = 'manual_ingest', detail = null, actorEmail = null }) => {
+export const recordEmailEvent = ({ type, email, source = 'manual_ingest', detail = null, campaignId = null, contactId = null, actorEmail = null }) => {
   const cleanType = String(type || '').trim().toLowerCase();
   const normalized = normalizeEmail(email);
   const cleanSource = String(source || '').trim();
@@ -38,6 +38,8 @@ export const recordEmailEvent = ({ type, email, source = 'manual_ingest', detail
     email: normalized,
     source: cleanSource,
     detail: detail ? String(detail).slice(0, 500) : null,
+    campaignId: campaignId ? String(campaignId).trim() : null,
+    contactId: contactId ? String(contactId).trim() : null,
     actorEmail,
     createdAt: nowIso()
   };
