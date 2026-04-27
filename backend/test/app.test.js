@@ -1595,6 +1595,52 @@ test('manual bounce and complaint ingest records events and suppresses recipient
   });
 });
 
+test('manual delivery event ingest records delivered and deferred without suppression', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/delivery-events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ events: [{ type: 'delivered', email: 'delivered@example.test' }] })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const ingest = await request('/api/email/delivery-events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [
+        { type: 'delivered', email: 'Delivered@Example.test', source: 'pmta accounting dry-run review', campaignId: 'cmp_delivery' },
+        { type: 'deferred', email: 'slow@example.test', detail: '421 temporary deferral' },
+        { type: 'bounce', email: 'blocked@example.test', source: 'wrong endpoint' }
+      ] })
+    });
+    assert.equal(ingest.status, 200);
+    assert.equal(ingest.body.mode, 'manual-delivery-event-ingest');
+    assert.equal(ingest.body.ok, false);
+    assert.equal(ingest.body.acceptedCount, 2);
+    assert.equal(ingest.body.rejectedCount, 1);
+    assert.equal(ingest.body.accepted[0].event.type, 'delivered');
+    assert.equal(ingest.body.accepted[0].event.email, 'delivered@example.test');
+    assert.equal(ingest.body.accepted[0].suppression, null);
+    assert.equal(ingest.body.suppressionCreated, false);
+    assert.ok(ingest.body.rejected[0].errors.includes('valid_delivery_event_type_required'));
+    assert.equal(ingest.body.realDelivery, false);
+
+    const suppressions = await request('/api/suppressions', { headers: { cookie } });
+    assert.equal(suppressions.body.count, 0);
+    const reporting = await request('/api/email/reporting', { headers: { cookie } });
+    assert.equal(reporting.body.totals.delivered, 1);
+    assert.equal(reporting.body.totals.deferred, 1);
+    assert.equal(reporting.body.safety.complianceGates.deliveryEvents, 'manual_delivery_ingest_records_delivered_deferred_without_suppression');
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_delivery_events_ingest'));
+  });
+});
+
 test('manual event ingest rejects internal dispatched events', async () => {
   resetEmailEventsForTests();
   await withAdminEnv(async () => {
@@ -1662,6 +1708,8 @@ test('email event endpoints also work behind nginx stripped api prefix', async (
   assert.equal(importEvents.status, 401);
   const ingest = await request('/email/events/ingest', { method: 'POST' });
   assert.equal(ingest.status, 401);
+  const deliveryIngest = await request('/email/delivery-events/ingest', { method: 'POST' });
+  assert.equal(deliveryIngest.status, 401);
   const open = await request('/track/open?email=reader@example.test');
   assert.equal(open.status, 200);
 });

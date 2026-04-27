@@ -2,7 +2,8 @@ import { addSuppression } from './suppressions.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INGEST_TYPES = new Set(['bounce', 'complaint']);
-const EVENT_TYPES = new Set(['bounce', 'complaint', 'dispatched', 'open', 'click']);
+const DELIVERY_TYPES = new Set(['delivered', 'deferred']);
+const EVENT_TYPES = new Set(['bounce', 'complaint', 'dispatched', 'open', 'click', 'delivered', 'deferred']);
 const TRACKING_TYPES = new Set(['open', 'click']);
 const SUPPRESSION_TYPES = new Set(['bounce', 'complaint']);
 const events = [];
@@ -86,6 +87,39 @@ export const ingestEmailEvents = ({ events: incomingEvents, actorEmail = null })
     rejectedCount: rejected.length,
     accepted,
     rejected
+  };
+};
+
+export const ingestDeliveryEvents = ({ events: incomingEvents, actorEmail = null }) => {
+  if (!Array.isArray(incomingEvents)) return { ok: false, error: 'events_array_required' };
+
+  const accepted = [];
+  const rejected = [];
+  incomingEvents.forEach((incoming, index) => {
+    const cleanType = String(incoming?.type || '').trim().toLowerCase();
+    if (!DELIVERY_TYPES.has(cleanType)) {
+      rejected.push({ index, email: normalizeEmail(incoming?.email) || null, errors: ['valid_delivery_event_type_required'] });
+      return;
+    }
+    const result = recordEmailEvent({
+      ...incoming,
+      type: cleanType,
+      source: incoming?.source || 'manual_delivery_ingest',
+      actorEmail
+    });
+    if (result.ok) accepted.push(result);
+    else rejected.push({ index, email: normalizeEmail(incoming?.email) || null, errors: result.errors });
+  });
+
+  return {
+    ok: rejected.length === 0,
+    mode: 'manual-delivery-event-ingest',
+    acceptedCount: accepted.length,
+    rejectedCount: rejected.length,
+    accepted,
+    rejected,
+    suppressionCreated: false,
+    realDelivery: false
   };
 };
 

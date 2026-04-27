@@ -50,6 +50,7 @@
 - [x] Open/click engagement tracking baseline
 - [x] Campaign tracking URL injection baseline
 - [x] Dry-run dispatch event tracking baseline
+- [x] Manual delivery event ingest baseline
 - [x] Campaign reporting safe summary baseline
 - [x] Campaign engagement reporting baseline
 - [x] Dashboard campaign engagement summary baseline

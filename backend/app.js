@@ -6,7 +6,7 @@ import { importContacts, listContacts, validateContactImport } from './lib/conta
 import { validateDatabaseConfig } from './lib/database.js';
 import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
-import { ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
+import { ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
@@ -691,6 +691,17 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = ingestEmailEvents({ events: body.events, actorEmail: session.email });
       recordAuditEvent({ action: 'email_events_ingest', actorEmail: session.email, status: result.ok ? 'ok' : 'partial_or_rejected', details: { acceptedCount: result.acceptedCount, rejectedCount: result.rejectedCount, error: result.error } });
+      return jsonResponse(res, result.error ? 400 : 200, result);
+    }
+
+    if (url.pathname === '/api/email/delivery-events/ingest' || url.pathname === '/email/delivery-events/ingest') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = ingestDeliveryEvents({ events: body.events, actorEmail: session.email });
+      recordAuditEvent({ action: 'email_delivery_events_ingest', actorEmail: session.email, status: result.ok ? 'ok' : 'partial_or_rejected', details: { acceptedCount: result.acceptedCount, rejectedCount: result.rejectedCount, error: result.error, suppressionCreated: false, realDelivery: false } });
       return jsonResponse(res, result.error ? 400 : 200, result);
     }
 
