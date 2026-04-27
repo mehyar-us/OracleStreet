@@ -7,6 +7,15 @@ const renderToken = (content, data = {}) => String(content || '').replace(/{{\s*
   return value === undefined || value === null ? '' : String(value);
 });
 
+const buildTrackedUrl = ({ path, email, campaignId = null, contactId = null, detail = null, baseUrl = '' } = {}) => {
+  const params = new URLSearchParams();
+  params.set('email', String(email || '').trim().toLowerCase());
+  if (campaignId) params.set('campaignId', String(campaignId));
+  if (contactId) params.set('contactId', String(contactId));
+  if (detail) params.set(path.endsWith('/click') ? 'url' : 'detail', String(detail));
+  return `${String(baseUrl || '').replace(/\/$/, '')}${path}?${params.toString()}`;
+};
+
 export const buildUnsubscribeUrl = ({ email, campaignId = null, contactId = null, baseUrl = '' } = {}) => {
   const params = new URLSearchParams();
   params.set('email', String(email || '').trim().toLowerCase());
@@ -16,11 +25,21 @@ export const buildUnsubscribeUrl = ({ email, campaignId = null, contactId = null
   return `${String(baseUrl || '').replace(/\/$/, '')}/api/unsubscribe?${params.toString()}`;
 };
 
+export const buildOpenTrackingUrl = (options = {}) => buildTrackedUrl({ ...options, path: '/api/track/open' });
+export const buildClickTrackingUrl = (options = {}) => buildTrackedUrl({ ...options, path: '/api/track/click' });
+
 const injectUnsubscribeLink = (html, unsubscribeUrl) => {
   if (!unsubscribeUrl) return html;
   if (/{{\s*unsubscribeUrl\s*}}/i.test(html)) return html;
   if (html.includes(unsubscribeUrl)) return html;
   return `${html}\n<p><a href="${unsubscribeUrl}">unsubscribe</a></p>`;
+};
+
+const injectOpenTrackingPixel = (html, openTrackingUrl) => {
+  if (!openTrackingUrl) return html;
+  if (/{{\s*openTrackingUrl\s*}}/i.test(html)) return html;
+  if (html.includes(openTrackingUrl)) return html;
+  return `${html}\n<img src="${openTrackingUrl}" alt="" width="1" height="1" style="display:none" />`;
 };
 
 export const resetTemplatesForTests = () => {
@@ -73,15 +92,21 @@ export const getTemplate = (id) => templates.get(String(id || '').trim()) || nul
 
 export const renderTemplateContent = (template, data = {}, options = {}) => {
   const unsubscribeUrl = options.unsubscribeUrl || data.unsubscribeUrl || null;
-  const renderData = { ...data, unsubscribeUrl: unsubscribeUrl || data.unsubscribeUrl };
+  const openTrackingUrl = options.openTrackingUrl || data.openTrackingUrl || null;
+  const clickTrackingUrl = options.clickTrackingUrl || data.clickTrackingUrl || null;
+  const renderData = { ...data, unsubscribeUrl: unsubscribeUrl || data.unsubscribeUrl, openTrackingUrl, clickTrackingUrl };
   const rawHtml = renderToken(template.html, renderData);
   const rawText = template.text ? renderToken(template.text, renderData) : null;
+  const htmlWithUnsubscribe = injectUnsubscribeLink(rawHtml, unsubscribeUrl);
   return {
     subject: renderToken(template.subject, renderData),
-    html: injectUnsubscribeLink(rawHtml, unsubscribeUrl),
+    html: injectOpenTrackingPixel(htmlWithUnsubscribe, openTrackingUrl),
     text: unsubscribeUrl && rawText && !rawText.includes(unsubscribeUrl) ? `${rawText}\nUnsubscribe: ${unsubscribeUrl}` : rawText,
     unsubscribeUrl,
-    unsubscribeInjected: Boolean(unsubscribeUrl)
+    openTrackingUrl,
+    clickTrackingUrl,
+    unsubscribeInjected: Boolean(unsubscribeUrl),
+    openTrackingInjected: Boolean(openTrackingUrl)
   };
 };
 

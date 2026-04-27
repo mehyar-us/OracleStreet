@@ -1,6 +1,6 @@
 import { enqueueDryRunSend } from './sendQueue.js';
 import { estimateSegmentAudience, getSegment } from './segments.js';
-import { buildUnsubscribeUrl, getTemplate, renderTemplateContent } from './templates.js';
+import { buildClickTrackingUrl, buildOpenTrackingUrl, buildUnsubscribeUrl, getTemplate, renderTemplateContent } from './templates.js';
 
 const campaigns = new Map();
 let sequence = 0;
@@ -186,7 +186,9 @@ export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = pro
 
   for (const contact of audience.contacts) {
     const unsubscribeUrl = buildUnsubscribeUrl({ email: contact.email, campaignId: campaign.id, contactId: contact.id });
-    const rendered = renderTemplateContent(template, contactRenderData(contact), { unsubscribeUrl });
+    const openTrackingUrl = buildOpenTrackingUrl({ email: contact.email, campaignId: campaign.id, contactId: contact.id });
+    const clickTrackingUrl = buildClickTrackingUrl({ email: contact.email, campaignId: campaign.id, contactId: contact.id });
+    const rendered = renderTemplateContent(template, contactRenderData(contact), { unsubscribeUrl, openTrackingUrl, clickTrackingUrl });
     const result = enqueueDryRunSend({
       to: contact.email,
       subject: rendered.subject,
@@ -196,7 +198,9 @@ export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = pro
       source: contact.source,
       campaignId: campaign.id,
       contactId: contact.id,
-      unsubscribeUrl: rendered.unsubscribeUrl
+      unsubscribeUrl: rendered.unsubscribeUrl,
+      openTrackingUrl: rendered.openTrackingUrl,
+      clickTrackingUrl: rendered.clickTrackingUrl
     }, actorEmail, env);
     if (!result.ok) {
       errors.push({ email: contact.email, errors: result.errors });

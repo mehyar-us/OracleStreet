@@ -518,6 +518,16 @@ test('templates require unsubscribe language and render safe previews without de
     assert.equal(preview.body.rendered.subject, 'Hi Pat');
     assert.match(preview.body.rendered.html, /Hello Pat/);
 
+    const trackedPreview = await request('/api/templates/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ id: created.body.template.id, data: { firstName: 'Pat', unsubscribeUrl: 'https://example.test/u', openTrackingUrl: 'https://example.test/open', clickTrackingUrl: 'https://example.test/click' } })
+    });
+    assert.equal(trackedPreview.status, 200);
+    assert.ok(trackedPreview.body.rendered.html.includes('https://example.test/open'));
+    assert.equal(trackedPreview.body.rendered.openTrackingInjected, true);
+    assert.equal(trackedPreview.body.rendered.clickTrackingUrl, 'https://example.test/click');
+
     const list = await request('/api/templates', { headers: { cookie } });
     assert.equal(list.body.count, 1);
 
@@ -681,6 +691,10 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes('buyer-b%40example.test'));
     assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes(campaign.body.campaign.id));
     assert.equal(enqueued.body.jobs[0].safety.unsubscribeLinkInjected, true);
+    assert.ok(enqueued.body.jobs[0].openTrackingUrl.includes('/api/track/open?'));
+    assert.ok(enqueued.body.jobs[0].clickTrackingUrl.includes('/api/track/click?'));
+    assert.equal(enqueued.body.jobs[0].safety.openTrackingInjected, true);
+    assert.equal(enqueued.body.jobs[0].safety.clickTrackingAvailable, true);
 
     const list = await request('/api/campaigns', { headers: { cookie } });
     assert.equal(list.body.count, 1);
@@ -689,6 +703,8 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(queue.body.count, 1);
     assert.equal(queue.body.jobs[0].safety.realDelivery, false);
     assert.equal(queue.body.jobs[0].safety.unsubscribeLinkInjected, true);
+    assert.equal(queue.body.jobs[0].safety.openTrackingInjected, true);
+    assert.equal(queue.body.jobs[0].safety.clickTrackingAvailable, true);
 
     const dispatched = await request('/api/send-queue/dispatch-next-dry-run', { method: 'POST', headers: { cookie } });
     assert.equal(dispatched.status, 200);

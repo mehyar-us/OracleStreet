@@ -96,11 +96,15 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
     campaignId: message.campaignId || null,
     contactId: message.contactId || null,
     unsubscribeUrl: message.unsubscribeUrl || null,
+    openTrackingUrl: message.openTrackingUrl || null,
+    clickTrackingUrl: message.clickTrackingUrl || null,
     safety: {
       consentChecked: true,
       sourceChecked: true,
       unsubscribeChecked: true,
       unsubscribeLinkInjected: Boolean(message.unsubscribeUrl),
+      openTrackingInjected: Boolean(message.openTrackingUrl),
+      clickTrackingAvailable: Boolean(message.clickTrackingUrl),
       suppressionChecked: true,
       rateLimitChecked: true,
       rateLimit: {
