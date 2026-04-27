@@ -52,6 +52,7 @@
 - [x] Dry-run dispatch event tracking baseline
 - [x] Campaign reporting safe summary baseline
 - [x] Campaign engagement reporting baseline
+- [x] Dashboard campaign engagement summary baseline
 - [x] Real sending readiness safe-gate baseline
 - [x] Sender domain readiness safe-gate baseline
 

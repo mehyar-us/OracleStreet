@@ -105,10 +105,17 @@ const requireSession = (req, res) => {
 
 const dashboardSummary = (session) => {
   const emailReporting = emailReportingSummary();
+  const campaignReporting = campaignReportingSummary();
   const contactList = listContacts();
   const segmentList = listSegments();
   const templateList = listTemplates();
   const campaignList = listCampaigns();
+  const campaignEngagement = campaignReporting.campaigns.reduce((totals, campaign) => {
+    totals.opens += campaign.engagement?.opens || 0;
+    totals.clicks += campaign.engagement?.clicks || 0;
+    totals.denominator += campaign.engagement?.denominator || 0;
+    return totals;
+  }, { opens: 0, clicks: 0, denominator: 0 });
   return {
     ok: true,
     user: { email: session.email },
@@ -123,14 +130,20 @@ const dashboardSummary = (session) => {
       auditEvents: emailReporting.totals.auditEvents,
       bounces: emailReporting.totals.bounces,
       complaints: emailReporting.totals.complaints,
+      opens: emailReporting.totals.opens,
+      clicks: emailReporting.totals.clicks,
+      campaignOpenRate: campaignEngagement.denominator > 0 ? campaignEngagement.opens / campaignEngagement.denominator : 0,
+      campaignClickRate: campaignEngagement.denominator > 0 ? campaignEngagement.clicks / campaignEngagement.denominator : 0,
       emailProvider: emailReporting.provider.provider,
       sendMode: emailReporting.provider.sendMode
     },
     emailReporting,
+    campaignReporting,
     safetyGates: {
       consentTracking: 'baseline-enforced',
       suppressions: 'baseline-enforced',
       unsubscribe: 'baseline-recorded',
+      engagementTracking: 'dry-run-events-only',
       bounceComplaints: 'manual-ingest-baseline',
       rateLimits: 'dry-run-warmup-baseline',
       auditLogs: 'baseline-in-memory',

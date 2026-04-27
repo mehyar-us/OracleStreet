@@ -158,7 +158,13 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.summary.templates, 0);
     assert.equal(dashboard.body.summary.campaigns, 0);
     assert.equal(dashboard.body.summary.queuedSends, 0);
+    assert.equal(dashboard.body.summary.opens, 0);
+    assert.equal(dashboard.body.summary.clicks, 0);
+    assert.equal(dashboard.body.summary.campaignOpenRate, 0);
+    assert.equal(dashboard.body.summary.campaignClickRate, 0);
     assert.equal(dashboard.body.emailReporting.mode, 'safe-reporting');
+    assert.equal(dashboard.body.campaignReporting.mode, 'campaign-reporting-safe-summary');
+    assert.equal(dashboard.body.safetyGates.engagementTracking, 'dry-run-events-only');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
   });
 });
@@ -736,6 +742,11 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
 
     const dashboard = await request('/api/dashboard', { headers: { cookie } });
     assert.equal(dashboard.body.summary.campaigns, 1);
+    assert.equal(dashboard.body.summary.opens, 1);
+    assert.equal(dashboard.body.summary.clicks, 1);
+    assert.equal(dashboard.body.summary.campaignOpenRate, 1);
+    assert.equal(dashboard.body.summary.campaignClickRate, 1);
+    assert.equal(dashboard.body.campaignReporting.campaigns[0].engagement.opens, 1);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_create'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_approve_dry_run'));
