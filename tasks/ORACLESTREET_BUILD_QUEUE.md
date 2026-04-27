@@ -117,14 +117,15 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Flow A — Contact browser search/filter and source-quality drilldowns.
-2. Flow B — Campaign calendar UI over warm-up caps.
-3. Flow C — Multi-user/RBAC admin workflow.
+1. Flow B — Campaign calendar UI over warm-up caps.
+2. Flow C — Multi-user/RBAC admin workflow.
+3. Flow D — Remote PostgreSQL import scheduler.
 4. Flow D — Remote PostgreSQL import scheduler.
 5. Flow E — Controlled one-recipient MTA proof path/runbook, still manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
 6. Flow F — Reporting dashboard depth.
 
 Latest shipped slice:
+- Flow A contact browser/search drilldowns: `/api/contacts/browser` provides protected email/name/source/domain/status search, consent/source/domain/suppression/risk filters, source-quality scores, domain concentration, and contact timeline stubs from imports/events/jobs; the Contacts UI exposes the controls after login and remains read-only/no-delivery.
 - Remote PostgreSQL approved contact import: `/api/data-source-import/execute` reruns the preview validation, requires exact import approval phrase `I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT`, imports only zero-rejection mapped contacts through the normal contact repository, records imported/updated counts plus sync-run history, and keeps delivery locked.
 - Remote PostgreSQL contact import preview: `/api/data-source-import/preview` maps approved SELECT/sample rows into OracleStreet contact fields, enforces email/consent/source/duplicate validation, audits the preview, and never imports or mutates contacts.
 - Live remote PostgreSQL read-only execution gate: `/api/data-source-schema/discover` and `/api/data-source-query/execute` can execute only when env/operator gates pass, use encrypted secret refs, enforce SELECT/information_schema-only limits/timeouts, redact errors, reject destructive SQL, and expose visible UI controls without plaintext secrets.

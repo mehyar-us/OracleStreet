@@ -74,6 +74,12 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
   - source-quality scoring
   - domain concentration signals
   - cleanup recommendations
+- Contact browser search/filter API/UI:
+  - email/name/source/domain/status search
+  - consent/source/domain/suppression/risk filters
+  - source-quality drilldowns
+  - domain concentration drilldowns
+  - contact timeline stubs from imports, events, and dry-run jobs
 - Safe in-memory fallback for local tests/adapter failures.
 
 ### Suppression and compliance
@@ -220,14 +226,14 @@ The loop should keep shipping one of these per run, with tests, docs, commit, pu
 
 ### Flow A — Contact browser and source-quality drilldowns
 
-Goal: make contacts feel like a real CMS list manager.
+Status: shipped baseline. The Contacts workbench now calls `/api/contacts/browser` for protected search/filter plus source/domain drilldowns. It remains read-only, admin-only, PostgreSQL-backed through the existing repositories where enabled, and real delivery stays locked.
 
-Build:
+Shipped:
 - contact browser search by email/name/source/domain/status
-- filters for consent status, source, domain, suppression state, stale/risky flags
+- filters for consent status, source, domain, suppression state, stale/risky/role-account flags
 - source-quality drilldown panel
 - domain concentration drilldown
-- contact detail timeline stub: imports, suppressions, events, campaign jobs
+- contact timeline stub from imports, events, and campaign jobs
 
 Acceptance:
 - visible UI controls after login

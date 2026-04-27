@@ -6,6 +6,7 @@ import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/controlledLiveTestReadiness.js';
+import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { createDataSource, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, validateDataSourceQuery } from './lib/dataSources.js';
@@ -515,6 +516,15 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, listContacts());
+    }
+
+    if (url.pathname === '/api/contacts/browser' || url.pathname === '/contacts/browser') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = browseContacts(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'contact_browser_search', actorEmail: session.email, status: 'ok', details: { filters: result.filters, matchedContacts: result.totals.matchedContacts, noContactMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/contacts/import/validate' || url.pathname === '/contacts/import/validate') {

@@ -1066,6 +1066,58 @@ test('contact import validation enforces consent source and duplicate gates', as
   });
 });
 
+test('contact browser search filters and source-quality drilldowns require admin and stay read-only', async () => {
+  resetAuditLogForTests();
+  resetContactsForTests();
+  resetSuppressionsForTests();
+  resetEmailEventsForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+  }, async () => {
+    const unauth = await request('/api/contacts/browser?search=example');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'Ada@Example.test', consentStatus: 'opt_in', source: 'owned newsletter', firstName: 'Ada', lastName: 'Lovelace' },
+        { email: 'support@example.test', consentStatus: 'opt_in', source: 'support imports', firstName: 'Support' },
+        { email: 'reader@other.test', consentStatus: 'double_opt_in', source: 'partner optin', firstName: 'Reader' }
+      ] })
+    });
+    await request('/api/suppressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'support@example.test', reason: 'manual', source: 'test suppression' })
+    });
+
+    const search = await request('/api/contacts/browser?search=ada&domain=example.test&suppression=not_suppressed', { headers: { cookie } });
+    assert.equal(search.status, 200);
+    assert.equal(search.body.mode, 'contact-browser-search-filter-drilldown');
+    assert.equal(search.body.totals.matchedContacts, 1);
+    assert.equal(search.body.contacts[0].email, 'ada@example.test');
+    assert.equal(search.body.contacts[0].suppressed, false);
+    assert.equal(search.body.safety.noContactMutation, true);
+    assert.equal(search.body.safety.realDeliveryAllowed, false);
+
+    const risky = await request('/api/contacts/browser?risk=role_account', { headers: { cookie } });
+    assert.equal(risky.status, 200);
+    assert.ok(risky.body.contacts.some((contact) => contact.email === 'support@example.test' && contact.riskFlags.includes('role_account')));
+    assert.ok(risky.body.sourceQuality.some((source) => source.source === 'support imports' && source.suppressed === 1));
+    assert.ok(risky.body.domainConcentration.some((entry) => entry.domain === 'example.test'));
+
+    const contacts = await request('/api/contacts', { headers: { cookie } });
+    assert.equal(contacts.body.count, 3);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
+  });
+});
+
 test('list hygiene cleanup planner requires admin session and returns safe read-only recommendations', async () => {
   resetAuditLogForTests();
   resetContactsForTests();
