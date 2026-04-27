@@ -1,26 +1,18 @@
+import { ROLE_MATRIX } from './adminUsers.js';
+
 const cleanEmail = (value) => String(value || '').trim().toLowerCase();
 
-const roleCatalog = [
-  {
-    role: 'owner',
-    scope: 'full_admin',
-    permissions: ['manage_users', 'manage_email_config', 'manage_campaigns', 'view_reporting', 'view_audit_log', 'manage_data_sources']
-  },
-  {
-    role: 'operator',
-    scope: 'day_to_day_email_ops',
-    permissions: ['manage_contacts', 'manage_segments', 'manage_templates', 'prepare_campaigns', 'view_reporting']
-  },
-  {
-    role: 'analyst',
-    scope: 'read_only_reporting',
-    permissions: ['view_reporting', 'view_contacts_metadata']
-  },
-  {
-    role: 'compliance',
-    scope: 'compliance_review',
-    permissions: ['view_audit_log', 'manage_suppressions', 'view_reporting', 'review_sending_readiness']
-  }
+export const RBAC_ROUTE_POLICY = [
+  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'POST /api/admin/users/invite-plan'] },
+  { surface: 'audit_log', permission: 'view_audit_log', routes: ['GET /api/audit-log'] },
+  { surface: 'contacts', permission: 'manage_contacts', routes: ['POST /api/contacts/import', 'POST /api/contacts/import/validate'] },
+  { surface: 'contact_metadata', permission: 'view_contacts_metadata', routes: ['GET /api/contacts', 'GET /api/contacts/browser', 'GET /api/list-hygiene/plan'] },
+  { surface: 'campaigns', permission: 'manage_campaigns', routes: ['POST /api/campaigns', 'POST /api/campaigns/approve-dry-run', 'POST /api/campaigns/schedule-dry-run', 'POST /api/campaigns/enqueue-dry-run'] },
+  { surface: 'templates', permission: 'manage_templates', routes: ['POST /api/templates', 'POST /api/templates/preview'] },
+  { surface: 'suppressions', permission: 'manage_suppressions', routes: ['GET /api/suppressions', 'POST /api/suppressions'] },
+  { surface: 'data_sources', permission: 'manage_data_sources', routes: ['POST /api/data-sources', 'POST /api/data-source-query/execute', 'POST /api/data-source-schema/discover', 'POST /api/data-source-import/execute', 'POST /api/data-source-import-schedules'] },
+  { surface: 'reporting', permission: 'view_reporting', routes: ['GET /api/email/reporting', 'GET /api/email/reporting/dashboard', 'GET /api/email/reporting/export', 'GET /api/campaigns/reporting'] },
+  { surface: 'sending_readiness', permission: 'review_sending_readiness', routes: ['GET /api/email/sending-readiness', 'GET /api/email/controlled-live-test/readiness', 'POST /api/email/controlled-live-test/plan', 'GET /api/send-queue/readiness'] }
 ];
 
 export const rbacReadiness = (env = process.env) => {
@@ -40,13 +32,14 @@ export const rbacReadiness = (env = process.env) => {
       adminEmailDomain: adminEmail.split('@')[1] || null,
       multiUserEnabled: false
     },
-    plannedRoles: roleCatalog,
+    plannedRoles: ROLE_MATRIX,
+    routePolicy: RBAC_ROUTE_POLICY,
     enforcement: {
-      current: 'admin_session_required_for_protected_routes',
-      multiUser: 'planned_locked',
-      perRoutePermissions: 'planned_locked',
-      invitationFlow: 'planned_locked',
-      auditRoleChanges: 'planned_locked'
+      current: 'admin_session_plus_route_permission_policy_for_hardened_surfaces',
+      multiUser: 'locked_until_password_reset_and_invite_acceptance_ship',
+      perRoutePermissions: 'active_for_admin_user_audit_contacts_campaigns_templates_suppressions_data_sources_reporting_readiness',
+      invitationFlow: 'safe_plan_only_no_email_token_or_user_mutation',
+      auditRoleChanges: 'invite_plans_and_permission_denials_audited'
     },
     protectedSurfaces: [
       'email_provider_config',
@@ -68,8 +61,8 @@ export const rbacReadiness = (env = process.env) => {
     },
     blockersBeforeMultiUser: [
       'persisted user table with password reset policy',
-      'route-level permission middleware',
-      'role-change audit events',
+      'password reset and invite acceptance workflow',
+      'role-change mutation endpoint with audit events',
       'session invalidation on role changes',
       'least-privilege defaults for non-owner users'
     ],

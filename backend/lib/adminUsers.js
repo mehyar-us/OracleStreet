@@ -5,14 +5,18 @@ const sessions = new Map();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_ROLES = new Set(['owner', 'admin', 'operator', 'analyst', 'compliance', 'read_only']);
-const ROLE_MATRIX = [
-  { role: 'owner', permissions: ['manage_users', 'manage_platform', 'manage_campaigns', 'manage_data_sources', 'view_reporting', 'view_audit_log'] },
-  { role: 'admin', permissions: ['manage_users', 'manage_contacts', 'manage_campaigns', 'manage_suppressions', 'view_reporting', 'view_audit_log'] },
-  { role: 'operator', permissions: ['manage_contacts', 'manage_segments', 'manage_templates', 'prepare_campaigns', 'view_reporting'] },
+export const ROLE_MATRIX = [
+  { role: 'owner', permissions: ['manage_users', 'manage_platform', 'manage_contacts', 'manage_segments', 'manage_templates', 'manage_campaigns', 'manage_suppressions', 'manage_data_sources', 'review_sending_readiness', 'view_reporting', 'view_contacts_metadata', 'view_audit_log'] },
+  { role: 'admin', permissions: ['manage_users', 'manage_platform', 'manage_contacts', 'manage_segments', 'manage_templates', 'manage_campaigns', 'manage_suppressions', 'manage_data_sources', 'review_sending_readiness', 'view_reporting', 'view_contacts_metadata', 'view_audit_log'] },
+  { role: 'operator', permissions: ['manage_contacts', 'manage_segments', 'manage_templates', 'prepare_campaigns', 'view_reporting', 'view_contacts_metadata'] },
   { role: 'analyst', permissions: ['view_reporting', 'view_contacts_metadata'] },
   { role: 'compliance', permissions: ['manage_suppressions', 'review_sending_readiness', 'view_audit_log', 'view_reporting'] },
   { role: 'read_only', permissions: ['view_reporting', 'view_contacts_metadata', 'view_audit_log'] }
 ];
+
+export const permissionsForRole = (role) => ROLE_MATRIX.find((entry) => entry.role === String(role || '').trim().toLowerCase())?.permissions || [];
+
+export const roleHasPermission = (role, permission) => permissionsForRole(role).includes(permission);
 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex');
 
@@ -66,6 +70,27 @@ const pgRowToUser = ([id, email, role, hasPassword, createdAt, updatedAt]) => ({
   updatedAt: updatedAt || null
 });
 
+export const getAdminUserRole = (email, env = process.env) => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return null;
+  if (isPgRepositoryEnabled('users')) {
+    try {
+      const rows = runLocalPgRows(`
+        SELECT role
+        FROM users
+        WHERE email = ${sqlLiteral(cleanEmail)}
+        LIMIT 1;
+      `);
+      if (rows[0]?.[0]) return rows[0][0];
+    } catch (error) {
+      // fall through to bootstrap/default role
+    }
+  }
+  const bootstrapEmail = String(env.ORACLESTREET_ADMIN_EMAIL || 'admin@oraclestreet.local').trim().toLowerCase();
+  if (cleanEmail === bootstrapEmail) return String(env.ORACLESTREET_BOOTSTRAP_ADMIN_ROLE || 'admin').trim().toLowerCase();
+  return null;
+};
+
 export const listAdminUsers = (env = process.env) => {
   const bootstrapEmail = String(env.ORACLESTREET_ADMIN_EMAIL || 'admin@oraclestreet.local').trim().toLowerCase();
   if (isPgRepositoryEnabled('users')) {
@@ -85,7 +110,7 @@ export const listAdminUsers = (env = process.env) => {
     ok: true,
     mode: 'admin-user-directory',
     count: bootstrapEmail ? 1 : 0,
-    users: bootstrapEmail ? [{ id: 'bootstrap-admin', email: bootstrapEmail, role: 'admin', status: 'bootstrap_env_admin', hasPassword: false, createdAt: null, updatedAt: null }] : [],
+    users: bootstrapEmail ? [{ id: 'bootstrap-admin', email: bootstrapEmail, role: String(env.ORACLESTREET_BOOTSTRAP_ADMIN_ROLE || 'admin').trim().toLowerCase(), status: 'bootstrap_env_admin', hasPassword: false, createdAt: null, updatedAt: null }] : [],
     roleMatrix: ROLE_MATRIX,
     persistenceMode: isPgRepositoryEnabled('users') ? 'postgresql-error-fallback-bootstrap-env' : 'env-until-postgresql-connection-enabled',
     realDeliveryAllowed: false

@@ -117,11 +117,12 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Hardening pass: RBAC enforcement beyond safe planning baselines.
-2. Affiliate/campaign metadata and audit timeline depth.
-3. Remote source persistence for source registry/encrypted secret metadata.
+1. Affiliate/campaign metadata and audit timeline depth.
+2. Remote source persistence for source registry/encrypted secret metadata.
+3. Password reset/invite acceptance workflow for full multi-user activation.
 
 Latest shipped slice:
+- RBAC enforcement hardening: added a protected route-permission policy endpoint, visible Users/RBAC policy surface, permission checks for hardened admin/user/audit/contact-import/data-source write paths, and audited `rbac_permission_denied` responses with no user mutation, role mutation, secret output, or delivery unlock.
 - PostgreSQL persistence hardening for remote import schedules and controlled proof audits: migration `009_schedule_proof_runtime` adds `data_source_import_schedules` and `controlled_live_test_proof_audits`; both runtime paths now use local `psql` repositories on VPS when enabled, keep safe in-memory fallback for tests/adapter failure, never print secrets, and preserve no-pull/no-send/no-mutation posture.
 - Flow F reporting dashboard depth safe baseline: `/api/email/reporting/dashboard` provides protected aggregate campaign leaderboard, source performance, domain performance, event trend, queue-status, and export-link metadata; the Reporting UI exposes the cards/lists after login, audits dashboard views, includes no secrets, probes no networks, sends no email, and keeps real delivery locked.
 - Flow E controlled one-recipient MTA proof path safe baseline: `/api/email/controlled-live-test/proof-audit` records manual/out-of-band proof outcomes, dry-run/local-capture proof IDs, optional provider message IDs, masked recipient metadata, and notes; it audits accepted/rejected records, sends no email, probes no network, mutates no queues/providers/suppressions, exposes no secrets, and the Reputation/readiness UI exposes proof audit history and controls after login.

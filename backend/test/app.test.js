@@ -280,6 +280,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Build CSV export/);
   assert.match(html, /reporting-export-dataset/);
   assert.match(html, /audit-screen/);
+  assert.match(html, /api\/platform\/rbac-policy/);
+  assert.match(html, /Route permission enforcement/);
   assert.match(html, /loadWorkbench/);
   assert.match(html, /api\/email\/sending-readiness/);
 });
@@ -3551,9 +3553,10 @@ test('RBAC readiness endpoint requires admin and reports planned roles without m
     assert.equal(readiness.body.currentAccess.model, 'single_admin_session');
     assert.equal(readiness.body.currentAccess.adminEmailDomain, 'example.test');
     assert.equal(readiness.body.currentAccess.multiUserEnabled, false);
-    assert.equal(readiness.body.enforcement.current, 'admin_session_required_for_protected_routes');
-    assert.equal(readiness.body.enforcement.multiUser, 'planned_locked');
+    assert.equal(readiness.body.enforcement.current, 'admin_session_plus_route_permission_policy_for_hardened_surfaces');
+    assert.equal(readiness.body.enforcement.multiUser, 'locked_until_password_reset_and_invite_acceptance_ship');
     assert.ok(readiness.body.plannedRoles.some((role) => role.role === 'compliance'));
+    assert.ok(readiness.body.routePolicy.some((policy) => policy.surface === 'admin_users' && policy.permission === 'manage_users'));
     assert.ok(readiness.body.protectedSurfaces.includes('readiness_gates'));
     assert.equal(readiness.body.safety.noUserMutation, true);
     assert.equal(readiness.body.safety.noRoleMutation, true);
@@ -3561,6 +3564,45 @@ test('RBAC readiness endpoint requires admin and reports planned roles without m
 
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'rbac_readiness_view'));
+  });
+});
+
+test('RBAC policy endpoint reports route permissions and denies insufficient roles on hardened surfaces', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_BOOTSTRAP_ADMIN_ROLE: 'read_only'
+  }, async () => {
+    const unauth = await request('/api/platform/rbac-policy');
+    assert.equal(unauth.status, 401);
+
+    const login = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@example.test', password: 'correct-horse-battery-staple' })
+    });
+    const cookie = login.headers.get('set-cookie');
+    const policy = await request('/api/platform/rbac-policy', { headers: { cookie } });
+    assert.equal(policy.status, 200);
+    assert.equal(policy.body.mode, 'rbac-route-permission-policy');
+    assert.equal(policy.body.currentUser.role, 'read_only');
+    assert.ok(policy.body.routePolicy.some((entry) => entry.permission === 'manage_users'));
+    assert.equal(policy.body.safety.noUserMutation, true);
+    assert.equal(policy.body.realDeliveryAllowed, false);
+
+    const forbidden = await request('/api/admin/users', { headers: { cookie } });
+    assert.equal(forbidden.status, 403);
+    assert.equal(forbidden.body.error, 'forbidden');
+    assert.equal(forbidden.body.requiredPermission, 'manage_users');
+    assert.equal(forbidden.body.role, 'read_only');
+    assert.equal(forbidden.body.realDeliveryAllowed, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.equal(audit.status, 200);
+    assert.ok(audit.body.events.some((event) => event.action === 'rbac_permission_denied'));
+    assert.ok(audit.body.events.some((event) => event.action === 'rbac_policy_view'));
   });
 });
 

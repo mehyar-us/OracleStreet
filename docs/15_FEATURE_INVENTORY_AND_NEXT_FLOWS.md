@@ -38,6 +38,9 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - PostgreSQL runtime adapter for audit log.
 - Audit log baseline and visible audit panel.
 - RBAC readiness endpoint and planned owner/admin/operator/analyst/read-only roles.
+- RBAC route permission policy endpoint showing hardened surfaces and required permissions.
+- Route-level permission enforcement for admin-user management, invite plans, audit log access, contact imports, data-source writes/import schedules, and other hardened write surfaces.
+- Permission-denial audit events with no user mutation, role mutation, secret output, or delivery unlock.
 - Admin user directory endpoint over the users repository/bootstrap admin fallback.
 - Safe admin invite-plan endpoint that validates role/email, audits the plan, sends no email, creates no password/token, and mutates no users.
 - Raw passwords/tokens are not stored or exposed by the runtime adapter.
@@ -205,6 +208,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Monitoring readiness safe gate.
 - Platform rate-limit readiness safe gate.
 - RBAC readiness safe gate.
+- RBAC route permission policy safe gate.
 - Secret redaction in config/status surfaces.
 - Runtime persistence migration `009_schedule_proof_runtime` for remote import schedules and controlled proof audits.
 - Tests for every shipped slice.

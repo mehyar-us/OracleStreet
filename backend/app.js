@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, upsertAdminUser } from './lib/adminUsers.js';
+import { getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, roleHasPermission, upsertAdminUser } from './lib/adminUsers.js';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
@@ -21,7 +21,7 @@ import { monitoringReadiness } from './lib/monitoringReadiness.js';
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
-import { rbacReadiness } from './lib/rbacReadiness.js';
+import { RBAC_ROUTE_POLICY, rbacReadiness } from './lib/rbacReadiness.js';
 import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
@@ -119,6 +119,18 @@ const requireSession = (req, res) => {
     jsonResponse(res, 401, { ok: false, error: 'unauthorized' });
     return null;
   }
+  const role = getAdminUserRole(session.email) || 'read_only';
+  return { ...session, role, permissions: [] };
+};
+
+const requirePermission = (req, res, permission) => {
+  const session = requireSession(req, res);
+  if (!session) return null;
+  if (!roleHasPermission(session.role, permission)) {
+    recordAuditEvent({ action: 'rbac_permission_denied', actorEmail: session.email, target: permission, status: 'rejected', details: { role: session.role, path: req.url, noUserMutation: true, realDeliveryAllowed: false } });
+    jsonResponse(res, 403, { ok: false, error: 'forbidden', requiredPermission: permission, role: session.role, realDeliveryAllowed: false });
+    return null;
+  }
   return session;
 };
 
@@ -212,7 +224,7 @@ export const createHandler = () => {
     }
 
     if (url.pathname === '/api/data-sources' || url.pathname === '/data-sources') {
-      const session = requireSession(req, res);
+      const session = req.method === 'POST' ? requirePermission(req, res, 'manage_data_sources') : requireSession(req, res);
       if (!session) return;
       if (req.method === 'GET') {
         recordAuditEvent({ action: 'data_sources_list', actorEmail: session.email, details: { realSync: false } });
@@ -246,7 +258,7 @@ export const createHandler = () => {
     }
 
     if (url.pathname === '/api/data-source-import-schedules' || url.pathname === '/data-source-import-schedules') {
-      const session = requireSession(req, res);
+      const session = req.method === 'POST' ? requirePermission(req, res, 'manage_data_sources') : requireSession(req, res);
       if (!session) return;
       if (req.method === 'GET') {
         const result = listDataSourceImportSchedules();
@@ -362,7 +374,7 @@ export const createHandler = () => {
         recordAuditEvent({ action: 'admin_login', actorEmail: body.email || null, status: 'rejected', details: { reason: 'invalid_credentials' } });
         return jsonResponse(res, 401, { ok: false, error: 'invalid_credentials' });
       }
-      const userPersistence = upsertAdminUser({ email: adminEmail(), role: 'admin' });
+      const userPersistence = upsertAdminUser({ email: adminEmail(), role: process.env.ORACLESTREET_BOOTSTRAP_ADMIN_ROLE || 'admin' });
       recordAuditEvent({ action: 'admin_login', actorEmail: adminEmail(), status: 'ok', details: { userPersistenceMode: userPersistence.persistenceMode } });
       const token = createSessionToken(adminEmail());
       const expiresAt = new Date((Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS) * 1000).toISOString();
@@ -525,18 +537,27 @@ export const createHandler = () => {
       return jsonResponse(res, 200, readiness);
     }
 
-    if (url.pathname === '/api/admin/users' || url.pathname === '/admin/users') {
+    if (url.pathname === '/api/platform/rbac-policy' || url.pathname === '/platform/rbac-policy') {
       if (!requireMethod(req, res, 'GET')) return;
       const session = requireSession(req, res);
       if (!session) return;
+      const result = { ok: true, mode: 'rbac-route-permission-policy', currentUser: { email: session.email, role: session.role }, routePolicy: RBAC_ROUTE_POLICY, safety: { noUserMutation: true, noRoleMutation: true, noSecretOutput: true, realDeliveryAllowed: false }, realDeliveryAllowed: false };
+      recordAuditEvent({ action: 'rbac_policy_view', actorEmail: session.email, target: session.role, status: 'ok', details: { routePolicies: RBAC_ROUTE_POLICY.length, noUserMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/admin/users' || url.pathname === '/admin/users') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
       const result = listAdminUsers();
-      recordAuditEvent({ action: 'admin_user_directory_view', actorEmail: session.email, status: 'ok', details: { count: result.count, noSecretOutput: true, realDelivery: false } });
+      recordAuditEvent({ action: 'admin_user_directory_view', actorEmail: session.email, status: 'ok', details: { count: result.count, role: session.role, noSecretOutput: true, realDelivery: false } });
       return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/admin/users/invite-plan' || url.pathname === '/admin/users/invite-plan') {
       if (!requireMethod(req, res, 'POST')) return;
-      const session = requireSession(req, res);
+      const session = requirePermission(req, res, 'manage_users');
       if (!session) return;
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
@@ -572,7 +593,7 @@ export const createHandler = () => {
 
     if (url.pathname === '/api/audit-log' || url.pathname === '/audit-log') {
       if (!requireMethod(req, res, 'GET')) return;
-      const session = requireSession(req, res);
+      const session = requirePermission(req, res, 'view_audit_log');
       if (!session) return;
       return jsonResponse(res, 200, listAuditLog());
     }
@@ -595,7 +616,7 @@ export const createHandler = () => {
 
     if (url.pathname === '/api/contacts/import/validate' || url.pathname === '/contacts/import/validate') {
       if (!requireMethod(req, res, 'POST')) return;
-      const session = requireSession(req, res);
+      const session = requirePermission(req, res, 'manage_contacts');
       if (!session) return;
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
@@ -606,7 +627,7 @@ export const createHandler = () => {
 
     if (url.pathname === '/api/contacts/import' || url.pathname === '/contacts/import') {
       if (!requireMethod(req, res, 'POST')) return;
-      const session = requireSession(req, res);
+      const session = requirePermission(req, res, 'manage_contacts');
       if (!session) return;
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });

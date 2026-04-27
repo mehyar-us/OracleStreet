@@ -100,9 +100,9 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Multi-user/RBAC enforcement hardening beyond the safe invite-plan baseline.
-2. Affiliate/campaign metadata and audit timeline depth.
-3. Remote source persistence for source registry/encrypted secret metadata.
+1. Affiliate/campaign metadata and audit timeline depth.
+2. Remote source persistence for source registry/encrypted secret metadata.
+3. Password reset/invite acceptance workflow for full multi-user activation.
 5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
 
 Latest warm-up calendar slice: `GET /api/campaigns/calendar` now renders scheduled dry-run campaigns against sender-domain warm-up caps with planned count, daily cap, remaining capacity, and over-cap days. `POST /api/campaigns/schedule-dry-run` counts already scheduled campaigns on the same sender-domain/day and blocks over-cap schedules before any queue/provider mutation.
