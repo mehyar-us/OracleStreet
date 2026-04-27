@@ -612,6 +612,7 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(estimate.body.suppressedCount, 1);
     assert.equal(estimate.body.realDelivery, false);
     assert.equal(estimate.body.compliance.suppressionsExcluded, true);
+    assert.equal(estimate.body.compliance.unsubscribeLinkInjected, true);
 
     const campaign = await request('/api/campaigns', {
       method: 'POST',
@@ -641,6 +642,7 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(approval.body.campaign.status, 'approved_dry_run');
     assert.equal(approval.body.realDelivery, false);
     assert.equal(approval.body.compliance.realDeliveryAllowed, false);
+    assert.equal(approval.body.compliance.unsubscribeLinkInjected, true);
 
     const enqueued = await request('/api/campaigns/enqueue-dry-run', {
       method: 'POST',
@@ -654,6 +656,10 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(enqueued.body.campaign.status, 'queued_dry_run');
     assert.equal(enqueued.body.jobs[0].campaignId, campaign.body.campaign.id);
     assert.equal(enqueued.body.jobs[0].to, 'buyer-b@example.test');
+    assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes('/unsubscribe?'));
+    assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes('buyer-b%40example.test'));
+    assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes(campaign.body.campaign.id));
+    assert.equal(enqueued.body.jobs[0].safety.unsubscribeLinkInjected, true);
 
     const list = await request('/api/campaigns', { headers: { cookie } });
     assert.equal(list.body.count, 1);
@@ -661,6 +667,7 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     const queue = await request('/api/send-queue', { headers: { cookie } });
     assert.equal(queue.body.count, 1);
     assert.equal(queue.body.jobs[0].safety.realDelivery, false);
+    assert.equal(queue.body.jobs[0].safety.unsubscribeLinkInjected, true);
     const dashboard = await request('/api/dashboard', { headers: { cookie } });
     assert.equal(dashboard.body.summary.campaigns, 1);
     const audit = await request('/api/audit-log', { headers: { cookie } });

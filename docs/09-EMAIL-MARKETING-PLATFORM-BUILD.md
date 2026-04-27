@@ -82,7 +82,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 PowerMTA or any real mail provider must not send production mail until these exist:
 
 - suppression check in send path
-- unsubscribe link injection
+- unsubscribe link injection baseline for campaign dry-run queue jobs
 - sender/domain config documented
 - bounce mailbox or webhook ingestion plan
 - rate limits per domain/provider

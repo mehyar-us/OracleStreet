@@ -107,6 +107,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 12. [x] Dry-run dispatch event tracking baseline that records internal `dispatched` events while keeping manual ingest limited to bounce/complaint.
 13. [x] Real sending readiness safe-gate baseline that reports provider/config/compliance blockers while keeping delivery locked.
 14. [x] Safe provider adapter interface baseline that exposes adapter capability/readiness without enabling external delivery.
+15. [x] Campaign unsubscribe link injection baseline for dry-run queue jobs.
 
 ## Current validation endpoints
 
@@ -117,7 +118,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/email/test-send` requires an admin session and is dry-run only.
 - `POST /api/send-queue/enqueue` requires an admin session, applies the current safe test-message gates, and queues dry-run jobs only.
 - `POST /api/campaigns/approve-dry-run` requires an admin session, re-validates campaign audience/template compliance, marks a draft campaign `approved_dry_run`, and keeps `realDelivery: false`.
-- `POST /api/campaigns/enqueue-dry-run` requires an admin session, requires `approved_dry_run`, renders the campaign audience into dry-run queue jobs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
+- `POST /api/campaigns/enqueue-dry-run` requires an admin session, requires `approved_dry_run`, renders the campaign audience into dry-run queue jobs, injects per-recipient `/unsubscribe` URLs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
 - `POST /api/send-queue/dispatch-next-dry-run` requires an admin session and dispatches exactly one queued dry-run job through the dry-run adapter path with `realDelivery: false`; successful dispatch records an internal `dispatched` email event.
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.

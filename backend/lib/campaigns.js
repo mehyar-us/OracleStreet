@@ -1,6 +1,6 @@
 import { enqueueDryRunSend } from './sendQueue.js';
 import { estimateSegmentAudience, getSegment } from './segments.js';
-import { getTemplate, renderTemplateContent } from './templates.js';
+import { buildUnsubscribeUrl, getTemplate, renderTemplateContent } from './templates.js';
 
 const campaigns = new Map();
 let sequence = 0;
@@ -37,6 +37,7 @@ export const estimateCampaign = ({ segmentId, templateId }) => {
       consentSource: 'segment_contacts_prevalidated',
       suppressionsExcluded: true,
       unsubscribeLanguagePresent: true,
+      unsubscribeLinkInjected: true,
       realDeliveryAllowed: false
     },
     realDelivery: false
@@ -112,6 +113,7 @@ export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
       consentSource: 'segment_contacts_prevalidated',
       suppressionsExcluded: true,
       unsubscribeLanguagePresent: true,
+      unsubscribeLinkInjected: true,
       rateLimitsRequiredAtQueue: true,
       realDeliveryAllowed: false
     },
@@ -142,7 +144,8 @@ export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = pro
   const errors = [];
 
   for (const contact of audience.contacts) {
-    const rendered = renderTemplateContent(template, contactRenderData(contact));
+    const unsubscribeUrl = buildUnsubscribeUrl({ email: contact.email, campaignId: campaign.id, contactId: contact.id });
+    const rendered = renderTemplateContent(template, contactRenderData(contact), { unsubscribeUrl });
     const result = enqueueDryRunSend({
       to: contact.email,
       subject: rendered.subject,
@@ -151,7 +154,8 @@ export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = pro
       consentStatus: contact.consentStatus,
       source: contact.source,
       campaignId: campaign.id,
-      contactId: contact.id
+      contactId: contact.id,
+      unsubscribeUrl: rendered.unsubscribeUrl
     }, actorEmail, env);
     if (!result.ok) {
       errors.push({ email: contact.email, errors: result.errors });
