@@ -72,7 +72,7 @@
 - [x] Backup readiness safe-gate baseline
 - [x] Monitoring readiness safe-gate baseline
 - [x] Platform rate-limit readiness safe-gate baseline
-- [ ] Role-based access controls
+- [x] RBAC readiness safe-gate baseline
 
 ## Email platform execution docs
 

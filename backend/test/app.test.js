@@ -1960,6 +1960,39 @@ test('platform rate-limit readiness requires admin and reports safe gates withou
   });
 });
 
+test('RBAC readiness endpoint requires admin and reports planned roles without mutation', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MULTI_USER_ENABLED: 'false'
+  }, async () => {
+    const unauth = await request('/api/platform/rbac-readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/platform/rbac-readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'rbac-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.currentAccess.model, 'single_admin_session');
+    assert.equal(readiness.body.currentAccess.adminEmailDomain, 'example.test');
+    assert.equal(readiness.body.currentAccess.multiUserEnabled, false);
+    assert.equal(readiness.body.enforcement.current, 'admin_session_required_for_protected_routes');
+    assert.equal(readiness.body.enforcement.multiUser, 'planned_locked');
+    assert.ok(readiness.body.plannedRoles.some((role) => role.role === 'compliance'));
+    assert.ok(readiness.body.protectedSurfaces.includes('readiness_gates'));
+    assert.equal(readiness.body.safety.noUserMutation, true);
+    assert.equal(readiness.body.safety.noRoleMutation, true);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'rbac_readiness_view'));
+  });
+});
+
 test('sending readiness reports provider blockers without exposing secrets', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
@@ -1999,4 +2032,6 @@ test('sending readiness endpoint also works behind nginx stripped api prefix', a
   assert.equal(monitoring.status, 401);
   const platformRateLimits = await request('/platform/rate-limit-readiness');
   assert.equal(platformRateLimits.status, 401);
+  const rbac = await request('/platform/rbac-readiness');
+  assert.equal(rbac.status, 401);
 });

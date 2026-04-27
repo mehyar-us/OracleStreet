@@ -13,6 +13,7 @@ import { listMigrations } from './lib/migrations.js';
 import { monitoringReadiness } from './lib/monitoringReadiness.js';
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
+import { rbacReadiness } from './lib/rbacReadiness.js';
 import { campaignReportingSummary, emailReportingSummary, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
@@ -339,6 +340,15 @@ export const createHandler = () => {
       if (!session) return;
       const readiness = platformRateLimitReadiness();
       recordAuditEvent({ action: 'platform_rate_limit_readiness_view', actorEmail: session.email, target: 'platform-rate-limits', status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/platform/rbac-readiness' || url.pathname === '/platform/rbac-readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = rbacReadiness();
+      recordAuditEvent({ action: 'rbac_readiness_view', actorEmail: session.email, target: readiness.currentAccess.adminEmailDomain, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, noUserMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, readiness);
     }
 
