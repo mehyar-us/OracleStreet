@@ -45,3 +45,18 @@ Deploy now self-generates missing runtime secrets on the VPS and installs a syst
 ## Current domain wiring
 
 OracleStreet is now wired toward `stuffprettygood.com` on VPS `187.124.147.49`. See `docs/12-DOMAIN-CLOUDFLARE.md`.
+
+
+## Local VPS PostgreSQL deployment baseline
+
+Deploy now ensures the VPS has PostgreSQL server/client installed, preserves/generated database env keys in `/etc/oraclestreet/oraclestreet.env`, creates the local `oraclestreet` database and `oraclestreet_app` role, and applies every SQL migration in `backend/migrations/*.sql` through a `schema_migrations` ledger.
+
+Verification commands:
+
+```bash
+ssh oraclestreet-vps 'psql --version && pg_isready'
+ssh oraclestreet-vps 'runuser -u postgres -- psql -d oraclestreet -c "\dt"'
+curl -fsS http://stuffprettygood.com/api/schema/migrations
+```
+
+The database password and URL stay in `/etc/oraclestreet/oraclestreet.env`; do not print them in chat or commit them.

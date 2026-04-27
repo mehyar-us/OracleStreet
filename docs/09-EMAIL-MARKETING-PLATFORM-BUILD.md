@@ -109,3 +109,20 @@ PowerMTA or any real mail provider must not send production mail until these exi
 ## PMTA-first development priority
 
 Boss prioritized PMTA/sending capability first. Build order is now: provider config validation, dry-run controlled test-send, SMTP adapter, PowerMTA adapter, receive/bounce testing, then production domain/TLS/DNS. Real outbound mail remains disabled until safety gates pass.
+
+
+## Missing visible product features Boss called out
+
+Boss noted that the deployed site does not yet feel like it has features. The autonomous loop must prioritize turning existing backend baselines into visible admin UI and PostgreSQL-backed workflows. Required visible surfaces:
+
+- Contacts import/list with consent/source status.
+- Remote PostgreSQL source setup, connection probe, schema discovery, SELECT-only query runner, import preview, and sync run history.
+- Templates CRUD and preview.
+- Campaign builder, estimate, approval, schedule, and dry-run queue enqueue.
+- Send queue with dispatch/readiness state.
+- Suppressions/unsubscribe/bounce/complaint views.
+- Reputation/deliverability dashboard: sender domain readiness, PMTA config, warm-up/rate limits, bounce/complaint thresholds.
+- Reporting dashboard: campaign engagement, provider message IDs, opens/clicks/bounces/complaints, audit log.
+- Users/RBAC/admin management.
+
+Every new backend capability should get either a visible UI affordance or a clear operator endpoint documented in the dashboard until a full frontend framework is selected.

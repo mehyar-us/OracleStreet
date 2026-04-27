@@ -51,6 +51,15 @@ ensure_secret ORACLESTREET_DOMAIN 'printf stuffprettygood.com'
 ensure_secret ORACLESTREET_PUBLIC_BASE_URL 'printf http://stuffprettygood.com'
 ensure_secret ORACLESTREET_SESSION_SECRET 'openssl rand -hex 32'
 ensure_secret ORACLESTREET_INTERNAL_API_KEY 'openssl rand -hex 24'
+ensure_secret ORACLESTREET_DATABASE_NAME 'printf oraclestreet'
+ensure_secret ORACLESTREET_DATABASE_USER 'printf oraclestreet_app'
+ensure_secret ORACLESTREET_DATABASE_PASSWORD 'openssl rand -hex 24'
+if ! grep -q '^ORACLESTREET_DATABASE_URL=' /etc/oraclestreet/oraclestreet.env; then
+  db_name="$(grep '^ORACLESTREET_DATABASE_NAME=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
+  db_user="$(grep '^ORACLESTREET_DATABASE_USER=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
+  db_pass="$(grep '^ORACLESTREET_DATABASE_PASSWORD=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
+  printf 'ORACLESTREET_DATABASE_URL=postgresql://%s:%s@127.0.0.1:5432/%s?sslmode=disable\n' "$db_user" "$db_pass" "$db_name" >> /etc/oraclestreet/oraclestreet.env
+fi
 
 if [ ! -f /etc/oraclestreet/initial-admin.env ]; then
   cat > /etc/oraclestreet/initial-admin.env <<ADMIN
@@ -61,6 +70,52 @@ ADMIN
   chmod 600 /etc/oraclestreet/initial-admin.env
 fi
 chmod 600 /etc/oraclestreet/oraclestreet.env /etc/oraclestreet/initial-admin.env
+
+# Ensure local PostgreSQL exists and has OracleStreet schema before backend start.
+export DEBIAN_FRONTEND=noninteractive
+if ! command -v psql >/dev/null 2>&1; then
+  apt-get update -y
+  apt-get install -y postgresql postgresql-client
+fi
+systemctl enable --now postgresql >/dev/null 2>&1 || service postgresql start >/dev/null 2>&1
+
+db_name="$(grep '^ORACLESTREET_DATABASE_NAME=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
+db_user="$(grep '^ORACLESTREET_DATABASE_USER=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
+db_pass="$(grep '^ORACLESTREET_DATABASE_PASSWORD=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
+runuser -u postgres -- psql -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${db_user}') THEN
+    CREATE ROLE ${db_user} LOGIN PASSWORD '${db_pass}';
+  ELSE
+    ALTER ROLE ${db_user} WITH LOGIN PASSWORD '${db_pass}';
+  END IF;
+END
+\$\$;
+SELECT 'CREATE DATABASE ${db_name} OWNER ${db_user}' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '${db_name}')\gexec
+GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};
+SQL
+runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$db_name" <<SQL
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id text PRIMARY KEY,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT ALL PRIVILEGES ON SCHEMA public TO ${db_user};
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${db_user};
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${db_user};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${db_user};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${db_user};
+SQL
+if [ -d /opt/oraclestreet/backend/migrations ]; then
+  for migration in /opt/oraclestreet/backend/migrations/*.sql; do
+    [ -f "$migration" ] || continue
+    migration_id="$(basename "$migration" .sql)"
+    if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM schema_migrations WHERE id='${migration_id}'" -d "$db_name" | grep -q 1; then
+      runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$db_name" -f "$migration"
+      runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$db_name" -c "INSERT INTO schema_migrations(id) VALUES ('${migration_id}') ON CONFLICT DO NOTHING;"
+    fi
+  done
+fi
 
 cat > /etc/systemd/system/oraclestreet-backend.service <<'SERVICE'
 [Unit]

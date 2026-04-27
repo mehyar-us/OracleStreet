@@ -8,6 +8,17 @@
 - [x] Docs folder and deployment flow
 - [x] Placeholder frontend and health backend
 
+## Immediate Boss Reset — Full CMS Features
+
+- [x] Install PostgreSQL server/client on VPS
+- [x] Define full email sending CMS target in `docs/13_FULL_EMAIL_CMS_TARGET.md`
+- [x] Add persistent autonomous queue in `tasks/ORACLESTREET_BUILD_QUEUE.md`
+- [x] Teach deploy to preserve/generate `ORACLESTREET_DATABASE_URL` and apply migrations
+- [ ] Convert in-memory module baselines to PostgreSQL-backed persistence
+- [ ] Build visible admin screens for contacts, data sources, templates, campaigns, send queue, reputation, and reporting
+- [ ] Add SELECT-only remote PostgreSQL query/probe tool
+- [ ] Add reputation dashboard and warm-up controls UI
+
 ## Phase 1 — Product skeleton
 
 - [ ] Choose frontend framework
@@ -88,5 +99,7 @@
 
 ## Email platform execution docs
 
+- `docs/13_FULL_EMAIL_CMS_TARGET.md`
+- `tasks/ORACLESTREET_BUILD_QUEUE.md`
 - `docs/09-EMAIL-MARKETING-PLATFORM-BUILD.md`
 - `docs/10-POWERMTA-INTEGRATION.md`

@@ -32,6 +32,11 @@
     .panel ul { margin:8px 0 0; padding-left:18px; color:var(--muted); line-height:1.6; }
     .metric strong { display:block; font-size:22px; color:var(--gold); }
     .metric small { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
+    .module-list { display:grid; gap:10px; margin-top:16px; }
+    .module { border:1px solid var(--line); border-radius:14px; padding:14px; background:#070b12; }
+    .module strong { display:block; color:var(--gold); margin-bottom:4px; }
+    .module span { color:var(--muted); line-height:1.45; }
+    .pill { display:inline-block; margin-top:8px; border:1px solid var(--line); border-radius:999px; padding:4px 8px; color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
     .hidden { display:none; }
   </style>
 </head>
@@ -58,10 +63,11 @@
         <div id="dashboard-metrics" class="metric-list"></div>
         <div id="data-source-panel" class="panel hidden"></div>
       </article>
-      <article class="card"><h2>Contacts</h2><p>Import, sync, segment, and manage recipient records with consent/source metadata.</p></article>
-      <article class="card"><h2>Campaigns</h2><p>Create affiliate campaign structures with audience, template, and status control.</p></article>
-      <article class="card"><h2>Email Engine</h2><p>Provider-ready queue for sending, retries, suppression, and events. Real sends stay gated.</p></article>
-      <article class="card"><h2>Remote PostgreSQL</h2><p>Pull external records into OracleStreet through controlled sync jobs.</p></article>
+      <article class="card"><h2>Contacts</h2><p>Import, sync, segment, and manage recipient records with consent/source metadata.</p><span class="pill">needs full UI</span></article>
+      <article class="card"><h2>Campaigns</h2><p>Create affiliate campaign structures with audience, template, status, approval, schedule, and reporting controls.</p><span class="pill">dry-run first</span></article>
+      <article class="card"><h2>Email Engine</h2><p>Provider-ready queue for sending, retries, suppression, bounce/complaint ingestion, PowerMTA accounting, and events. Real sends stay gated.</p><span class="pill">reputation protected</span></article>
+      <article class="card"><h2>Remote PostgreSQL</h2><p>Register remote PostgreSQL credentials, probe safely, discover schemas, run SELECT-only queries, preview imports, and sync contacts.</p><span class="pill">next build target</span></article>
+      <article class="card"><h2>Full CMS build map</h2><p>OracleStreet is being built into a complete private email sending CMS. The autonomous loop now works against these feature lanes every 15 minutes.</p><div class="module-list"><div class="module"><strong>1. VPS PostgreSQL</strong><span>Local database, app role, migration ledger, users table, contacts, campaigns, queue, events.</span></div><div class="module"><strong>2. Remote DB pulls</strong><span>Encrypted credentials, connection test, schema discovery, SELECT-only query runner, import preview.</span></div><div class="module"><strong>3. Reputation-safe sending</strong><span>Warm-up, throttles, domain readiness, suppression, bounce/complaint gates, PowerMTA/SMTP adapters.</span></div><div class="module"><strong>4. Campaign CMS</strong><span>Templates, segments, campaign approval/schedule, reporting, affiliate metadata, audit logs.</span></div></div></article>
     </section>
   </main>
   <script>
