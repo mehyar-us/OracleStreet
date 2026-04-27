@@ -46,6 +46,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - seed first admin user
 - [x] remote PostgreSQL data source registry baseline with redacted metadata only and no sync/probe
 - [x] encrypted remote PostgreSQL connection secret baseline with AES-256-GCM secret refs and no plaintext exposure
+- [x] remote PostgreSQL sync dry-run job baseline with source/mapping validation and no network probes or row pulls
 
 ### 3. Contacts and suppressions
 

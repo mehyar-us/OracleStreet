@@ -3,7 +3,7 @@ import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, listDataSources } from './lib/dataSources.js';
+import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -180,6 +180,23 @@ export const createHandler = () => {
         if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
         const result = createDataSource({ ...body, actorEmail: session.email });
         recordAuditEvent({ action: 'data_source_create', actorEmail: session.email, target: result.source?.id || body.name || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], realSync: false } });
+        return jsonResponse(res, result.ok ? 200 : 400, result);
+      }
+      return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/data-source-sync-runs' || url.pathname === '/data-source-sync-runs') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') {
+        recordAuditEvent({ action: 'data_source_sync_runs_list', actorEmail: session.email, details: { realSync: false } });
+        return jsonResponse(res, 200, listDataSourceSyncRuns());
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+        const result = createDataSourceSyncRun({ ...body, actorEmail: session.email });
+        recordAuditEvent({ action: 'data_source_sync_dry_run', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], rowsPulled: 0, realSync: false } });
         return jsonResponse(res, result.ok ? 200 : 400, result);
       }
       return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });

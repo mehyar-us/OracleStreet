@@ -61,7 +61,7 @@
 
 - [x] Data source registry baseline
 - [x] Encrypted connection secrets baseline
-- [ ] Sync jobs
+- [x] Sync jobs dry-run validation baseline
 - [ ] Mapping UI
 - [ ] Sync audit logs
 

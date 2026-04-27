@@ -2,8 +2,10 @@ import crypto from 'node:crypto';
 
 const dataSources = new Map();
 const encryptedConnectionSecrets = new Map();
+const syncRuns = new Map();
 let sequence = 0;
 let secretSequence = 0;
+let syncRunSequence = 0;
 
 const nowIso = () => new Date().toISOString();
 
@@ -33,6 +35,17 @@ const parsePostgresUrl = (rawUrl) => {
     return null;
   }
 };
+
+const cloneSource = (source) => ({
+  ...source,
+  connection: { ...source.connection, parsed: { ...source.connection.parsed } }
+});
+
+const cloneSyncRun = (run) => ({
+  ...run,
+  validation: { ...run.validation, requiredGates: [...run.validation.requiredGates], blockers: [...run.validation.blockers] },
+  mapping: { ...run.mapping, fields: [...run.mapping.fields] }
+});
 
 const secretKeyMaterial = () => String(process.env.ORACLESTREET_DATA_SOURCE_SECRET_KEY || '').trim();
 
@@ -85,8 +98,10 @@ const encryptConnectionSecret = (plainText) => {
 export const resetDataSourcesForTests = () => {
   dataSources.clear();
   encryptedConnectionSecrets.clear();
+  syncRuns.clear();
   sequence = 0;
   secretSequence = 0;
+  syncRunSequence = 0;
 };
 
 export const validateDataSource = ({ name, type = 'postgresql', connectionUrl, storeSecret = false }) => {
@@ -163,7 +178,7 @@ export const createDataSource = ({ name, type = 'postgresql', connectionUrl, sto
   return {
     ok: true,
     mode: 'data-source-registry-safe-baseline',
-    source: { ...source, connection: { ...source.connection, parsed: { ...source.connection.parsed } } },
+    source: cloneSource(source),
     realSync: false
   };
 };
@@ -172,10 +187,74 @@ export const listDataSources = () => ({
   ok: true,
   mode: 'data-source-registry-safe-baseline',
   count: dataSources.size,
-  sources: [...dataSources.values()].map((source) => ({
-    ...source,
-    connection: { ...source.connection, parsed: { ...source.connection.parsed } }
-  })),
+  sources: [...dataSources.values()].map(cloneSource),
+  realSync: false
+});
+
+export const createDataSourceSyncRun = ({ dataSourceId, mapping = {}, actorEmail = null }) => {
+  const source = dataSources.get(String(dataSourceId || '').trim());
+  const errors = [];
+  if (!source) errors.push('data_source_not_found');
+
+  const requestedFields = Array.isArray(mapping.fields) ? mapping.fields.map((field) => String(field || '').trim()).filter(Boolean) : [];
+  if (mapping.fields !== undefined && requestedFields.length === 0) errors.push('mapping_fields_required_when_mapping_provided');
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      errors,
+      mode: 'data-source-sync-dry-run-baseline',
+      realSync: false,
+      rowsPulled: 0,
+      networkProbe: 'skipped'
+    };
+  }
+
+  const blockers = [];
+  if (!source.connection.secretStored) blockers.push('encrypted_connection_secret_required_for_future_live_sync');
+  if (!source.syncEnabled) blockers.push('sync_disabled_until_mapping_and_import_gates_exist');
+
+  const run = {
+    id: `sync_${(++syncRunSequence).toString().padStart(6, '0')}`,
+    dataSourceId: source.id,
+    dataSourceName: source.name,
+    status: 'validated_dry_run',
+    mode: 'data-source-sync-dry-run-baseline',
+    validation: {
+      ok: true,
+      requiredGates: [
+        'admin_session',
+        'registered_postgresql_source',
+        'redacted_connection_metadata',
+        'no_network_probe',
+        'no_remote_rows_pulled',
+        'sync_disabled'
+      ],
+      blockers
+    },
+    mapping: {
+      status: requestedFields.length > 0 ? 'provided_for_validation_only' : 'not_configured',
+      fields: requestedFields
+    },
+    rowsSeen: 0,
+    rowsImported: 0,
+    rowsPulled: 0,
+    realSync: false,
+    networkProbe: 'skipped',
+    actorEmail,
+    createdAt: nowIso(),
+    finishedAt: nowIso()
+  };
+  syncRuns.set(run.id, run);
+
+  return { ok: true, run: cloneSyncRun(run), realSync: false };
+};
+
+export const listDataSourceSyncRuns = () => ({
+  ok: true,
+  mode: 'data-source-sync-dry-run-baseline',
+  count: syncRuns.size,
+  runs: [...syncRuns.values()].map(cloneSyncRun),
   realSync: false
 });
 
