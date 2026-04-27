@@ -30,8 +30,11 @@ CREATE INDEX IF NOT EXISTS idx_data_source_registry_created_at ON data_source_re
 CREATE INDEX IF NOT EXISTS idx_data_source_registry_type ON data_source_registry (type);
 CREATE INDEX IF NOT EXISTS idx_data_source_registry_secret_stored ON data_source_registry (secret_stored);
 
-INSERT INTO repository_migration_status (module, target_table, status)
+INSERT INTO repository_migration_status (module, target_table, persistence_mode)
 VALUES
   ('data_sources', 'data_source_registry', 'postgresql-ready-runtime-registry'),
   ('data_source_encrypted_secrets', 'data_source_encrypted_secrets', 'postgresql-ready-runtime-secret-metadata')
-ON CONFLICT (module) DO UPDATE SET target_table = EXCLUDED.target_table, status = EXCLUDED.status, checked_at = now();
+ON CONFLICT (module) DO UPDATE SET
+  target_table = EXCLUDED.target_table,
+  persistence_mode = EXCLUDED.persistence_mode,
+  updated_at = now();
