@@ -1565,6 +1565,59 @@ test('manual bounce parser validates DSN text without recording events or suppre
   });
 });
 
+test('manual bounce parser ingest records parsed bounces and suppresses hard failures only', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/bounce-parse/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'Final-Recipient: rfc822; bounced@example.test\nStatus: 5.1.1' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const hard = await request('/api/email/bounce-parse/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        source: 'owned pmta bounce mailbox sample',
+        campaignId: 'cmp_bounce_ingest',
+        contactId: 'ct_bounce_ingest',
+        message: 'Final-Recipient: rfc822; Hard@Example.test\nAction: failed\nStatus: 5.1.1\nDiagnostic-Code: smtp; 550 5.1.1 mailbox unavailable'
+      })
+    });
+    assert.equal(hard.status, 200);
+    assert.equal(hard.body.mode, 'manual-bounce-parse-ingest');
+    assert.equal(hard.body.event.type, 'bounce');
+    assert.equal(hard.body.event.email, 'hard@example.test');
+    assert.equal(hard.body.suppression.reason, 'bounce');
+    assert.equal(hard.body.eventRecorded, true);
+    assert.equal(hard.body.suppressionCreated, true);
+    assert.equal(hard.body.realDelivery, false);
+
+    const deferred = await request('/api/email/bounce-parse/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ message: 'Final-Recipient: rfc822; Slow@Example.test\nAction: delayed\nStatus: 4.2.0' })
+    });
+    assert.equal(deferred.status, 200);
+    assert.equal(deferred.body.event.type, 'deferred');
+    assert.equal(deferred.body.suppressionCreated, false);
+
+    const events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 2);
+    assert.deepEqual(events.body.events.map((event) => event.type), ['bounce', 'deferred']);
+    const suppressions = await request('/api/suppressions', { headers: { cookie } });
+    assert.equal(suppressions.body.count, 1);
+    assert.equal(suppressions.body.suppressions[0].email, 'hard@example.test');
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_bounce_parse_ingest'));
+  });
+});
+
 test('manual event import validation parses CSV without recording events', async () => {
   resetAuditLogForTests();
   resetEmailEventsForTests();
@@ -1807,6 +1860,8 @@ test('email event endpoints also work behind nginx stripped api prefix', async (
   assert.equal(list.status, 401);
   const bounceParse = await request('/email/bounce-parse/validate', { method: 'POST' });
   assert.equal(bounceParse.status, 401);
+  const bounceIngest = await request('/email/bounce-parse/ingest', { method: 'POST' });
+  assert.equal(bounceIngest.status, 401);
   const validateImport = await request('/email/events/validate-import', { method: 'POST' });
   assert.equal(validateImport.status, 401);
   const importEvents = await request('/email/events/import', { method: 'POST' });

@@ -1,3 +1,5 @@
+import { recordEmailEvent } from './emailEvents.js';
+
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const STATUS_RE = /\b[245]\.\d{1,3}\.\d{1,3}\b/;
 
@@ -65,6 +67,38 @@ export const validateBounceMessage = ({ message, source = 'manual_bounce_parse',
       noEventRecorded: true,
       noSuppressionCreated: true,
       noNetworkProbe: true,
+      realDelivery: false
+    },
+    realDelivery: false
+  };
+};
+
+export const ingestBounceMessage = ({ message, source = 'manual_bounce_parse_ingest', campaignId = null, contactId = null, actorEmail = null }) => {
+  const validation = validateBounceMessage({ message, source, campaignId, contactId });
+  if (!validation.ok) {
+    return {
+      ...validation,
+      mode: 'manual-bounce-parse-ingest',
+      eventRecorded: false,
+      suppressionCreated: false,
+      realDelivery: false
+    };
+  }
+
+  const recorded = recordEmailEvent({ ...validation.parsed, actorEmail });
+  return {
+    ok: recorded.ok,
+    mode: 'manual-bounce-parse-ingest',
+    parsed: validation.parsed,
+    event: recorded.event || null,
+    suppression: recorded.suppression || null,
+    eventRecorded: recorded.ok,
+    suppressionCreated: Boolean(recorded.suppression),
+    errors: recorded.errors || [],
+    safety: {
+      validationOnly: false,
+      noNetworkProbe: true,
+      noExternalMailboxConnection: true,
       realDelivery: false
     },
     realDelivery: false

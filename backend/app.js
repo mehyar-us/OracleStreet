@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
-import { validateBounceMessage } from './lib/bounceParser.js';
+import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
@@ -666,6 +666,17 @@ export const createHandler = () => {
       const result = validateBounceMessage({ message: body.message, source: body.source, campaignId: body.campaignId, contactId: body.contactId });
       recordAuditEvent({ action: 'email_bounce_parse_validate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { parsedType: result.parsed?.type || null, errors: result.errors || [], validationOnly: true, realDelivery: false } });
       return jsonResponse(res, result.error ? 400 : 200, result);
+    }
+
+    if (url.pathname === '/api/email/bounce-parse/ingest' || url.pathname === '/email/bounce-parse/ingest') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = ingestBounceMessage({ message: body.message, source: body.source, campaignId: body.campaignId, contactId: body.contactId, actorEmail: session.email });
+      recordAuditEvent({ action: 'email_bounce_parse_ingest', actorEmail: session.email, target: result.parsed?.email || null, status: result.ok ? 'ok' : 'rejected', details: { parsedType: result.parsed?.type || null, eventRecorded: result.eventRecorded, suppressionCreated: result.suppressionCreated, errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/email/events/validate-import' || url.pathname === '/email/events/validate-import') {
