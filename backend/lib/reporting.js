@@ -155,3 +155,94 @@ export const emailReportingSummary = (env = process.env) => {
     }
   };
 };
+
+const csvEscape = (value) => {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+};
+
+const toCsv = (headers, rows) => [
+  headers.join(','),
+  ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))
+].join('\n');
+
+export const reportingExportPreview = ({ dataset = 'campaigns', actorEmail = null } = {}, env = process.env) => {
+  const cleanDataset = String(dataset || '').trim().toLowerCase();
+  if (!['summary', 'campaigns', 'events', 'suppressions'].includes(cleanDataset)) {
+    return { ok: false, errors: ['valid_export_dataset_required'], realDeliveryAllowed: false, rowsExported: 0 };
+  }
+
+  let headers = [];
+  let rows = [];
+  if (cleanDataset === 'summary') {
+    const report = emailReportingSummary(env);
+    headers = ['metric', 'value'];
+    rows = Object.entries(report.totals).map(([metric, value]) => ({ metric, value }));
+  }
+  if (cleanDataset === 'campaigns') {
+    const report = campaignReportingSummary();
+    headers = ['campaignId', 'name', 'status', 'estimatedAudience', 'queuedDryRuns', 'dispatchedDryRuns', 'opens', 'clicks', 'openRate', 'clickRate', 'unsubscribes', 'realDeliveryAllowed'];
+    rows = report.campaigns.map((campaign) => ({
+      campaignId: campaign.campaignId,
+      name: campaign.name,
+      status: campaign.status,
+      estimatedAudience: campaign.estimatedAudience,
+      queuedDryRuns: campaign.queuedDryRuns,
+      dispatchedDryRuns: campaign.dispatchedDryRuns,
+      opens: campaign.engagement.opens,
+      clicks: campaign.engagement.clicks,
+      openRate: campaign.engagement.openRate,
+      clickRate: campaign.engagement.clickRate,
+      unsubscribes: campaign.unsubscribes,
+      realDeliveryAllowed: false
+    }));
+  }
+  if (cleanDataset === 'events') {
+    const report = listEmailEvents();
+    headers = ['id', 'type', 'email', 'campaignId', 'contactId', 'providerMessageId', 'source', 'createdAt'];
+    rows = report.events.map((event) => ({
+      id: event.id,
+      type: event.type,
+      email: event.email,
+      campaignId: event.campaignId,
+      contactId: event.contactId,
+      providerMessageId: event.providerMessageId,
+      source: event.source,
+      createdAt: event.createdAt
+    }));
+  }
+  if (cleanDataset === 'suppressions') {
+    const report = listSuppressions();
+    headers = ['id', 'email', 'reason', 'source', 'actorEmail', 'createdAt', 'updatedAt'];
+    rows = report.suppressions.map((suppression) => ({
+      id: suppression.id,
+      email: suppression.email,
+      reason: suppression.reason,
+      source: suppression.source,
+      actorEmail: suppression.actorEmail,
+      createdAt: suppression.createdAt,
+      updatedAt: suppression.updatedAt
+    }));
+  }
+
+  return {
+    ok: true,
+    mode: 'reporting-export-safe-preview',
+    dataset: cleanDataset,
+    format: 'csv',
+    filename: `oraclestreet-${cleanDataset}-export.csv`,
+    headers,
+    rowsExported: rows.length,
+    csv: toCsv(headers, rows),
+    safety: {
+      adminSessionRequired: true,
+      noSecretsIncluded: true,
+      noExternalDelivery: true,
+      noNetworkProbe: true,
+      realDeliveryAllowed: false
+    },
+    actorEmail,
+    createdAt: new Date().toISOString(),
+    realDeliveryAllowed: false
+  };
+};

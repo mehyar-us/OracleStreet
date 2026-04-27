@@ -41,13 +41,13 @@ Verification:
 
 ### O3 — Visible admin CMS screens
 
-Status: initial safe-read workbench shipped; contact import, template creation/preview, campaign dry-run builder, send queue dry-run dispatch, and suppression management workflows shipped; remaining CRUD workflows still pending.
+Status: initial safe-read workbench shipped; contact import, template creation/preview, campaign dry-run builder, send queue dry-run dispatch, suppression management, and reporting CSV export workflows shipped; remaining CRUD workflows still pending.
 
 Acceptance:
 - Boss can log in and see actual modules, not just placeholder cards.
 - UI must expose contacts, data sources, templates, campaigns, send queue, suppressions, reputation/readiness, reporting, and admin/user surfaces.
 - Each screen can initially be safe-read or dry-run, but it must be visible and tied to backend routes.
-- Next upgrade: replace remaining safe-read panels with forms/actions for live-gated remote source probe/schema discovery and reporting exports.
+- Next upgrade: replace remaining safe-read panels with forms/actions for live-gated remote source probe/schema discovery, reputation/warm-up controls, and user/RBAC readiness.
 
 Verification:
 - Browser/manual smoke of `/` after login.
@@ -87,7 +87,7 @@ Safety:
 Acceptance:
 - Campaign reporting, engagement, provider events, bounce/complaint, and affiliate metadata dashboards.
 - Audit timeline for contacts/campaigns/send jobs.
-- CSV export later.
+- CSV export previews for summary/campaign/events/suppressions shipped; future work should persist/export from PostgreSQL once repositories migrate.
 
 ## Loop rules
 

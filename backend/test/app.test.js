@@ -252,6 +252,10 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/data-source-query\/validate/);
   assert.match(html, /Validate SELECT query/);
   assert.match(html, /reputation-screen/);
+  assert.match(html, /reporting-screen/);
+  assert.match(html, /api\/email\/reporting\/export/);
+  assert.match(html, /Build CSV export/);
+  assert.match(html, /reporting-export-dataset/);
   assert.match(html, /audit-screen/);
   assert.match(html, /loadWorkbench/);
   assert.match(html, /api\/email\/sending-readiness/);
@@ -2254,9 +2258,53 @@ test('email reporting requires admin session and summarizes safe sending state',
   });
 });
 
+test('email reporting export preview requires admin and returns safe CSV without delivery', async () => {
+  resetAuditLogForTests();
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  resetEmailEventsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/reporting/export?dataset=summary');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/suppressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'export-block@example.test', reason: 'manual', source: 'export smoke' })
+    });
+    await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [{ type: 'complaint', email: 'complaint-export@example.test', source: 'export smoke' }] })
+    });
+
+    const exportPreview = await request('/api/email/reporting/export?dataset=suppressions', { headers: { cookie } });
+    assert.equal(exportPreview.status, 200);
+    assert.equal(exportPreview.body.mode, 'reporting-export-safe-preview');
+    assert.equal(exportPreview.body.dataset, 'suppressions');
+    assert.equal(exportPreview.body.format, 'csv');
+    assert.equal(exportPreview.body.rowsExported, 2);
+    assert.match(exportPreview.body.csv, /email,reason,source/);
+    assert.match(exportPreview.body.csv, /export-block@example\.test/);
+    assert.equal(exportPreview.body.realDeliveryAllowed, false);
+    assert.equal(exportPreview.body.safety.noSecretsIncluded, true);
+
+    const rejected = await request('/api/email/reporting/export?dataset=secrets', { headers: { cookie } });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('valid_export_dataset_required'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'reporting_export_preview'));
+  });
+});
+
 test('email reporting endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/reporting');
   assert.equal(res.status, 401);
+  const exportPreview = await request('/email/reporting/export?dataset=summary');
+  assert.equal(exportPreview.status, 401);
 });
 
 test('sending readiness endpoint requires admin session and keeps real delivery locked', async () => {

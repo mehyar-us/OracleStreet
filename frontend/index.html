@@ -93,6 +93,7 @@
           <section class="screen" id="suppressions-screen"><h3>Suppressions</h3><p>Loading…</p></section>
           <section class="screen" id="remote-db-screen"><h3>Remote PostgreSQL</h3><p>Loading…</p></section>
           <section class="screen" id="reputation-screen"><h3>Reputation/readiness</h3><p>Load reputation gates to inspect sender/domain/provider posture.</p></section>
+          <section class="screen" id="reporting-screen"><h3>Reporting exports</h3><p>Loading…</p></section>
           <section class="screen" id="audit-screen"><h3>Audit</h3><p>Loading…</p></section>
         </div>
       </article>
@@ -351,6 +352,21 @@
       result.innerHTML = `SELECT-only plan accepted for <strong>${body.sourceName}</strong>. Limit ${body.query.limit}, timeout ${body.query.timeoutMs}ms, rows pulled ${body.rowsPulled}. Real query: <strong>${body.realQuery}</strong>.`;
     };
 
+
+    const buildReportingExport = async () => {
+      const result = document.querySelector('#reporting-export-result');
+      const dataset = document.querySelector('#reporting-export-dataset').value;
+      result.className = 'status';
+      result.textContent = `Building ${dataset} CSV export preview…`;
+      const body = await fetch(`/api/email/reporting/export?dataset=${encodeURIComponent(dataset)}`, { cache: 'no-store' }).then((r) => r.json());
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'export_rejected']).join(', ')}`;
+        return;
+      }
+      result.innerHTML = `Export preview ready: <strong>${body.filename}</strong>, rows ${body.rowsExported}, real delivery <strong>${body.realDeliveryAllowed}</strong>.<textarea readonly>${body.csv}</textarea>`;
+    };
+
     const listItems = (items, empty, render) => items.length
       ? `<ul>${items.slice(0, 5).map(render).join('')}</ul>`
       : `<p>${empty}</p>`;
@@ -395,6 +411,8 @@
       document.querySelector('#create-remote-source').addEventListener('click', createRemoteDataSource);
       document.querySelector('#plan-remote-schema').addEventListener('click', planRemoteSchemaDiscovery);
       document.querySelector('#validate-remote-query').addEventListener('click', validateRemoteQuery);
+      setScreen('#reporting-screen', 'Reporting exports', `<p>Build safe CSV previews for dashboard/reporting data. Exports are protected, dry-run metadata only, and contain no secrets or delivery unlocks.</p><label>Dataset <select id="reporting-export-dataset"><option value="campaigns">campaigns</option><option value="summary">summary</option><option value="events">events</option><option value="suppressions">suppressions</option></select></label><div class="toolbar"><button id="build-reporting-export" type="button">Build CSV export</button></div><div id="reporting-export-result" class="status"></div>`);
+      document.querySelector('#build-reporting-export').addEventListener('click', buildReportingExport);
       setScreen('#audit-screen', 'Audit', `<div class="kv"><span>Audit events</span><strong>${audit.count || 0}</strong></div>${listItems(audit.events || [], 'No audit events in memory yet.', (e) => `<li>${e.action} · ${e.status || 'ok'} · ${e.actorEmail || 'system'}</li>`)}`);
       cmsWorkbench.classList.remove('hidden');
       workbenchStatus.textContent = 'CMS screens loaded. Forms stay safe/dry-run until PostgreSQL persistence and final gates are complete.';

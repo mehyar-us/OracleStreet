@@ -135,22 +135,23 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 40. [x] Frontend campaign dry-run builder workflow for estimate/create/approve/schedule/enqueue with no delivery.
 41. [x] Frontend send queue dry-run dispatch workflow for one-job-at-a-time internal dispatch with no external delivery.
 42. [x] Frontend suppression management workflow for manual/unsubscribe/bounce/complaint suppression gates.
-43. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
-44. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
-45. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
-46. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
-47. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
-48. [x] Frontend remote PostgreSQL source registration workflow with redacted metadata, encrypted secret ref request, and no live sync/query execution.
-49. [x] Remote PostgreSQL schema discovery planner UI/API with schema allowlist, table/column limits, redacted metadata, and no live remote probe.
-50. [x] Remote PostgreSQL SELECT-only query validator/planner UI/API with limit/timeout gates, redacted metadata, schema-discovery plan, and no live remote execution.
-51. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
-52. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
-53. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
-54. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
-55. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
-56. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
-57. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
-58. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
+43. [x] Frontend reporting CSV export preview workflow for summary/campaign/event/suppression datasets with no secrets or delivery unlock.
+44. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
+45. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
+46. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
+47. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
+48. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
+49. [x] Frontend remote PostgreSQL source registration workflow with redacted metadata, encrypted secret ref request, and no live sync/query execution.
+50. [x] Remote PostgreSQL schema discovery planner UI/API with schema allowlist, table/column limits, redacted metadata, and no live remote probe.
+51. [x] Remote PostgreSQL SELECT-only query validator/planner UI/API with limit/timeout gates, redacted metadata, schema-discovery plan, and no live remote execution.
+52. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
+53. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
+54. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
+55. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
+56. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
+57. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
+58. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
+59. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
 
 ## Current validation endpoints
 
@@ -202,6 +203,8 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `/` frontend campaign builder panel estimates audiences, creates campaign drafts, approves/schedules dry-runs, and enqueues dry-run jobs through protected campaign APIs while keeping real delivery disabled.
 - `/` frontend send queue panel dispatches exactly one queued dry-run job through `/api/send-queue/dispatch-next-dry-run`, refreshes queue state, records internal dispatched events, and keeps external delivery disabled.
 - `/` frontend suppressions panel adds/updates manual, unsubscribe, bounce, and complaint suppression gates through `/api/suppressions`, refreshes suppression state, and keeps suppressed recipients blocked from queue enqueue.
+- `GET /api/email/reporting/export` requires an admin session and returns safe CSV previews for `summary`, `campaigns`, `events`, and `suppressions`, with row counts, filenames, no secrets, audit logging, no external writes, and `realDeliveryAllowed: false`.
+- `/` frontend reporting panel builds CSV export previews through `/api/email/reporting/export` for reporting datasets without unlocking delivery.
 - `GET`/`POST /api/data-sources` requires an admin session and registers remote PostgreSQL source metadata with redacted URLs only. Optional `storeSecret: true` stores the connection URL in the encrypted secret baseline when `ORACLESTREET_DATA_SOURCE_SECRET_KEY` is configured, returns only an encrypted secret ref/metadata, skips connection probes, keeps `syncEnabled: false`, and does not pull data.
 - `GET`/`POST /api/data-source-sync-runs` requires an admin session and creates/lists dry-run sync validation records for registered sources. It validates source existence and optional mapping fields, records blockers for future live sync, skips network probes, pulls/imports zero rows, and keeps `realSync: false`.
 - `/` frontend dashboard displays a protected remote PostgreSQL mapping/status panel using redacted source metadata and dry-run sync counts only. It does not expose secrets, enable sync, or pull remote rows.

@@ -21,6 +21,7 @@
 - [x] Add visible campaign estimate/approve/schedule/enqueue dry-run workflow to admin workbench
 - [x] Add visible send queue dry-run dispatch workflow to admin workbench
 - [x] Add visible suppression management workflow to admin workbench
+- [x] Add visible reporting CSV export workflow to admin workbench
 - [ ] Convert remaining visible admin screens from safe-read panels into full CRUD workflows
 - [x] Add visible remote PostgreSQL source registration workflow to admin workbench
 - [x] Add remote PostgreSQL schema discovery planner UI/API

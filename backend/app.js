@@ -18,7 +18,7 @@ import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { rbacReadiness } from './lib/rbacReadiness.js';
-import { campaignReportingSummary, emailReportingSummary, sendingReadinessSummary } from './lib/reporting.js';
+import { campaignReportingSummary, emailReportingSummary, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
 import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
@@ -305,6 +305,15 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, emailReportingSummary());
+    }
+
+    if (url.pathname === '/api/email/reporting/export' || url.pathname === '/email/reporting/export') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = reportingExportPreview({ dataset: url.searchParams.get('dataset') || 'campaigns', actorEmail: session.email });
+      recordAuditEvent({ action: 'reporting_export_preview', actorEmail: session.email, target: result.dataset || url.searchParams.get('dataset') || null, status: result.ok ? 'ok' : 'rejected', details: { rowsExported: result.rowsExported || 0, format: result.format || 'csv', errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/email/sending-readiness' || url.pathname === '/email/sending-readiness') {
