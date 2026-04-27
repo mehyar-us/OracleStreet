@@ -44,6 +44,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - migration system
 - tables from `docs/03-DATA-MODEL.md`
 - seed first admin user
+- [x] remote PostgreSQL data source registry baseline with redacted metadata only and no sync/probe
 
 ### 3. Contacts and suppressions
 

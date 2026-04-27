@@ -6,6 +6,7 @@ import { resetAuditLogForTests } from '../lib/auditLog.js';
 import { resetCampaignsForTests } from '../lib/campaigns.js';
 import { resetContactsForTests } from '../lib/contacts.js';
 import { validateDatabaseConfig } from '../lib/database.js';
+import { resetDataSourcesForTests } from '../lib/dataSources.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
 import { resetLocalCaptureForTests } from '../lib/emailProvider.js';
 import { resetSegmentsForTests } from '../lib/segments.js';
@@ -248,6 +249,66 @@ test('database status is protected and redacts PostgreSQL URL secrets', async ()
 
 test('database status endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/database/status');
+  assert.equal(res.status, 401);
+});
+
+test('data source registry requires admin and stores redacted PostgreSQL source metadata only', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withAdminEnv(async () => {
+    const unauthList = await request('/api/data-sources');
+    assert.equal(unauthList.status, 401);
+    const unauthCreate = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Warehouse', connectionUrl: 'postgresql://reader:secret@db.example.test:5432/warehouse' })
+    });
+    assert.equal(unauthCreate.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Bad source', type: 'mysql', connectionUrl: 'mysql://reader:secret@db.example.test/app' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('postgresql_source_type_required'));
+    assert.ok(rejected.body.errors.includes('postgres_protocol_required'));
+    assert.equal(JSON.stringify(rejected.body).includes('reader:secret'), false);
+
+    const created = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Affiliate warehouse', type: 'postgresql', connectionUrl: 'postgresql://reader:source-secret@warehouse.example.test:5433/affiliate?sslmode=require' })
+    });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.mode, 'data-source-registry-safe-baseline');
+    assert.equal(created.body.source.status, 'registered_safe');
+    assert.equal(created.body.source.syncEnabled, false);
+    assert.equal(created.body.realSync, false);
+    assert.equal(created.body.source.connection.parsed.host, 'warehouse.example.test');
+    assert.equal(created.body.source.connection.parsed.port, 5433);
+    assert.equal(created.body.source.connection.parsed.database, 'affiliate');
+    assert.equal(created.body.source.connection.parsed.passwordConfigured, true);
+    assert.equal(created.body.source.connection.secretStored, false);
+    assert.equal(created.body.source.connection.connectionProbe, 'skipped_registry_validation_only');
+    assert.equal(JSON.stringify(created.body).includes('source-secret'), false);
+
+    const list = await request('/api/data-sources', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.count, 1);
+    assert.equal(list.body.sources[0].name, 'Affiliate warehouse');
+    assert.equal(list.body.realSync, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_create'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_sources_list'));
+  });
+});
+
+test('data source registry endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/data-sources');
   assert.equal(res.status, 401);
 });
 

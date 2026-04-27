@@ -88,6 +88,7 @@ npm test --prefix backend
 - Safe reporting baseline: `GET /api/email/reporting` and `GET /api/dashboard` must require admin auth and summarize queue, suppression, bounce/complaint, open/click engagement, provider, rate-limit, and compliance-gate state without enabling delivery. Dashboard must include campaign engagement totals/rates and embedded campaign reporting.
 - Sending readiness safe gate: `GET /api/email/sending-readiness` must require admin auth, report provider/config/compliance blockers without exposing secrets, include sender-domain readiness, audit the view, and keep `readyForRealDelivery: false`/`realDeliveryAllowed: false` until a future explicit controlled-live approval path exists.
 - Sender domain readiness safe gate: `GET /api/email/domain-readiness` must require admin auth, validate the default sender domain shape, report expected SPF/DKIM/DMARC/TLS requirements without DNS probing, audit the view, and never enable delivery.
+- Data source registry baseline: `GET`/`POST /api/data-sources` must require admin auth, accept only PostgreSQL source URLs, redact passwords, store no raw secrets, skip network probes, keep `syncEnabled: false`, audit create/list actions, and never pull remote data.
 - Audit log baseline: `GET /api/audit-log` must require admin auth, sanitize sensitive fields, and record key admin/compliance actions such as login attempts, provider validation, queue enqueue, suppression, unsubscribe, event ingest, and database status checks.
 
 ## Domain readiness checklist
