@@ -173,6 +173,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Remote PostgreSQL contact import preview with field mapping.
 - Approved remote contact import execution with exact approval phrase.
 - Remote import schedule planner with SELECT-only query, mapping profile, interval, approval phrase, and no automatic pulls.
+- PostgreSQL runtime adapter for remote import schedules.
 - Sync-run/schedule history for preview/execution/planned recurrence.
 - Live remote writes/destructive queries are not supported.
 
@@ -191,6 +192,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Recommendation-only auto-pause evaluation without mutating queues/providers.
 - Controlled one-recipient MTA live-test runbook gate without sending.
 - Controlled live-test proof audit log for manual/out-of-band one-recipient outcomes, provider message IDs, and dry-run/local-capture proof IDs without sending or mutating providers/queues.
+- PostgreSQL runtime adapter for controlled live-test proof audits.
 - Bounce/complaint ingestion updates suppressions and event state.
 - Real delivery remains locked until final human approval.
 
@@ -204,6 +206,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Platform rate-limit readiness safe gate.
 - RBAC readiness safe gate.
 - Secret redaction in config/status surfaces.
+- Runtime persistence migration `009_schedule_proof_runtime` for remote import schedules and controlled proof audits.
 - Tests for every shipped slice.
 
 ## Current safety posture

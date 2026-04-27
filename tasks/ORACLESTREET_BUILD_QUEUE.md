@@ -36,7 +36,7 @@ Acceptance:
 
 Status:
 - PostgreSQL repository schema foundation now includes `004_policy_repository_foundation` for warm-up policies, reputation policies, and repository migration status, plus `GET /api/database/repositories` to expose audited module readiness without secrets.
-- Contacts, suppressions, templates, campaigns, send queue, email events, users, admin sessions, audit log, warm-up policies, and reputation policies now have local `psql` runtime repository adapters enabled on VPS via `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log,warmup_policies,reputation_policies`, with in-memory fallback for tests/local adapter failure.
+- Contacts, suppressions, templates, campaigns, send queue, email events, users, admin sessions, audit log, warm-up policies, reputation policies, remote import schedules, and controlled proof audits now have local `psql` runtime repository adapters enabled on VPS via `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log,warmup_policies,reputation_policies,data_source_import_schedules,controlled_live_test_proof_audits`, with in-memory fallback for tests/local adapter failure.
 
 Verification:
 - backend tests pass.
@@ -117,11 +117,12 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Hardening pass: PostgreSQL-persist remote import schedules and controlled proof audits.
-2. Hardening pass: RBAC enforcement beyond safe planning baselines.
-3. Affiliate/campaign metadata and audit timeline depth.
+1. Hardening pass: RBAC enforcement beyond safe planning baselines.
+2. Affiliate/campaign metadata and audit timeline depth.
+3. Remote source persistence for source registry/encrypted secret metadata.
 
 Latest shipped slice:
+- PostgreSQL persistence hardening for remote import schedules and controlled proof audits: migration `009_schedule_proof_runtime` adds `data_source_import_schedules` and `controlled_live_test_proof_audits`; both runtime paths now use local `psql` repositories on VPS when enabled, keep safe in-memory fallback for tests/adapter failure, never print secrets, and preserve no-pull/no-send/no-mutation posture.
 - Flow F reporting dashboard depth safe baseline: `/api/email/reporting/dashboard` provides protected aggregate campaign leaderboard, source performance, domain performance, event trend, queue-status, and export-link metadata; the Reporting UI exposes the cards/lists after login, audits dashboard views, includes no secrets, probes no networks, sends no email, and keeps real delivery locked.
 - Flow E controlled one-recipient MTA proof path safe baseline: `/api/email/controlled-live-test/proof-audit` records manual/out-of-band proof outcomes, dry-run/local-capture proof IDs, optional provider message IDs, masked recipient metadata, and notes; it audits accepted/rejected records, sends no email, probes no network, mutates no queues/providers/suppressions, exposes no secrets, and the Reputation/readiness UI exposes proof audit history and controls after login.
 - Flow D remote PostgreSQL import scheduler safe baseline: `/api/data-source-import-schedules` plans recurring imports from a SELECT-only query plus contact mapping profile, interval, next-run preview timestamp, and exact approval phrase when marked enabled; it audits accepted/rejected plans, stores no raw credentials, performs no immediate remote pull, starts no worker, mutates no contacts, and the Remote PostgreSQL UI exposes schedule planning/history after login.

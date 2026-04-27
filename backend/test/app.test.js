@@ -325,6 +325,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(policyRuntimeMigration);
     assert.match(policyRuntimeMigration.description, /warm-up and reputation policies/);
     assert.ok(policyRuntimeMigration.statements >= 1);
+    const scheduleProofMigration = res.body.migrations.find((migration) => migration.id === '009_schedule_proof_runtime');
+    assert.ok(scheduleProofMigration);
+    assert.match(scheduleProofMigration.description, /remote import schedules and controlled proof audits/);
+    assert.ok(scheduleProofMigration.statements >= 7);
   });
 });
 
@@ -344,6 +348,8 @@ test('database repository readiness is protected and exposes PostgreSQL schema m
     assert.equal(res.body.liveRepositoryEnabled, false);
     assert.equal(res.body.realDeliveryAllowed, false);
     assert.ok(res.body.modules.some((module) => module.module === 'warmup_policies' && module.targetTable === 'warmup_policies'));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_source_import_schedules' && module.targetTable === 'data_source_import_schedules'));
+    assert.ok(res.body.modules.some((module) => module.module === 'controlled_live_test_proof_audits' && module.targetTable === 'controlled_live_test_proof_audits'));
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.nextAction === 'wire_contact_repository_to_postgresql_driver'));
     assert.ok(res.body.blockers.includes('avoid_printing_or_logging_database_url'));
 
@@ -357,7 +363,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log,warmup_policies,reputation_policies',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log,warmup_policies,reputation_policies,data_source_import_schedules,controlled_live_test_proof_audits',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -365,7 +371,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 11);
+    assert.equal(res.body.summary.liveRepositoryModules, 13);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
@@ -378,6 +384,8 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.ok(res.body.modules.some((module) => module.module === 'audit_log' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'warmup_policies' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'reputation_policies' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_source_import_schedules' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'controlled_live_test_proof_audits' && module.liveRepositoryEnabled));
     assert.doesNotMatch(JSON.stringify(res.body), /super-secret/);
   });
 });

@@ -41,7 +41,8 @@
 - [x] Add remote PostgreSQL import scheduler
 - [x] Deepen controlled one-recipient MTA proof path/runbook
 - [x] Deepen reporting dashboard
-- [ ] PostgreSQL-persist remote import schedules and controlled proof audits
+- [x] PostgreSQL-persist remote import schedules and controlled proof audits
+- [ ] Harden RBAC enforcement beyond safe planning baseline
 - [x] Add warm-up planner controls UI
 - [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI

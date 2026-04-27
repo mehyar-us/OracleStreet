@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { importContacts, validateContactImport } from './contacts.js';
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
 
 const dataSources = new Map();
 const encryptedConnectionSecrets = new Map();
@@ -58,6 +59,61 @@ const cloneImportSchedule = (schedule) => ({
   validation: { ...schedule.validation, requiredGates: [...schedule.validation.requiredGates], blockers: [...schedule.validation.blockers] },
   safety: { ...schedule.safety }
 });
+
+const pgRowToImportSchedule = ([id, dataSourceId, dataSourceName, status, enabled, intervalHours, nextRunPreviewAt, projectedSql, queryLimit, timeoutMs, mappingJson, validationJson, safetyJson, actorEmail, createdAt, updatedAt]) => ({
+  id,
+  dataSourceId,
+  dataSourceName,
+  status,
+  enabled: enabled === 't' || enabled === 'true',
+  intervalHours: Number(intervalHours || 0),
+  nextRunPreviewAt,
+  query: {
+    projectedSql,
+    limit: Number(queryLimit || 0),
+    timeoutMs: Number(timeoutMs || 0),
+    selectOnly: true
+  },
+  mapping: mappingJson ? JSON.parse(mappingJson) : { defaults: {} },
+  validation: validationJson ? JSON.parse(validationJson) : { ok: true, requiredGates: [], blockers: [] },
+  safety: safetyJson ? JSON.parse(safetyJson) : {},
+  actorEmail: actorEmail || null,
+  createdAt,
+  updatedAt: updatedAt || null
+});
+
+const listImportSchedulesFromPostgres = () => runLocalPgRows(`
+  SELECT id, data_source_id, data_source_name, status, enabled::text, interval_hours::text, next_run_preview_at::text, projected_sql, query_limit::text, timeout_ms::text, mapping::text, validation::text, safety::text, coalesce(actor_email, ''), created_at::text, coalesce(updated_at::text, '')
+  FROM data_source_import_schedules
+  ORDER BY created_at DESC
+  LIMIT 1000;
+`).map(pgRowToImportSchedule);
+
+const saveImportScheduleToPostgres = (schedule) => {
+  const rows = runLocalPgRows(`
+    INSERT INTO data_source_import_schedules (id, data_source_id, data_source_name, status, enabled, interval_hours, next_run_preview_at, projected_sql, query_limit, timeout_ms, mapping, validation, safety, actor_email, created_at, updated_at)
+    VALUES (${[
+      sqlLiteral(schedule.id),
+      sqlLiteral(schedule.dataSourceId),
+      sqlLiteral(schedule.dataSourceName),
+      sqlLiteral(schedule.status),
+      schedule.enabled ? 'true' : 'false',
+      Number(schedule.intervalHours || 0),
+      sqlLiteral(schedule.nextRunPreviewAt),
+      sqlLiteral(schedule.query.projectedSql),
+      Number(schedule.query.limit || 0),
+      Number(schedule.query.timeoutMs || 0),
+      `${sqlLiteral(JSON.stringify(schedule.mapping))}::jsonb`,
+      `${sqlLiteral(JSON.stringify(schedule.validation))}::jsonb`,
+      `${sqlLiteral(JSON.stringify(schedule.safety))}::jsonb`,
+      sqlLiteral(schedule.actorEmail),
+      sqlLiteral(schedule.createdAt),
+      schedule.updatedAt ? sqlLiteral(schedule.updatedAt) : 'NULL'
+    ].join(',')})
+    RETURNING id, data_source_id, data_source_name, status, enabled::text, interval_hours::text, next_run_preview_at::text, projected_sql, query_limit::text, timeout_ms::text, mapping::text, validation::text, safety::text, coalesce(actor_email, ''), created_at::text, coalesce(updated_at::text, '');
+  `);
+  return pgRowToImportSchedule(rows[0]);
+};
 
 const secretKeyMaterial = () => String(process.env.ORACLESTREET_DATA_SOURCE_SECRET_KEY || '').trim();
 
@@ -825,7 +881,7 @@ export const createDataSourceImportSchedule = ({ dataSourceId, sql, limit = 100,
   }
 
   const schedule = {
-    id: `sync_schedule_${(++scheduleSequence).toString().padStart(6, '0')}`,
+    id: `sync_schedule_${Date.now().toString(36)}_${(++scheduleSequence).toString().padStart(6, '0')}`,
     dataSourceId: source.id,
     dataSourceName: source.name,
     status: wantsEnabled ? 'approved_manual_schedule_plan' : 'planned_disabled',
@@ -865,27 +921,58 @@ export const createDataSourceImportSchedule = ({ dataSourceId, sql, limit = 100,
     createdAt: nowIso(),
     updatedAt: null
   };
-  importSchedules.set(schedule.id, schedule);
+  let savedSchedule = schedule;
+  let persistenceMode = 'in-memory-until-postgresql-connection-enabled';
+  if (isPgRepositoryEnabled('data_source_import_schedules')) {
+    try {
+      savedSchedule = saveImportScheduleToPostgres(schedule);
+      persistenceMode = 'postgresql-local-psql-repository';
+    } catch (error) {
+      persistenceMode = 'postgresql-error-fallback-in-memory';
+    }
+  }
+  importSchedules.set(savedSchedule.id, savedSchedule);
   return {
     ok: true,
     mode: 'data-source-import-schedule-plan',
-    schedule: cloneImportSchedule(schedule),
+    schedule: cloneImportSchedule(savedSchedule),
     scheduleMutation: true,
     realSync: false,
     automaticPulls: false,
     source: sourcePublicView(source),
+    persistenceMode,
     realDeliveryAllowed: false
   };
 };
 
-export const listDataSourceImportSchedules = () => ({
-  ok: true,
-  mode: 'data-source-import-schedule-plan',
-  count: importSchedules.size,
-  schedules: [...importSchedules.values()].map(cloneImportSchedule),
-  realSync: false,
-  automaticPulls: false,
-  realDeliveryAllowed: false
-});
+export const listDataSourceImportSchedules = () => {
+  if (isPgRepositoryEnabled('data_source_import_schedules')) {
+    try {
+      const schedules = listImportSchedulesFromPostgres();
+      return {
+        ok: true,
+        mode: 'data-source-import-schedule-plan',
+        count: schedules.length,
+        schedules: schedules.map(cloneImportSchedule),
+        realSync: false,
+        automaticPulls: false,
+        persistenceMode: 'postgresql-local-psql-repository',
+        realDeliveryAllowed: false
+      };
+    } catch (error) {
+      // Safe fallback keeps the operator schedule view available if the local psql adapter is unavailable.
+    }
+  }
+  return {
+    ok: true,
+    mode: 'data-source-import-schedule-plan',
+    count: importSchedules.size,
+    schedules: [...importSchedules.values()].map(cloneImportSchedule),
+    realSync: false,
+    automaticPulls: false,
+    persistenceMode: isPgRepositoryEnabled('data_source_import_schedules') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled',
+    realDeliveryAllowed: false
+  };
+};
 
 export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;

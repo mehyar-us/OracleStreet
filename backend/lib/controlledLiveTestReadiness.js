@@ -2,6 +2,7 @@ import { bounceMailboxReadiness } from './bounceMailboxReadiness.js';
 import { senderDomainReadiness } from './domainReadiness.js';
 import { getEmailProviderConfig, validateSelectedProviderConfig } from './emailProvider.js';
 import { getRateLimitConfig } from './rateLimits.js';
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const proofAuditRecords = [];
@@ -14,6 +15,58 @@ const maskEmail = (email) => {
   const [local, domain] = normalized.split('@');
   if (!domain) return 'configured';
   return `${local.slice(0, 2)}***@${domain}`;
+};
+
+const cloneProofAuditRecord = (record) => ({
+  ...record,
+  recipient: { ...record.recipient },
+  safety: { ...record.safety }
+});
+
+const pgRowToProofAudit = ([id, outcome, recipientMasked, recipientOwned, matchesConfiguredRecipient, dryRunProofId, providerMessageId, notes, actorEmail, safetyJson, createdAt, realDeliveryAllowed]) => ({
+  id,
+  outcome,
+  recipient: {
+    email: recipientMasked,
+    owned: recipientOwned === 't' || recipientOwned === 'true',
+    matchesConfiguredRecipient: matchesConfiguredRecipient === 't' || matchesConfiguredRecipient === 'true'
+  },
+  dryRunProofId,
+  providerMessageId: providerMessageId || null,
+  notes: notes || null,
+  actorEmail: actorEmail || null,
+  createdAt,
+  safety: safetyJson ? JSON.parse(safetyJson) : {},
+  realDeliveryAllowed: realDeliveryAllowed === 't' || realDeliveryAllowed === 'true'
+});
+
+const listProofAuditsFromPostgres = () => runLocalPgRows(`
+  SELECT id, outcome, recipient_masked, recipient_owned::text, matches_configured_recipient::text, dry_run_proof_id, coalesce(provider_message_id, ''), coalesce(notes, ''), coalesce(actor_email, ''), safety::text, created_at::text, real_delivery_allowed::text
+  FROM controlled_live_test_proof_audits
+  ORDER BY created_at DESC
+  LIMIT 1000;
+`).map(pgRowToProofAudit);
+
+const saveProofAuditToPostgres = (record) => {
+  const rows = runLocalPgRows(`
+    INSERT INTO controlled_live_test_proof_audits (id, outcome, recipient_masked, recipient_owned, matches_configured_recipient, dry_run_proof_id, provider_message_id, notes, actor_email, safety, created_at, real_delivery_allowed)
+    VALUES (${[
+      sqlLiteral(record.id),
+      sqlLiteral(record.outcome),
+      sqlLiteral(record.recipient.email),
+      record.recipient.owned ? 'true' : 'false',
+      record.recipient.matchesConfiguredRecipient ? 'true' : 'false',
+      sqlLiteral(record.dryRunProofId),
+      sqlLiteral(record.providerMessageId),
+      sqlLiteral(record.notes),
+      sqlLiteral(record.actorEmail),
+      `${sqlLiteral(JSON.stringify(record.safety))}::jsonb`,
+      sqlLiteral(record.createdAt),
+      'false'
+    ].join(',')})
+    RETURNING id, outcome, recipient_masked, recipient_owned::text, matches_configured_recipient::text, dry_run_proof_id, coalesce(provider_message_id, ''), coalesce(notes, ''), coalesce(actor_email, ''), safety::text, created_at::text, real_delivery_allowed::text;
+  `);
+  return pgRowToProofAudit(rows[0]);
 };
 
 export const controlledLiveTestReadiness = (env = process.env) => {
@@ -79,13 +132,31 @@ export const controlledLiveTestReadiness = (env = process.env) => {
   };
 };
 
-export const listControlledLiveTestProofAudits = () => ({
-  ok: true,
-  mode: 'controlled-live-test-proof-audit-log',
-  count: proofAuditRecords.length,
-  records: proofAuditRecords.map((record) => ({ ...record, recipient: { ...record.recipient }, safety: { ...record.safety } })),
-  realDeliveryAllowed: false
-});
+export const listControlledLiveTestProofAudits = () => {
+  if (isPgRepositoryEnabled('controlled_live_test_proof_audits')) {
+    try {
+      const records = listProofAuditsFromPostgres();
+      return {
+        ok: true,
+        mode: 'controlled-live-test-proof-audit-log',
+        count: records.length,
+        records: records.map(cloneProofAuditRecord),
+        persistenceMode: 'postgresql-local-psql-repository',
+        realDeliveryAllowed: false
+      };
+    } catch (error) {
+      // Safe fallback keeps the audit log view available if the local psql adapter is unavailable.
+    }
+  }
+  return {
+    ok: true,
+    mode: 'controlled-live-test-proof-audit-log',
+    count: proofAuditRecords.length,
+    records: proofAuditRecords.map(cloneProofAuditRecord),
+    persistenceMode: isPgRepositoryEnabled('controlled_live_test_proof_audits') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled',
+    realDeliveryAllowed: false
+  };
+};
 
 export const recordControlledLiveTestProofAudit = ({ recipientEmail, dryRunProofId, providerMessageId, outcome = 'not_sent', notes = '', actorEmail } = {}, env = process.env) => {
   const configuredRecipient = normalizeEmail(env.ORACLESTREET_CONTROLLED_TEST_RECIPIENT_EMAIL);
@@ -115,7 +186,7 @@ export const recordControlledLiveTestProofAudit = ({ recipientEmail, dryRunProof
   }
 
   const record = {
-    id: `controlled_live_proof_${(++proofAuditSequence).toString().padStart(6, '0')}`,
+    id: `controlled_live_proof_${Date.now().toString(36)}_${(++proofAuditSequence).toString().padStart(6, '0')}`,
     outcome: cleanOutcome,
     recipient: {
       email: maskEmail(requestedRecipient),
@@ -139,8 +210,18 @@ export const recordControlledLiveTestProofAudit = ({ recipientEmail, dryRunProof
     },
     realDeliveryAllowed: false
   };
-  proofAuditRecords.push(record);
-  return { ok: true, mode: 'controlled-live-test-proof-audit-log', record: { ...record, recipient: { ...record.recipient }, safety: { ...record.safety } }, recordMutation: true, sendMutation: false, realDeliveryAllowed: false };
+  let savedRecord = record;
+  let persistenceMode = 'in-memory-until-postgresql-connection-enabled';
+  if (isPgRepositoryEnabled('controlled_live_test_proof_audits')) {
+    try {
+      savedRecord = saveProofAuditToPostgres(record);
+      persistenceMode = 'postgresql-local-psql-repository';
+    } catch (error) {
+      persistenceMode = 'postgresql-error-fallback-in-memory';
+    }
+  }
+  proofAuditRecords.push(savedRecord);
+  return { ok: true, mode: 'controlled-live-test-proof-audit-log', record: cloneProofAuditRecord(savedRecord), recordMutation: true, sendMutation: false, persistenceMode, realDeliveryAllowed: false };
 };
 
 export const resetControlledLiveTestProofAuditsForTests = () => {
