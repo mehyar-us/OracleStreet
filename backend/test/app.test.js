@@ -711,6 +711,11 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(dispatched.body.event.campaignId, campaign.body.campaign.id);
     assert.equal(dispatched.body.event.contactId, enqueued.body.jobs[0].contactId);
 
+    const open = await request(enqueued.body.jobs[0].openTrackingUrl);
+    assert.equal(open.status, 200);
+    const click = await request(enqueued.body.jobs[0].clickTrackingUrl);
+    assert.equal(click.status, 200);
+
     const unsubscribe = await request(enqueued.body.jobs[0].unsubscribeUrl);
     assert.equal(unsubscribe.status, 200);
     assert.equal(unsubscribe.body.campaignId, campaign.body.campaign.id);
@@ -722,6 +727,11 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(campaignReport.body.campaigns[0].campaignId, campaign.body.campaign.id);
     assert.equal(campaignReport.body.campaigns[0].dispatchedDryRuns, 1);
     assert.equal(campaignReport.body.campaigns[0].events.dispatched, 1);
+    assert.equal(campaignReport.body.campaigns[0].engagement.opens, 1);
+    assert.equal(campaignReport.body.campaigns[0].engagement.clicks, 1);
+    assert.equal(campaignReport.body.campaigns[0].engagement.openRate, 1);
+    assert.equal(campaignReport.body.campaigns[0].engagement.clickRate, 1);
+    assert.equal(campaignReport.body.campaigns[0].engagement.deliveryMode, 'dry-run-events-only');
     assert.equal(campaignReport.body.campaigns[0].unsubscribes, 1);
 
     const dashboard = await request('/api/dashboard', { headers: { cookie } });

@@ -65,14 +65,26 @@ export const campaignReportingSummary = () => {
     }, {});
     const unsubscribeSuppressions = suppressions.suppressions.filter((suppression) => suppression.reason === 'unsubscribe' && suppression.source === `campaign:${campaign.id}`);
 
+    const queuedDryRuns = jobs.filter((job) => job.status === 'queued_dry_run').length;
+    const dispatchedDryRuns = jobs.filter((job) => job.status === 'dispatched_dry_run').length;
+    const denominator = Math.max(dispatchedDryRuns, queuedDryRuns, campaign.estimatedAudience || 0, 1);
+
     return {
       campaignId: campaign.id,
       name: campaign.name,
       status: campaign.status,
       estimatedAudience: campaign.estimatedAudience,
-      queuedDryRuns: jobs.filter((job) => job.status === 'queued_dry_run').length,
-      dispatchedDryRuns: jobs.filter((job) => job.status === 'dispatched_dry_run').length,
+      queuedDryRuns,
+      dispatchedDryRuns,
       events: eventCounts,
+      engagement: {
+        opens: eventCounts.open || 0,
+        clicks: eventCounts.click || 0,
+        openRate: (eventCounts.open || 0) / denominator,
+        clickRate: (eventCounts.click || 0) / denominator,
+        denominator,
+        deliveryMode: 'dry-run-events-only'
+      },
       unsubscribes: unsubscribeSuppressions.length,
       realDeliveryAllowed: false
     };
