@@ -96,7 +96,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 3. [x] PowerMTA provider config validation with no network probe or real delivery by default.
 4. [x] Dry-run send queue enqueue baseline with consent/source/unsubscribe gates and no real delivery.
 5. [x] Suppression/unsubscribe baseline that blocks queued dry-run recipients.
-6. [ ] Rate limiting/warm-up controls.
+6. [x] Dry-run rate limit/warm-up baseline with per-domain and global hourly caps.
 7. [ ] Bounce ingestion.
 8. [ ] Dashboard reporting.
 
@@ -109,6 +109,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
 - `POST /api/unsubscribe` records an unsubscribe suppression without sending mail; this is the baseline for future tracked unsubscribe links.
+- `GET /api/email/rate-limits` requires an admin session and returns dry-run warm-up caps. Queue enqueue enforces global and per-domain hourly limits before any provider path.
 
 ## PMTA-first development priority
 

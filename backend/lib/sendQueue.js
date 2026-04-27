@@ -1,4 +1,5 @@
 import { dryRunSend, validateTestMessage } from './emailProvider.js';
+import { evaluateRateLimit, getRateLimitConfig } from './rateLimits.js';
 import { getSuppression, isSuppressed } from './suppressions.js';
 
 const queue = [];
@@ -15,6 +16,7 @@ export const listSendQueue = () => ({
   ok: true,
   mode: 'dry-run-queue',
   count: queue.length,
+  rateLimits: getRateLimitConfig(),
   jobs: queue.map((job) => ({ ...job }))
 });
 
@@ -31,6 +33,20 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
       mode: 'dry-run-queue',
       errors: ['recipient_suppressed'],
       suppression: suppression ? { reason: suppression.reason, source: suppression.source } : null
+    };
+  }
+
+  const rateLimit = evaluateRateLimit({ queue, to: validation.normalized.to, env });
+  if (!rateLimit.ok) {
+    return {
+      ok: false,
+      mode: 'dry-run-queue',
+      errors: rateLimit.errors,
+      rateLimit: {
+        domain: rateLimit.domain,
+        usage: rateLimit.usage,
+        config: rateLimit.config
+      }
     };
   }
 
@@ -52,7 +68,12 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
       sourceChecked: true,
       unsubscribeChecked: true,
       suppressionChecked: true,
-      rateLimitChecked: 'pending_warmup_controls',
+      rateLimitChecked: true,
+      rateLimit: {
+        domain: rateLimit.domain,
+        usageBeforeEnqueue: rateLimit.usage,
+        config: rateLimit.config
+      },
       realDelivery: false
     },
     createdAt: nowIso()

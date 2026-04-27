@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { validateContactImport } from './lib/contacts.js';
 import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
+import { getRateLimitConfig } from './lib/rateLimits.js';
 import { enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
 
@@ -217,6 +218,13 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, listSendQueue());
+    }
+
+    if (url.pathname === '/api/email/rate-limits' || url.pathname === '/email/rate-limits') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, { ok: true, mode: 'dry-run-warmup', rateLimits: getRateLimitConfig() });
     }
 
     if (url.pathname === '/api/send-queue/enqueue' || url.pathname === '/send-queue/enqueue') {

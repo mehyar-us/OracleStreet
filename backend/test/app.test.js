@@ -464,3 +464,61 @@ test('suppression and unsubscribe endpoints also work behind nginx stripped api 
   const unsubscribe = await request('/unsubscribe', { method: 'POST', body: JSON.stringify({ email: 'bad' }) });
   assert.equal(unsubscribe.status, 400);
 });
+
+test('rate-limit config requires admin session', async () => {
+  const res = await request('/api/email/rate-limits');
+  assert.equal(res.status, 401);
+});
+
+test('dry-run queue enforces per-domain warmup rate limit', async () => {
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DRY_RUN_DOMAIN_RATE_LIMIT: '1',
+    ORACLESTREET_DRY_RUN_GLOBAL_RATE_LIMIT: '5'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const first = await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'first@example.test',
+        subject: 'first',
+        html: '<p>dry run</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(first.status, 200);
+    assert.equal(first.body.job.safety.rateLimitChecked, true);
+    assert.equal(first.body.job.safety.rateLimit.domain, 'example.test');
+
+    const second = await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'second@example.test',
+        subject: 'second',
+        html: '<p>dry run</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(second.status, 400);
+    assert.ok(second.body.errors.includes('domain_rate_limit_exceeded'));
+    assert.equal(second.body.rateLimit.usage.domain, 1);
+
+    const config = await request('/api/email/rate-limits', { headers: { cookie } });
+    assert.equal(config.status, 200);
+    assert.equal(config.body.rateLimits.perDomainPerWindow, 1);
+  });
+});
+
+test('rate-limit endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/email/rate-limits');
+  assert.equal(res.status, 401);
+});

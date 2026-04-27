@@ -70,6 +70,7 @@ npm test --prefix backend
 - SMTP/PowerMTA provider validation: `POST /api/email/provider/validate` must require admin auth, report redacted readiness, skip network probes by default, and never expose passwords.
 - Dry-run send queue: `POST /api/send-queue/enqueue` must require admin auth, reject messages missing consent/source/unsubscribe gates, enqueue compliant messages as `queued_dry_run`, and report `realDelivery: false`.
 - Suppression/unsubscribe baseline: `POST /api/suppressions` must require admin auth; `POST /api/unsubscribe` must record unsubscribe suppressions; suppressed recipients must be blocked from dry-run queue enqueue.
+- Rate-limit/warm-up baseline: `GET /api/email/rate-limits` must require admin auth; dry-run queue enqueue must enforce global and per-domain hourly caps before any provider path.
 
 ## Domain readiness checklist
 
