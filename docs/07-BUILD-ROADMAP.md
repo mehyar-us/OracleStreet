@@ -22,6 +22,7 @@
 - [x] Add visible send queue dry-run dispatch workflow to admin workbench
 - [ ] Convert remaining visible admin screens from safe-read panels into full CRUD workflows
 - [x] Add visible remote PostgreSQL source registration workflow to admin workbench
+- [x] Add remote PostgreSQL schema discovery planner UI/API
 - [x] Add SELECT-only remote PostgreSQL query validator/planner UI/API
 - [ ] Add live remote PostgreSQL probe/schema discovery/query execution behind pg-driver and approval gates
 - [ ] Add reputation dashboard and warm-up controls UI

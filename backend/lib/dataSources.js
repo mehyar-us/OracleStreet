@@ -168,6 +168,83 @@ export const validateDataSourceQuery = ({ dataSourceId, sql, limit = 100, timeou
   };
 };
 
+
+export const planDataSourceSchemaDiscovery = ({ dataSourceId, schemas = ['public'], tableLimit = 100, columnLimit = 500, timeoutMs = 5000, actorEmail = null }) => {
+  const source = dataSources.get(String(dataSourceId || '').trim());
+  const requestedSchemas = Array.isArray(schemas) ? schemas.map((schema) => String(schema || '').trim()).filter(Boolean) : [];
+  const parsedTableLimit = Number(tableLimit);
+  const parsedColumnLimit = Number(columnLimit);
+  const parsedTimeoutMs = Number(timeoutMs);
+  const errors = [];
+
+  if (!source) errors.push('data_source_not_found');
+  if (requestedSchemas.length === 0) errors.push('schema_allowlist_required');
+  if (requestedSchemas.some((schema) => !/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/.test(schema))) errors.push('valid_schema_names_required');
+  if (!Number.isInteger(parsedTableLimit) || parsedTableLimit < 1 || parsedTableLimit > 500) errors.push('valid_table_limit_1_500_required');
+  if (!Number.isInteger(parsedColumnLimit) || parsedColumnLimit < 1 || parsedColumnLimit > 2000) errors.push('valid_column_limit_1_2000_required');
+  if (!Number.isInteger(parsedTimeoutMs) || parsedTimeoutMs < 100 || parsedTimeoutMs > 10000) errors.push('valid_timeout_100_10000_ms_required');
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      errors,
+      mode: 'data-source-schema-discovery-safe-plan',
+      realProbe: false,
+      realDiscovery: false,
+      tablesReturned: 0,
+      columnsReturned: 0,
+      networkProbe: 'skipped',
+      source: source ? { id: source.id, name: source.name, connection: { parsed: { ...source.connection.parsed }, secretStored: source.connection.secretStored } } : null
+    };
+  }
+
+  const quotedSchemas = requestedSchemas.map((schema) => `'${schema.replaceAll("'", "''")}'`).join(', ');
+  return {
+    ok: true,
+    mode: 'data-source-schema-discovery-safe-plan',
+    dataSourceId: source.id,
+    sourceName: source.name,
+    connection: {
+      host: source.connection.parsed.host,
+      port: source.connection.parsed.port,
+      database: source.connection.parsed.database,
+      sslMode: source.connection.parsed.sslMode,
+      secretStored: source.connection.secretStored
+    },
+    discovery: {
+      schemas: requestedSchemas,
+      tableLimit: parsedTableLimit,
+      columnLimit: parsedColumnLimit,
+      timeoutMs: parsedTimeoutMs,
+      tablesSql: `select table_schema, table_name from information_schema.tables where table_type = 'BASE TABLE' and table_schema in (${quotedSchemas}) order by table_schema, table_name limit ${parsedTableLimit}`,
+      columnsSql: `select table_schema, table_name, column_name, data_type, is_nullable from information_schema.columns where table_schema in (${quotedSchemas}) order by table_schema, table_name, ordinal_position limit ${parsedColumnLimit}`,
+      samplePreviewSql: `select * from <schema>.<table> limit 25`
+    },
+    tables: [],
+    columns: [],
+    tablesReturned: 0,
+    columnsReturned: 0,
+    rowsPulled: 0,
+    realProbe: false,
+    realDiscovery: false,
+    networkProbe: 'skipped_until_pg_driver_and_operator_approval',
+    requiredGates: [
+      'admin_session',
+      'registered_postgresql_source',
+      'encrypted_secret_ref',
+      'schema_allowlist',
+      'bounded_table_limit',
+      'bounded_column_limit',
+      'bounded_timeout',
+      'redacted_errors',
+      'future_live_probe_approval'
+    ],
+    blockers: source.connection.secretStored ? ['pg_driver_not_enabled', 'live_schema_discovery_disabled'] : ['encrypted_connection_secret_required', 'pg_driver_not_enabled', 'live_schema_discovery_disabled'],
+    actorEmail,
+    createdAt: nowIso()
+  };
+};
+
 export const resetDataSourcesForTests = () => {
   dataSources.clear();
   encryptedConnectionSecrets.clear();

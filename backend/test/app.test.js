@@ -244,6 +244,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/data-sources/);
   assert.match(html, /Register PostgreSQL source/);
   assert.match(html, /remote-source-password/);
+  assert.match(html, /api\/data-source-schema\/plan/);
+  assert.match(html, /Plan schema discovery/);
   assert.match(html, /api\/data-source-query\/validate/);
   assert.match(html, /Validate SELECT query/);
   assert.match(html, /reputation-screen/);
@@ -481,6 +483,72 @@ test('data source sync dry-run requires admin and validates registered sources w
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_dry_run'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_runs_list'));
   });
+});
+
+test('data source schema discovery planner requires admin and returns safe information-schema plan without probing', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATA_SOURCE_SECRET_KEY: 'test-data-source-secret-key-at-least-32-chars'
+  }, async () => {
+    const unauth = await request('/api/data-source-schema/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dataSourceId: 'ds_missing', schemas: ['public'] })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const created = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        name: 'Schema warehouse',
+        type: 'postgresql',
+        storeSecret: true,
+        connectionUrl: 'postgresql://reader:schema-secret@warehouse.example.test:5432/affiliate?sslmode=require'
+      })
+    });
+
+    const rejected = await request('/api/data-source-schema/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ dataSourceId: created.body.source.id, schemas: ['public;drop'], tableLimit: 100 })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('valid_schema_names_required'));
+    assert.equal(rejected.body.realDiscovery, false);
+    assert.equal(rejected.body.tablesReturned, 0);
+
+    const planned = await request('/api/data-source-schema/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ dataSourceId: created.body.source.id, schemas: ['public', 'analytics'], tableLimit: 25, columnLimit: 250, timeoutMs: 3000 })
+    });
+    assert.equal(planned.status, 200);
+    assert.equal(planned.body.mode, 'data-source-schema-discovery-safe-plan');
+    assert.deepEqual(planned.body.discovery.schemas, ['public', 'analytics']);
+    assert.match(planned.body.discovery.tablesSql, /information_schema\.tables/);
+    assert.match(planned.body.discovery.columnsSql, /information_schema\.columns/);
+    assert.equal(planned.body.tablesReturned, 0);
+    assert.equal(planned.body.columnsReturned, 0);
+    assert.equal(planned.body.realDiscovery, false);
+    assert.equal(planned.body.networkProbe, 'skipped_until_pg_driver_and_operator_approval');
+    assert.ok(planned.body.requiredGates.includes('schema_allowlist'));
+    assert.equal(JSON.stringify(planned.body).includes('schema-secret'), false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_schema_plan'));
+  });
+});
+
+test('data source schema planner endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/data-source-schema/plan', { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(res.status, 401);
 });
 
 test('data source SELECT-only query validator requires admin and rejects unsafe SQL without pulling rows', async () => {
