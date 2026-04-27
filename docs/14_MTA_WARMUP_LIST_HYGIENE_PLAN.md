@@ -100,8 +100,8 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Wire contacts/suppressions runtime repository adapter to local PostgreSQL with in-memory test fallback.
-2. PostgreSQL-backed repositories for templates/campaigns/send queue/events/users, replacing remaining in-memory state.
+1. Wire templates/campaigns runtime repository adapter to local PostgreSQL with in-memory test fallback.
+2. PostgreSQL-backed repositories for send queue/events/users, replacing remaining in-memory state.
 3. Live remote PostgreSQL read-only probe/query execution behind pg-driver, encrypted creds, timeout/limit, and explicit operator approval.
 4. Controlled one-recipient MTA live-test runbook and gate.
 5. Multi-user/RBAC admin workflow.

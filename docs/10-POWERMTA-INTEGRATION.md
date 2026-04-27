@@ -157,6 +157,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 62. [x] Reputation auto-pause threshold controls API/UI for recommendation-only bounce/complaint/deferral/provider-error pause evaluation without queue/provider mutation or delivery unlock.
 63. [x] Warm-up policy persistence and campaign schedule cap enforcement baseline for in-memory sender-domain profiles and dry-run schedule rejection when audience exceeds the day cap.
 64. [x] PostgreSQL policy repository foundation migration/readiness for warm-up policies, reputation policies, and module migration status without secret exposure or live data mutation.
+65. [x] Contacts/suppressions local PostgreSQL runtime adapter using the VPS `psql` client with password kept in process env, no URL printing, and safe in-memory fallback.
 
 ## Current validation endpoints
 
@@ -217,7 +218,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `/` frontend reporting panel builds CSV export previews through `/api/email/reporting/export` for reporting datasets without unlocking delivery.
 - `/` frontend reputation panel includes a warm-up planner wired to `/api/email/warmup/plan` after loading reputation gates, without external writes or delivery unlocks.
 - `/` frontend reputation panel includes warm-up policy save and schedule-cap check controls wired to `/api/email/warmup/policy` and `/api/email/warmup/schedule-cap`, and campaign dry-run scheduling enforces the cap server-side.
-- `GET /api/database/repositories` requires an admin session and reports audited PostgreSQL repository migration readiness for core email CMS modules. Migration `004_policy_repository_foundation` creates warm-up/reputation policy tables and repository status records while runtime modules stay in-memory until the pg repository adapter is enabled.
+- `GET /api/database/repositories` requires an admin session and reports audited PostgreSQL repository migration readiness for core email CMS modules. Migration `004_policy_repository_foundation` creates warm-up/reputation policy tables and repository status records. Contacts/suppressions can now run through the local PostgreSQL adapter when `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions` is enabled on the VPS.
 - `/` frontend reputation panel includes recommendation-only auto-pause threshold controls wired to `/api/email/reputation/policy` and `/api/email/reputation/auto-pause`, showing save/evaluate feedback without mutating queues/providers or unlocking delivery.
 - `GET /api/list-hygiene/plan` requires an admin session and returns a safe list cleanup plan with duplicate groups, suppressed contacts, risky role/free-mail/thin-provenance contacts, stale contacts, source quality scores, domain concentration, and recommendations. It audits the view, mutates no contacts/suppressions, performs no network/MX checks, and keeps `realDeliveryAllowed: false`.
 - `GET`/`POST /api/data-sources` requires an admin session and registers remote PostgreSQL source metadata with redacted URLs only. Optional `storeSecret: true` stores the connection URL in the encrypted secret baseline when `ORACLESTREET_DATA_SOURCE_SECRET_KEY` is configured, returns only an encrypted secret ref/metadata, skips connection probes, keeps `syncEnabled: false`, and does not pull data.

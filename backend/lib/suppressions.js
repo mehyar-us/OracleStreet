@@ -1,3 +1,5 @@
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_REASONS = new Set(['unsubscribe', 'bounce', 'complaint', 'manual']);
 
@@ -12,15 +14,64 @@ export const resetSuppressionsForTests = () => {
   sequence = 0;
 };
 
-export const listSuppressions = () => ({
-  ok: true,
-  count: suppressions.size,
-  suppressions: [...suppressions.values()].map((entry) => ({ ...entry }))
+const pgRowToSuppression = ([id, email, reason, source, createdAt]) => ({
+  id,
+  email,
+  reason,
+  source,
+  actorEmail: null,
+  createdAt,
+  updatedAt: null
 });
 
-export const isSuppressed = (email) => suppressions.has(normalizeEmail(email));
+const listSuppressionsFromPostgres = () => runLocalPgRows(`
+  SELECT id::text, email, reason, source, created_at::text
+  FROM suppressions
+  ORDER BY created_at DESC, email ASC
+  LIMIT 1000;
+`).map(pgRowToSuppression);
 
-export const getSuppression = (email) => suppressions.get(normalizeEmail(email)) || null;
+const getSuppressionFromPostgres = (email) => {
+  const rows = runLocalPgRows(`
+    SELECT id::text, email, reason, source, created_at::text
+    FROM suppressions
+    WHERE email = ${sqlLiteral(normalizeEmail(email))}
+    ORDER BY created_at DESC
+    LIMIT 1;
+  `);
+  return rows[0] ? pgRowToSuppression(rows[0]) : null;
+};
+
+export const listSuppressions = () => {
+  if (isPgRepositoryEnabled('suppressions')) {
+    try {
+      const pgSuppressions = listSuppressionsFromPostgres();
+      return { ok: true, count: pgSuppressions.length, suppressions: pgSuppressions, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    count: suppressions.size,
+    suppressions: [...suppressions.values()].map((entry) => ({ ...entry })),
+    persistenceMode: isPgRepositoryEnabled('suppressions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
+  };
+};
+
+export const isSuppressed = (email) => {
+  if (isPgRepositoryEnabled('suppressions')) {
+    try { return Boolean(getSuppressionFromPostgres(email)); } catch (error) { /* fall through */ }
+  }
+  return suppressions.has(normalizeEmail(email));
+};
+
+export const getSuppression = (email) => {
+  if (isPgRepositoryEnabled('suppressions')) {
+    try { return getSuppressionFromPostgres(email); } catch (error) { /* fall through */ }
+  }
+  return suppressions.get(normalizeEmail(email)) || null;
+};
 
 export const addSuppression = ({ email, reason = 'manual', source = 'admin', actorEmail = null }) => {
   const normalized = normalizeEmail(email);
@@ -33,11 +84,26 @@ export const addSuppression = ({ email, reason = 'manual', source = 'admin', act
   if (!cleanSource) errors.push('source_required');
   if (errors.length > 0) return { ok: false, errors };
 
+  if (isPgRepositoryEnabled('suppressions')) {
+    try {
+      const existing = getSuppressionFromPostgres(normalized);
+      const rows = runLocalPgRows(`
+        DELETE FROM suppressions WHERE email = ${sqlLiteral(normalized)};
+        INSERT INTO suppressions (email, reason, source)
+        VALUES (${sqlLiteral(normalized)}, ${sqlLiteral(cleanReason)}, ${sqlLiteral(cleanSource)})
+        RETURNING id::text, email, reason, source, created_at::text;
+      `);
+      return { ok: true, suppression: pgRowToSuppression(rows[0]), created: !existing, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory suppression so compliance remains fail-closed for this process
+    }
+  }
+
   const existing = suppressions.get(normalized);
   if (existing) {
     const updated = { ...existing, reason: cleanReason, source: cleanSource, actorEmail, updatedAt: nowIso() };
     suppressions.set(normalized, updated);
-    return { ok: true, suppression: { ...updated }, created: false };
+    return { ok: true, suppression: { ...updated }, created: false, persistenceMode: isPgRepositoryEnabled('suppressions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled' };
   }
 
   const suppression = {
@@ -50,7 +116,7 @@ export const addSuppression = ({ email, reason = 'manual', source = 'admin', act
     updatedAt: null
   };
   suppressions.set(normalized, suppression);
-  return { ok: true, suppression: { ...suppression }, created: true };
+  return { ok: true, suppression: { ...suppression }, created: true, persistenceMode: isPgRepositoryEnabled('suppressions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled' };
 };
 
 export const recordUnsubscribe = ({ email, source = 'unsubscribe_endpoint' }) => addSuppression({

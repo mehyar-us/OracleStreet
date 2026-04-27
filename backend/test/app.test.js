@@ -335,6 +335,27 @@ test('database repository readiness is protected and exposes PostgreSQL schema m
   });
 });
 
+test('database repository readiness reports enabled contacts and suppressions repositories from env without exposing secrets', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions',
+    ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const res = await request('/api/database/repositories', { headers: { cookie: login.headers.get('set-cookie') } });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.liveRepositoryEnabled, true);
+    assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
+    assert.equal(res.body.summary.liveRepositoryModules, 2);
+    assert.equal(res.body.summary.psqlAdapterReady, true);
+    assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
+    assert.doesNotMatch(JSON.stringify(res.body), /super-secret/);
+  });
+});
+
 test('database repository readiness endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/database/repositories');
   assert.equal(res.status, 401);

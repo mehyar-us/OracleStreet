@@ -1,3 +1,4 @@
+import { enabledRepositories, pgReady } from './localPg.js';
 import { listMigrations } from './migrations.js';
 
 const MODULES = [
@@ -16,11 +17,13 @@ const MODULES = [
 export const repositoryReadiness = () => {
   const migrations = listMigrations();
   const hasPolicyFoundation = migrations.some((migration) => migration.id === '004_policy_repository_foundation');
+  const enabled = enabledRepositories();
+  const liveEnabled = (module) => enabled.has('all') || enabled.has(module);
   const modules = MODULES.map((entry) => ({
     ...entry,
     schemaReady: entry.targetTable ? true : false,
-    liveRepositoryEnabled: false,
-    nextAction: entry.blocker,
+    liveRepositoryEnabled: liveEnabled(entry.module),
+    nextAction: liveEnabled(entry.module) ? 'monitor_postgresql_repository_and_backfill_existing_memory_state' : entry.blocker,
     safety: {
       noSecrets: true,
       noDataMutationFromReadiness: true,
@@ -33,14 +36,15 @@ export const repositoryReadiness = () => {
     mode: 'postgresql-repository-readiness',
     migration: hasPolicyFoundation ? '004_policy_repository_foundation' : null,
     schemaFoundationReady: hasPolicyFoundation,
-    liveRepositoryEnabled: false,
-    currentRuntimePersistence: 'in-memory-with-postgresql-schema-foundation',
+    liveRepositoryEnabled: modules.some((module) => module.liveRepositoryEnabled),
+    currentRuntimePersistence: modules.some((module) => module.liveRepositoryEnabled) ? 'partial-postgresql-runtime-repositories' : 'in-memory-with-postgresql-schema-foundation',
     modules,
     summary: {
       totalModules: modules.length,
       schemaReadyModules: modules.filter((module) => module.schemaReady).length,
       liveRepositoryModules: modules.filter((module) => module.liveRepositoryEnabled).length,
-      nextModule: modules[0].module
+      psqlAdapterReady: pgReady(),
+      nextModule: modules.find((module) => !module.liveRepositoryEnabled)?.module || 'templates'
     },
     blockers: [
       'add_pg_driver_or_safe_psql_repository_adapter',

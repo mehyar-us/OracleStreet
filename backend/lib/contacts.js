@@ -1,3 +1,5 @@
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_CONSENT = new Set(['opt_in', 'double_opt_in']);
 
@@ -85,10 +87,76 @@ const materializeContact = (contact, actorEmail) => {
   return { ...saved };
 };
 
+const pgRowToContact = ([id, email, status, consentStatus, source, sourceDetail, firstName, lastName, createdAt, updatedAt]) => ({
+  id,
+  email,
+  status,
+  consentStatus,
+  source,
+  sourceDetail: sourceDetail || null,
+  firstName: firstName || null,
+  lastName: lastName || null,
+  actorEmail: null,
+  createdAt,
+  updatedAt
+});
+
+const importContactsToPostgres = (accepted) => {
+  if (accepted.length === 0) return [];
+  const values = accepted.map((contact) => `(${[
+    sqlLiteral(contact.email),
+    sqlLiteral(contact.consentStatus),
+    sqlLiteral(contact.source),
+    sqlLiteral(contact.sourceDetail),
+    sqlLiteral(contact.firstName),
+    sqlLiteral(contact.lastName)
+  ].join(',')})`).join(',');
+  const rows = runLocalPgRows(`
+    INSERT INTO contacts (email, consent_status, source, source_detail, first_name, last_name, status, updated_at)
+    VALUES ${values}
+    ON CONFLICT (email) DO UPDATE SET
+      consent_status = EXCLUDED.consent_status,
+      source = EXCLUDED.source,
+      source_detail = EXCLUDED.source_detail,
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      status = 'active',
+      updated_at = now()
+    RETURNING id::text, email, status, consent_status, source, coalesce(source_detail, ''), coalesce(first_name, ''), coalesce(last_name, ''), created_at::text, updated_at::text;
+  `);
+  return rows.map(pgRowToContact);
+};
+
+const listContactsFromPostgres = () => runLocalPgRows(`
+  SELECT id::text, email, status, consent_status, source, coalesce(source_detail, ''), coalesce(first_name, ''), coalesce(last_name, ''), created_at::text, updated_at::text
+  FROM contacts
+  ORDER BY created_at DESC, email ASC
+  LIMIT 1000;
+`).map(pgRowToContact);
+
 export const importContacts = (incomingContacts, actorEmail = null) => {
   const validation = validateContactImport(incomingContacts);
   if (validation.error) return validation;
   if (!validation.ok) return { ...validation, mode: 'import-rejected' };
+
+  if (isPgRepositoryEnabled('contacts')) {
+    try {
+      const before = new Set(listContactsFromPostgres().map((contact) => contact.email));
+      const saved = importContactsToPostgres(validation.accepted);
+      return {
+        ok: true,
+        mode: 'postgresql-contact-import',
+        importedCount: saved.filter((contact) => !before.has(contact.email)).length,
+        updatedCount: saved.filter((contact) => before.has(contact.email)).length,
+        totalContacts: listContactsFromPostgres().length,
+        imported: saved.filter((contact) => !before.has(contact.email)),
+        updated: saved.filter((contact) => before.has(contact.email)),
+        persistenceMode: 'postgresql-local-psql-repository'
+      };
+    } catch (error) {
+      // Safe fallback keeps admin imports usable if the local psql adapter is unavailable.
+    }
+  }
 
   const imported = [];
   const updated = [];
@@ -107,14 +175,25 @@ export const importContacts = (incomingContacts, actorEmail = null) => {
     totalContacts: contacts.size,
     imported,
     updated,
-    persistenceMode: 'in-memory-until-postgresql-connection-enabled'
+    persistenceMode: isPgRepositoryEnabled('contacts') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
   };
 };
 
-export const listContacts = () => ({
-  ok: true,
-  count: contacts.size,
-  contacts: [...contacts.values()].map((contact) => ({ ...contact }))
-});
+export const listContacts = () => {
+  if (isPgRepositoryEnabled('contacts')) {
+    try {
+      const pgContacts = listContactsFromPostgres();
+      return { ok: true, count: pgContacts.length, contacts: pgContacts, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    count: contacts.size,
+    contacts: [...contacts.values()].map((contact) => ({ ...contact })),
+    persistenceMode: isPgRepositoryEnabled('contacts') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
+  };
+};
 
-export const getAllContacts = () => [...contacts.values()].map((contact) => ({ ...contact }));
+export const getAllContacts = () => listContacts().contacts.map((contact) => ({ ...contact }));
