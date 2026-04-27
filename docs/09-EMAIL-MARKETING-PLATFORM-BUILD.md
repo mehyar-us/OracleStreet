@@ -81,7 +81,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 ### 6. Events + reporting
 
 - [x] manual delivery event ingest baseline for delivered/deferred events without suppression or delivery
-- bounce parsing
+- [x] manual bounce parser validation baseline for DSN snippets without recording events or suppressions
 - unsubscribe tracking
 - [x] campaign reporting safe summary baseline
 

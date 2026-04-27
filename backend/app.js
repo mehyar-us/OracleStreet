@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
+import { validateBounceMessage } from './lib/bounceParser.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
@@ -654,6 +655,17 @@ export const createHandler = () => {
       const result = recordTrackingEvent({ type: 'click', email: url.searchParams.get('email'), campaignId: url.searchParams.get('campaignId'), contactId: url.searchParams.get('contactId'), detail: url.searchParams.get('url') || url.searchParams.get('detail') || null });
       recordAuditEvent({ action: 'email_tracking_click', target: url.searchParams.get('campaignId') || null, status: result.ok ? 'ok' : 'rejected', details: { email: url.searchParams.get('email') || null, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, { ...result, mode: 'tracked-click-event', redirect: false, realDelivery: false });
+    }
+
+    if (url.pathname === '/api/email/bounce-parse/validate' || url.pathname === '/email/bounce-parse/validate') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = validateBounceMessage({ message: body.message, source: body.source, campaignId: body.campaignId, contactId: body.contactId });
+      recordAuditEvent({ action: 'email_bounce_parse_validate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { parsedType: result.parsed?.type || null, errors: result.errors || [], validationOnly: true, realDelivery: false } });
+      return jsonResponse(res, result.error ? 400 : 200, result);
     }
 
     if (url.pathname === '/api/email/events/validate-import' || url.pathname === '/email/events/validate-import') {
