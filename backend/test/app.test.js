@@ -1222,6 +1222,56 @@ test('manual event import validation parses CSV without recording events', async
   });
 });
 
+test('manual event CSV import atomically ingests valid bounce and complaint rows only', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/events/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ csv: 'type,email,source\nbounce,bounced@example.test,pmta csv' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/email/events/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ csv: 'type,email,source\nbounce,bounced@example.test,pmta csv\nopen,reader@example.test,tracking' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal(rejected.body.imported, false);
+    assert.equal(rejected.body.acceptedCount, 1);
+    assert.equal(rejected.body.rejectedCount, 1);
+    assert.equal((await request('/api/email/events', { headers: { cookie } })).body.count, 0);
+
+    const imported = await request('/api/email/events/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        csv: 'type,email,source,detail,campaignId,contactId\nbounce,Bounced@Example.test,pmta csv,550,cmp_csv,ct_1\ncomplaint,complaint@example.test,abuse inbox,,cmp_csv,ct_2'
+      })
+    });
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.mode, 'manual-event-import-ingest');
+    assert.equal(imported.body.imported, true);
+    assert.equal(imported.body.importedCount, 2);
+    assert.equal(imported.body.realDelivery, false);
+    assert.equal(imported.body.ingest.accepted[0].event.campaignId, 'cmp_csv');
+    assert.equal(imported.body.ingest.accepted[0].suppression.reason, 'bounce');
+
+    const events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 2);
+    assert.equal(events.body.events[0].campaignId, 'cmp_csv');
+    const suppressions = await request('/api/suppressions', { headers: { cookie } });
+    assert.equal(suppressions.body.count, 2);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_events_import' && event.status === 'ok'));
+  });
+});
+
 test('manual bounce and complaint ingest records events and suppresses recipients', async () => {
   resetSendQueueForTests();
   resetSuppressionsForTests();
@@ -1289,6 +1339,8 @@ test('email event endpoints also work behind nginx stripped api prefix', async (
   assert.equal(list.status, 401);
   const validateImport = await request('/email/events/validate-import', { method: 'POST' });
   assert.equal(validateImport.status, 401);
+  const importEvents = await request('/email/events/import', { method: 'POST' });
+  assert.equal(importEvents.status, 401);
   const ingest = await request('/email/events/ingest', { method: 'POST' });
   assert.equal(ingest.status, 401);
 });

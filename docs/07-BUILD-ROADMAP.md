@@ -45,6 +45,7 @@
 - [x] Rate limits and warm-up controls baseline
 - [x] Bounce/complaint ingestion baseline
 - [x] Manual event CSV import validation baseline
+- [x] Manual event CSV import ingest baseline
 - [x] Event tracking baseline
 - [x] Dry-run dispatch event tracking baseline
 - [x] Campaign reporting safe summary baseline

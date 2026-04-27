@@ -515,6 +515,32 @@ export const createHandler = () => {
       return jsonResponse(res, result.error ? 400 : 200, result);
     }
 
+    if (url.pathname === '/api/email/events/import' || url.pathname === '/email/events/import') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const validation = validateEventImportCsv({ csv: body.csv });
+      if (validation.error || !validation.ok) {
+        recordAuditEvent({ action: 'email_events_import', actorEmail: session.email, status: 'rejected', details: { acceptedCount: validation.acceptedCount || 0, rejectedCount: validation.rejectedCount || 0, error: validation.error, realDelivery: false } });
+        return jsonResponse(res, 400, { ...validation, imported: false, realDelivery: false });
+      }
+      const ingest = ingestEmailEvents({ events: validation.accepted.map((entry) => entry.event), actorEmail: session.email });
+      const result = {
+        ok: ingest.ok,
+        mode: 'manual-event-import-ingest',
+        validation,
+        ingest,
+        importedCount: ingest.acceptedCount,
+        rejectedCount: ingest.rejectedCount,
+        imported: ingest.ok,
+        realDelivery: false
+      };
+      recordAuditEvent({ action: 'email_events_import', actorEmail: session.email, status: ingest.ok ? 'ok' : 'partial_or_rejected', details: { importedCount: result.importedCount, rejectedCount: result.rejectedCount, realDelivery: false } });
+      return jsonResponse(res, ingest.ok ? 200 : 400, result);
+    }
+
     if (url.pathname === '/api/email/events/ingest' || url.pathname === '/email/events/ingest') {
       if (!requireMethod(req, res, 'POST')) return;
       const session = requireSession(req, res);
