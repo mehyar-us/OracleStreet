@@ -8,7 +8,7 @@ Last reset: 2026-04-27
 
 Build OracleStreet into a full private email sending CMS with PostgreSQL-backed persistence, remote PostgreSQL connectors/query tools, reputation-safe sending, PowerMTA integration, visible admin UI, and hard operational gates.
 
-Reference target: `docs/13_FULL_EMAIL_CMS_TARGET.md`.
+Reference target: `docs/13_FULL_EMAIL_CMS_TARGET.md` and `docs/14_MTA_WARMUP_LIST_HYGIENE_PLAN.md`.
 
 ## Current priority stack
 
@@ -92,9 +92,28 @@ Acceptance:
 
 ## Loop rules
 
-- Every run must read this queue and `docs/13_FULL_EMAIL_CMS_TARGET.md` before choosing work.
+- Every run must read this queue and `docs/13_FULL_EMAIL_CMS_TARGET.md` and `docs/14_MTA_WARMUP_LIST_HYGIENE_PLAN.md` before choosing work.
 - Prefer shipping one real product slice over only checking health.
 - If Boss says “I see no features,” prioritize visible UI affordances tied to existing backend capability.
 - Install/repair VPS PostgreSQL and deploy migrations autonomously when safe.
 - Commit, push, deploy, and verify safe changes.
 - Never commit secrets or raw DB credentials.
+
+
+## O7 — MTA, warm-up training, and list hygiene
+
+Status: active
+
+Acceptance:
+- Build visible list management: browse/search/filter contacts, consent/source visibility, duplicate/risky/stale contact cleanup planning, suppression review, and source-quality scoring.
+- Build MTA/PowerMTA path as a gated provider adapter: config validation, local capture/dry-run, provider message IDs, accounting import, controlled one-recipient live-test gate.
+- Build warm-up training: sender-domain/IP profiles, daily/hourly caps, ramp stages, per-domain allocation, bounce/complaint/deferral pause thresholds, and campaign-calendar cap enforcement.
+- Build feedback loop: bounces/complaints/unsubscribes/events update suppressions, list health, source risk, and reputation dashboards.
+- Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
+
+Next slices:
+1. List hygiene dashboard + cleanup planner API/UI.
+2. Reputation auto-pause threshold controls.
+3. Warm-up policy persistence and campaign schedule cap enforcement.
+4. PostgreSQL-backed repositories for remaining in-memory modules.
+5. Controlled one-recipient MTA live-test runbook/gate.
