@@ -60,6 +60,116 @@ const cloneImportSchedule = (schedule) => ({
   safety: { ...schedule.safety }
 });
 
+const safeParseJson = (value, fallback = {}) => {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const pgDataSourceRows = () => runLocalPgRows(`
+  SELECT id, name, type, status, coalesce(redacted_url, ''), parsed::text, secret_stored::text, secret_storage, coalesce(encrypted_connection_ref::text, ''), encryption::text, connection_probe, sync_enabled::text, coalesce(actor_email, ''), created_at::text, coalesce(updated_at::text, '')
+  FROM data_source_registry
+  ORDER BY created_at DESC
+  LIMIT 1000;
+`);
+
+const pgRowToDataSource = ([id, name, type, status, redactedUrl, parsedJson, secretStored, secretStorage, encryptedRefJson, encryptionJson, connectionProbe, syncEnabled, actorEmail, createdAt, updatedAt]) => ({
+  id,
+  name,
+  type,
+  status,
+  connection: {
+    redactedUrl: redactedUrl || null,
+    parsed: safeParseJson(parsedJson),
+    secretStored: secretStored === 't' || secretStored === 'true',
+    secretStorage: secretStorage || 'metadata-only',
+    encryptedConnectionRef: encryptedRefJson ? safeParseJson(encryptedRefJson, null) : null,
+    encryption: safeParseJson(encryptionJson, {}),
+    connectionProbe: connectionProbe || 'skipped_registry_validation_only'
+  },
+  syncEnabled: syncEnabled === 't' || syncEnabled === 'true',
+  actorEmail: actorEmail || null,
+  createdAt,
+  updatedAt: updatedAt || null
+});
+
+const listDataSourcesFromPostgres = () => pgDataSourceRows().map(pgRowToDataSource);
+
+const getDataSourceFromPostgres = (id) => {
+  const rows = runLocalPgRows(`
+    SELECT id, name, type, status, coalesce(redacted_url, ''), parsed::text, secret_stored::text, secret_storage, coalesce(encrypted_connection_ref::text, ''), encryption::text, connection_probe, sync_enabled::text, coalesce(actor_email, ''), created_at::text, coalesce(updated_at::text, '')
+    FROM data_source_registry
+    WHERE id = ${sqlLiteral(id)}
+    LIMIT 1;
+  `);
+  return rows[0] ? pgRowToDataSource(rows[0]) : null;
+};
+
+const saveDataSourceToPostgres = (source, secretRecord = null) => {
+  if (secretRecord) {
+    runLocalPgRows(`
+      INSERT INTO data_source_encrypted_secrets (id, algorithm, iv, ciphertext, auth_tag, created_at)
+      VALUES (${sqlLiteral(secretRecord.id)}, ${sqlLiteral(secretRecord.algorithm)}, ${sqlLiteral(secretRecord.iv)}, ${sqlLiteral(secretRecord.ciphertext)}, ${sqlLiteral(secretRecord.authTag)}, ${sqlLiteral(secretRecord.createdAt)})
+      ON CONFLICT (id) DO UPDATE SET algorithm = EXCLUDED.algorithm, iv = EXCLUDED.iv, ciphertext = EXCLUDED.ciphertext, auth_tag = EXCLUDED.auth_tag;
+    `);
+  }
+  const rows = runLocalPgRows(`
+    INSERT INTO data_source_registry (id, name, type, status, redacted_url, parsed, secret_stored, secret_storage, encrypted_connection_ref, encryption, connection_probe, sync_enabled, actor_email, created_at, updated_at)
+    VALUES (${[
+      sqlLiteral(source.id),
+      sqlLiteral(source.name),
+      sqlLiteral(source.type),
+      sqlLiteral(source.status),
+      sqlLiteral(source.connection.redactedUrl),
+      `${sqlLiteral(JSON.stringify(source.connection.parsed || {}))}::jsonb`,
+      source.connection.secretStored ? 'true' : 'false',
+      sqlLiteral(source.connection.secretStorage),
+      source.connection.encryptedConnectionRef ? `${sqlLiteral(JSON.stringify(source.connection.encryptedConnectionRef))}::jsonb` : 'NULL',
+      `${sqlLiteral(JSON.stringify(source.connection.encryption || {}))}::jsonb`,
+      sqlLiteral(source.connection.connectionProbe),
+      source.syncEnabled ? 'true' : 'false',
+      sqlLiteral(source.actorEmail),
+      sqlLiteral(source.createdAt),
+      source.updatedAt ? sqlLiteral(source.updatedAt) : 'NULL'
+    ].join(',')})
+    ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, status = EXCLUDED.status, redacted_url = EXCLUDED.redacted_url, parsed = EXCLUDED.parsed, secret_stored = EXCLUDED.secret_stored, secret_storage = EXCLUDED.secret_storage, encrypted_connection_ref = EXCLUDED.encrypted_connection_ref, encryption = EXCLUDED.encryption, connection_probe = EXCLUDED.connection_probe, sync_enabled = EXCLUDED.sync_enabled, actor_email = EXCLUDED.actor_email, updated_at = now()
+    RETURNING id, name, type, status, coalesce(redacted_url, ''), parsed::text, secret_stored::text, secret_storage, coalesce(encrypted_connection_ref::text, ''), encryption::text, connection_probe, sync_enabled::text, coalesce(actor_email, ''), created_at::text, coalesce(updated_at::text, '');
+  `);
+  return pgRowToDataSource(rows[0]);
+};
+
+const getEncryptedSecretFromPostgres = (id) => {
+  const rows = runLocalPgRows(`
+    SELECT id, algorithm, iv, ciphertext, auth_tag, created_at::text
+    FROM data_source_encrypted_secrets
+    WHERE id = ${sqlLiteral(id)}
+    LIMIT 1;
+  `);
+  if (!rows[0]) return null;
+  const [secretId, algorithm, iv, ciphertext, authTag, createdAt] = rows[0];
+  return { id: secretId, algorithm, iv, ciphertext, authTag, createdAt };
+};
+
+const getDataSource = (id) => {
+  const cleanId = String(id || '').trim();
+  if (!cleanId) return null;
+  const memorySource = dataSources.get(cleanId);
+  if (memorySource) return memorySource;
+  if (isPgRepositoryEnabled('data_sources')) {
+    try {
+      const pgSource = getDataSourceFromPostgres(cleanId);
+      if (pgSource) dataSources.set(pgSource.id, pgSource);
+      return pgSource;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
 const pgRowToImportSchedule = ([id, dataSourceId, dataSourceName, status, enabled, intervalHours, nextRunPreviewAt, projectedSql, queryLimit, timeoutMs, mappingJson, validationJson, safetyJson, actorEmail, createdAt, updatedAt]) => ({
   id,
   dataSourceId,
@@ -137,26 +247,28 @@ const encryptConnectionSecret = (plainText) => {
   const readiness = encryptionReadiness();
   if (!readiness.ok) return { ok: false, errors: readiness.errors };
 
-  const id = `ds_secret_${(++secretSequence).toString().padStart(6, '0')}`;
+  const id = `ds_secret_${Date.now().toString(36)}_${(++secretSequence).toString().padStart(6, '0')}`;
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv(readiness.algorithm, deriveEncryptionKey(), iv);
   const ciphertext = Buffer.concat([cipher.update(String(plainText), 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
-  encryptedConnectionSecrets.set(id, {
+  const stored = {
     id,
     algorithm: readiness.algorithm,
     iv: iv.toString('base64url'),
     ciphertext: ciphertext.toString('base64url'),
     authTag: authTag.toString('base64url'),
     createdAt: nowIso()
-  });
+  };
+  encryptedConnectionSecrets.set(id, stored);
   return {
     ok: true,
     ref: id,
+    stored,
     metadata: {
       ref: id,
       algorithm: readiness.algorithm,
-      encryptedAt: encryptedConnectionSecrets.get(id).createdAt,
+      encryptedAt: stored.createdAt,
       ciphertextStored: true,
       plaintextReturned: false
     }
@@ -165,8 +277,17 @@ const encryptConnectionSecret = (plainText) => {
 
 const decryptConnectionSecret = (ref) => {
   const readiness = encryptionReadiness();
-  const stored = encryptedConnectionSecrets.get(String(ref || '').trim());
   if (!readiness.ok) return { ok: false, errors: readiness.errors };
+  const cleanRef = String(ref || '').trim();
+  let stored = encryptedConnectionSecrets.get(cleanRef);
+  if (!stored && isPgRepositoryEnabled('data_sources')) {
+    try {
+      stored = getEncryptedSecretFromPostgres(cleanRef);
+      if (stored) encryptedConnectionSecrets.set(stored.id, stored);
+    } catch {
+      stored = null;
+    }
+  }
   if (!stored) return { ok: false, errors: ['encrypted_connection_secret_not_found'] };
   try {
     const decipher = crypto.createDecipheriv(stored.algorithm, deriveEncryptionKey(), Buffer.from(stored.iv, 'base64url'));
@@ -225,7 +346,7 @@ const runPsqlJson = ({ connectionUrl, sql, timeoutMs }) => {
 const sourcePublicView = (source) => source ? { id: source.id, name: source.name, connection: { parsed: { ...source.connection.parsed }, secretStored: source.connection.secretStored } } : null;
 
 const buildValidatedQueryPlan = ({ dataSourceId, sql, limit = 100, timeoutMs = 5000, explain = true, actorEmail = null }) => {
-  const source = dataSources.get(String(dataSourceId || '').trim());
+  const source = getDataSource(dataSourceId);
   const cleanSql = String(sql || '').trim();
   const parsedLimit = Number(limit);
   const parsedTimeoutMs = Number(timeoutMs);
@@ -300,7 +421,7 @@ export const executeDataSourceQuery = ({ approvalPhrase, ...input } = {}, env = 
   if (!plan.ok) return plan;
   if (!liveExecutionEnabled(env)) blockers.push('remote_postgresql_execution_disabled');
   if (approvalPhrase !== requiredRemoteApprovalPhrase) blockers.push('exact_remote_read_only_approval_phrase_required');
-  const source = dataSources.get(String(input.dataSourceId || '').trim());
+  const source = getDataSource(input.dataSourceId);
   if (!source?.connection.secretStored) blockers.push('encrypted_connection_secret_required');
   const ref = source?.connection.encryptedConnectionRef?.ref;
   const decrypted = blockers.length === 0 ? decryptConnectionSecret(ref) : null;
@@ -366,7 +487,7 @@ export const executeDataSourceQuery = ({ approvalPhrase, ...input } = {}, env = 
 
 
 const buildSchemaDiscoveryPlan = ({ dataSourceId, schemas = ['public'], tableLimit = 100, columnLimit = 500, timeoutMs = 5000, actorEmail = null }) => {
-  const source = dataSources.get(String(dataSourceId || '').trim());
+  const source = getDataSource(dataSourceId);
   const requestedSchemas = Array.isArray(schemas) ? schemas.map((schema) => String(schema || '').trim()).filter(Boolean) : [];
   const parsedTableLimit = Number(tableLimit);
   const parsedColumnLimit = Number(columnLimit);
@@ -449,7 +570,7 @@ export const executeDataSourceSchemaDiscovery = ({ approvalPhrase, ...input } = 
   if (!plan.ok) return plan;
   if (!liveExecutionEnabled(env)) blockers.push('remote_postgresql_execution_disabled');
   if (approvalPhrase !== requiredRemoteApprovalPhrase) blockers.push('exact_remote_read_only_approval_phrase_required');
-  const source = dataSources.get(String(input.dataSourceId || '').trim());
+  const source = getDataSource(input.dataSourceId);
   if (!source?.connection.secretStored) blockers.push('encrypted_connection_secret_required');
   const ref = source?.connection.encryptedConnectionRef?.ref;
   const decrypted = blockers.length === 0 ? decryptConnectionSecret(ref) : null;
@@ -560,7 +681,7 @@ export const previewContactImportFromDataSource = ({ rows, dataSourceId, sql, li
     rowsPulled: execution?.rowsPulled || 0,
     realQuery: Boolean(execution?.realQuery),
     importMutation: false,
-    source: dataSourceId ? sourcePublicView(dataSources.get(String(dataSourceId).trim())) : null,
+    source: dataSourceId ? sourcePublicView(getDataSource(dataSourceId)) : null,
     mapping: {
       email: emailColumn,
       consentStatus: mapping.consentStatus || mapping.consent_status || null,
@@ -615,7 +736,7 @@ export const importContactsFromDataSource = ({ importApprovalPhrase, ...input } 
     };
   }
 
-  const source = input.dataSourceId ? dataSources.get(String(input.dataSourceId).trim()) : null;
+  const source = input.dataSourceId ? getDataSource(input.dataSourceId) : null;
   const run = {
     id: `sync_${(++syncRunSequence).toString().padStart(6, '0')}`,
     dataSourceId: source?.id || input.dataSourceId || null,
@@ -735,7 +856,7 @@ export const createDataSource = ({ name, type = 'postgresql', connectionUrl, sto
   }
 
   const source = {
-    id: `ds_${(++sequence).toString().padStart(6, '0')}`,
+    id: `ds_${Date.now().toString(36)}_${(++sequence).toString().padStart(6, '0')}`,
     name: validation.source.name,
     type: validation.source.type,
     status: 'registered_safe',
@@ -749,26 +870,56 @@ export const createDataSource = ({ name, type = 'postgresql', connectionUrl, sto
     createdAt: nowIso(),
     updatedAt: null
   };
-  dataSources.set(source.id, source);
+  let savedSource = source;
+  let persistenceMode = 'in-memory-until-postgresql-connection-enabled';
+  if (isPgRepositoryEnabled('data_sources')) {
+    try {
+      savedSource = saveDataSourceToPostgres(source, encryptedSecret?.stored || null);
+      persistenceMode = 'postgresql-local-psql-repository';
+    } catch {
+      persistenceMode = 'postgresql-error-fallback-in-memory';
+    }
+  }
+  dataSources.set(savedSource.id, savedSource);
 
   return {
     ok: true,
     mode: 'data-source-registry-safe-baseline',
-    source: cloneSource(source),
-    realSync: false
+    source: cloneSource(savedSource),
+    realSync: false,
+    persistenceMode
   };
 };
 
-export const listDataSources = () => ({
-  ok: true,
-  mode: 'data-source-registry-safe-baseline',
-  count: dataSources.size,
-  sources: [...dataSources.values()].map(cloneSource),
-  realSync: false
-});
+export const listDataSources = () => {
+  if (isPgRepositoryEnabled('data_sources')) {
+    try {
+      const sources = listDataSourcesFromPostgres();
+      sources.forEach((source) => dataSources.set(source.id, source));
+      return {
+        ok: true,
+        mode: 'data-source-registry-safe-baseline',
+        count: sources.length,
+        sources: sources.map(cloneSource),
+        realSync: false,
+        persistenceMode: 'postgresql-local-psql-repository'
+      };
+    } catch {
+      // Safe fallback keeps the registry visible if the local psql adapter is unavailable.
+    }
+  }
+  return {
+    ok: true,
+    mode: 'data-source-registry-safe-baseline',
+    count: dataSources.size,
+    sources: [...dataSources.values()].map(cloneSource),
+    realSync: false,
+    persistenceMode: isPgRepositoryEnabled('data_sources') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
+  };
+};
 
 export const createDataSourceSyncRun = ({ dataSourceId, mapping = {}, actorEmail = null }) => {
-  const source = dataSources.get(String(dataSourceId || '').trim());
+  const source = getDataSource(dataSourceId);
   const errors = [];
   if (!source) errors.push('data_source_not_found');
 
@@ -855,7 +1006,7 @@ const validateImportScheduleMapping = (mapping = {}) => {
 };
 
 export const createDataSourceImportSchedule = ({ dataSourceId, sql, limit = 100, timeoutMs = 5000, intervalHours = 24, mapping = {}, approvalPhrase = '', enabled = false, actorEmail = null } = {}) => {
-  const source = dataSources.get(String(dataSourceId || '').trim());
+  const source = getDataSource(dataSourceId);
   const parsedInterval = Number(intervalHours);
   const errors = [];
   if (!source) errors.push('data_source_not_found');

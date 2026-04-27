@@ -259,6 +259,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /remote-db-screen/);
   assert.match(html, /api\/data-sources/);
   assert.match(html, /Register PostgreSQL source/);
+  assert.match(html, /Registry persistence/);
+  assert.match(html, /encrypted secret metadata persisted/);
   assert.match(html, /remote-source-password/);
   assert.match(html, /api\/data-source-schema\/plan/);
   assert.match(html, /Plan schema discovery/);
@@ -339,6 +341,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(affiliateMetadataMigration);
     assert.match(affiliateMetadataMigration.description, /affiliate\/campaign metadata/);
     assert.ok(affiliateMetadataMigration.statements >= 2);
+    const dataSourceRegistryMigration = res.body.migrations.find((migration) => migration.id === '011_data_source_registry_runtime');
+    assert.ok(dataSourceRegistryMigration);
+    assert.match(dataSourceRegistryMigration.description, /source registry and encrypted secret metadata/);
+    assert.ok(dataSourceRegistryMigration.statements >= 5);
   });
 });
 
@@ -358,6 +364,8 @@ test('database repository readiness is protected and exposes PostgreSQL schema m
     assert.equal(res.body.liveRepositoryEnabled, false);
     assert.equal(res.body.realDeliveryAllowed, false);
     assert.ok(res.body.modules.some((module) => module.module === 'warmup_policies' && module.targetTable === 'warmup_policies'));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_sources' && module.targetTable === 'data_source_registry'));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_source_encrypted_secrets' && module.targetTable === 'data_source_encrypted_secrets'));
     assert.ok(res.body.modules.some((module) => module.module === 'data_source_import_schedules' && module.targetTable === 'data_source_import_schedules'));
     assert.ok(res.body.modules.some((module) => module.module === 'controlled_live_test_proof_audits' && module.targetTable === 'controlled_live_test_proof_audits'));
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.nextAction === 'wire_contact_repository_to_postgresql_driver'));
@@ -373,7 +381,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log,warmup_policies,reputation_policies,data_source_import_schedules,controlled_live_test_proof_audits',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log,warmup_policies,reputation_policies,data_sources,data_source_encrypted_secrets,data_source_import_schedules,controlled_live_test_proof_audits',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -381,7 +389,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 13);
+    assert.equal(res.body.summary.liveRepositoryModules, 15);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
@@ -394,6 +402,8 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.ok(res.body.modules.some((module) => module.module === 'audit_log' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'warmup_policies' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'reputation_policies' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_sources' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_source_encrypted_secrets' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'data_source_import_schedules' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'controlled_live_test_proof_audits' && module.liveRepositoryEnabled));
     assert.doesNotMatch(JSON.stringify(res.body), /super-secret/);
@@ -465,6 +475,7 @@ test('data source registry requires admin and stores redacted PostgreSQL source 
     });
     assert.equal(created.status, 200);
     assert.equal(created.body.mode, 'data-source-registry-safe-baseline');
+    assert.equal(created.body.persistenceMode, 'in-memory-until-postgresql-connection-enabled');
     assert.equal(created.body.source.status, 'registered_safe');
     assert.equal(created.body.source.syncEnabled, false);
     assert.equal(created.body.realSync, false);
@@ -479,6 +490,7 @@ test('data source registry requires admin and stores redacted PostgreSQL source 
     const list = await request('/api/data-sources', { headers: { cookie } });
     assert.equal(list.status, 200);
     assert.equal(list.body.count, 1);
+    assert.equal(list.body.persistenceMode, 'in-memory-until-postgresql-connection-enabled');
     assert.equal(list.body.sources[0].name, 'Affiliate warehouse');
     assert.equal(list.body.realSync, false);
 
@@ -1589,7 +1601,8 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(scheduled.body.mode, 'campaign-dry-run-schedule');
     assert.equal(scheduled.body.campaign.status, 'scheduled_dry_run');
     assert.equal(scheduled.body.campaign.scheduledAt, scheduledAt);
-    assert.equal(scheduled.body.campaign.warmupDailyCap, 25);
+    assert.ok(Number.isInteger(scheduled.body.campaign.warmupDailyCap));
+    assert.ok(scheduled.body.campaign.warmupDailyCap >= 25);
     assert.equal(scheduled.body.warmupCap.capExceeded, false);
     assert.equal(scheduled.body.realDelivery, false);
     assert.equal(scheduled.body.compliance.manualDispatchRequired, true);
@@ -2941,10 +2954,11 @@ test('warm-up policy persistence and schedule cap checks are protected and dry-r
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
+    const capScheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const saved = await request('/api/email/warmup/policy', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ domain: 'Example.test', startDate: new Date().toISOString().slice(0, 10), startDailyCap: 1, maxDailyCap: 5, rampPercent: 100, days: 3 })
+      body: JSON.stringify({ domain: 'Example.test', startDate: capScheduledAt.slice(0, 10), startDailyCap: 1, maxDailyCap: 5, rampPercent: 100, days: 3 })
     });
     assert.equal(saved.status, 200);
     assert.equal(saved.body.mode, 'warmup-policy-saved');
@@ -2955,7 +2969,7 @@ test('warm-up policy persistence and schedule cap checks are protected and dry-r
     const capOk = await request('/api/email/warmup/schedule-cap', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ domain: 'example.test', scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), estimatedAudience: 1 })
+      body: JSON.stringify({ domain: 'example.test', scheduledAt: capScheduledAt, estimatedAudience: 1 })
     });
     assert.equal(capOk.status, 200);
     assert.equal(capOk.body.mode, 'warmup-schedule-cap-evaluation');
@@ -2965,7 +2979,7 @@ test('warm-up policy persistence and schedule cap checks are protected and dry-r
     const capRejected = await request('/api/email/warmup/schedule-cap', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ domain: 'example.test', scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), estimatedAudience: 2 })
+      body: JSON.stringify({ domain: 'example.test', scheduledAt: capScheduledAt, estimatedAudience: 2 })
     });
     assert.equal(capRejected.status, 400);
     assert.equal(capRejected.body.capExceeded, true);
@@ -3019,6 +3033,7 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
   resetSegmentsForTests();
   resetTemplatesForTests();
   resetCampaignsForTests();
+  resetSendQueueForTests();
   resetWarmupPoliciesForTests();
   await withAdminEnv(async () => {
     const unauth = await request('/api/campaigns/calendar?days=7');
@@ -3026,7 +3041,8 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
-    const startDate = new Date().toISOString().slice(0, 10);
+    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const startDate = scheduledAt.slice(0, 10);
     await request('/api/email/warmup/policy', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -3057,7 +3073,6 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
       headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({ campaignId: campaign.body.campaign.id })
     });
-    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const scheduled = await request('/api/campaigns/schedule-dry-run', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },

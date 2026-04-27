@@ -163,6 +163,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Remote PostgreSQL source registration UI/API.
 - Redacted connection metadata.
 - Encrypted secret refs.
+- PostgreSQL runtime adapter for source registry and encrypted secret metadata.
 - No password display after save.
 - Sync dry-run validation/audit baseline.
 - Schema discovery planner UI/API.
@@ -213,6 +214,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Secret redaction in config/status surfaces.
 - Runtime persistence migration `009_schedule_proof_runtime` for remote import schedules and controlled proof audits.
 - Runtime persistence migration `010_campaign_affiliate_metadata` for campaign affiliate/planning metadata.
+- Runtime persistence migration `011_data_source_registry_runtime` for remote source registry and encrypted secret metadata.
 - Tests for every shipped slice.
 
 ## Current safety posture

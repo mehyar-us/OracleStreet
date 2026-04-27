@@ -100,10 +100,12 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Remote source persistence for source registry/encrypted secret metadata.
-2. Password reset/invite acceptance workflow for full multi-user activation.
-3. Saved segment filters/snapshots for reproducible campaign audiences.
+1. Password reset/invite acceptance workflow for full multi-user activation.
+2. Saved segment filters/snapshots for reproducible campaign audiences.
+3. Data-source sync-run persistence and operator replay controls.
 4. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
+
+Latest remote-source persistence slice: `/api/data-sources` now persists remote PostgreSQL source registry rows and encrypted secret ciphertext metadata through local PostgreSQL when enabled, reports registry persistence in the UI, never returns plaintext credentials, and keeps live pulls/query execution gated.
 
 Latest affiliate/campaign slice: campaign drafts now capture safe affiliate program/offer/payout/UTM/planning metadata, `/api/campaigns/affiliate-summary` summarizes affiliate rollups, and `/api/campaigns/audit-timeline` exposes campaign audit history without secrets, probes, provider mutation, or delivery unlock.
 
