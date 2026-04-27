@@ -28,6 +28,7 @@
     .metric-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px; }
     .metric { border:1px solid var(--line); border-radius:12px; padding:12px; background:#070b12; }
     .metric strong { display:block; font-size:22px; color:var(--gold); }
+    .metric small { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
     .hidden { display:none; }
   </style>
 </head>
@@ -50,7 +51,7 @@
       </article>
       <article id="dashboard-card" class="card hidden">
         <h2>Protected dashboard</h2>
-        <p>Safe-test product counters behind the admin session gate.</p>
+        <p>Safe-test product counters, engagement, and delivery gates behind the admin session gate.</p>
         <div id="dashboard-metrics" class="metric-list"></div>
       </article>
       <article class="card"><h2>Contacts</h2><p>Import, sync, segment, and manage recipient records with consent/source metadata.</p></article>
@@ -78,10 +79,26 @@
       const dashboard = await res.json();
       const metrics = dashboard.summary;
       const migrations = await fetch('/api/schema/migrations', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { migrations: [] });
-      dashboardMetrics.innerHTML = ['contacts', 'segments', 'templates', 'campaigns', 'queuedSends']
-        .map((key) => `<div class="metric"><strong>${metrics[key]}</strong>${key}</div>`)
+      const percent = (value) => `${Math.round((Number(value || 0) * 1000)) / 10}%`;
+      const metricCards = [
+        ['contacts', metrics.contacts],
+        ['segments', metrics.segments],
+        ['templates', metrics.templates],
+        ['campaigns', metrics.campaigns],
+        ['queuedSends', metrics.queuedSends],
+        ['suppressions', metrics.suppressions],
+        ['emailEvents', metrics.emailEvents],
+        ['bounces', metrics.bounces],
+        ['complaints', metrics.complaints],
+        ['opens', metrics.opens],
+        ['clicks', metrics.clicks]
+      ];
+      dashboardMetrics.innerHTML = metricCards
+        .map(([label, value]) => `<div class="metric"><strong>${value ?? 0}</strong>${label}</div>`)
         .join('')
-        + `<div class="metric"><strong>${metrics.emailProvider}</strong>${metrics.sendMode}</div>`
+        + `<div class="metric"><strong>${percent(metrics.campaignOpenRate)}</strong>campaign open rate<small>dry-run events only</small></div>`
+        + `<div class="metric"><strong>${percent(metrics.campaignClickRate)}</strong>campaign click rate<small>dry-run events only</small></div>`
+        + `<div class="metric"><strong>${metrics.emailProvider}</strong>${metrics.sendMode}<small>real sending locked</small></div>`
         + `<div class="metric"><strong>${migrations.migrations.length}</strong>schema migrations</div>`;
       dashboardCard.classList.remove('hidden');
     };

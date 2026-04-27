@@ -118,6 +118,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 23. [x] Campaign tracking URL injection baseline that adds open/click tracking URLs to dry-run campaign queue jobs without delivery.
 24. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
 25. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
+26. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
 
 ## Current validation endpoints
 
@@ -146,6 +147,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/email/domain-readiness` requires an admin session and reports default sender domain readiness, expected SPF/DKIM/DMARC records, and TLS requirements without DNS network probes or delivery.
 - `GET /api/campaigns/reporting` requires an admin session and summarizes per-campaign dry-run queue, dispatch, event, engagement, and unsubscribe counts/rates without enabling delivery.
 - `GET /api/dashboard` includes the same safe email reporting summary plus campaign engagement reporting totals/rates without enabling delivery.
+- `/` frontend dashboard displays safe counters for queue, suppressions, events, bounce/complaint, open/click, rates, provider mode, and the locked real-sending state after admin login.
 
 ## PMTA-first development priority
 
