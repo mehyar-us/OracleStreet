@@ -656,7 +656,7 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(enqueued.body.campaign.status, 'queued_dry_run');
     assert.equal(enqueued.body.jobs[0].campaignId, campaign.body.campaign.id);
     assert.equal(enqueued.body.jobs[0].to, 'buyer-b@example.test');
-    assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes('/unsubscribe?'));
+    assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes('/api/unsubscribe?'));
     assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes('buyer-b%40example.test'));
     assert.ok(enqueued.body.jobs[0].unsubscribeUrl.includes(campaign.body.campaign.id));
     assert.equal(enqueued.body.jobs[0].safety.unsubscribeLinkInjected, true);

@@ -119,7 +119,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/email/test-send` requires an admin session and is dry-run only.
 - `POST /api/send-queue/enqueue` requires an admin session, applies the current safe test-message gates, and queues dry-run jobs only.
 - `POST /api/campaigns/approve-dry-run` requires an admin session, re-validates campaign audience/template compliance, marks a draft campaign `approved_dry_run`, and keeps `realDelivery: false`.
-- `POST /api/campaigns/enqueue-dry-run` requires an admin session, requires `approved_dry_run`, renders the campaign audience into dry-run queue jobs, injects per-recipient `/unsubscribe` URLs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
+- `POST /api/campaigns/enqueue-dry-run` requires an admin session, requires `approved_dry_run`, renders the campaign audience into dry-run queue jobs, injects per-recipient `/api/unsubscribe` URLs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
 - `POST /api/send-queue/dispatch-next-dry-run` requires an admin session and dispatches exactly one queued dry-run job through the dry-run adapter path with `realDelivery: false`; successful dispatch records an internal `dispatched` email event.
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.

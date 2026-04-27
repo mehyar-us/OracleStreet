@@ -13,7 +13,7 @@ export const buildUnsubscribeUrl = ({ email, campaignId = null, contactId = null
   params.set('source', campaignId ? `campaign:${campaignId}` : 'template-preview');
   if (campaignId) params.set('campaignId', String(campaignId));
   if (contactId) params.set('contactId', String(contactId));
-  return `${String(baseUrl || '').replace(/\/$/, '')}/unsubscribe?${params.toString()}`;
+  return `${String(baseUrl || '').replace(/\/$/, '')}/api/unsubscribe?${params.toString()}`;
 };
 
 const injectUnsubscribeLink = (html, unsubscribeUrl) => {
