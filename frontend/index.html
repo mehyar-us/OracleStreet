@@ -86,6 +86,7 @@
           <section class="screen" id="contacts-screen"><h3>Contacts</h3><p>Loading…</p></section>
           <section class="screen" id="contact-import-screen"><h3>Contact import</h3><p>Loading…</p></section>
           <section class="screen" id="templates-screen"><h3>Templates</h3><p>Loading…</p></section>
+          <section class="screen" id="template-create-screen"><h3>Template creator</h3><p>Loading…</p></section>
           <section class="screen" id="campaigns-screen"><h3>Campaigns</h3><p>Loading…</p></section>
           <section class="screen" id="send-queue-screen"><h3>Send queue</h3><p>Loading…</p></section>
           <section class="screen" id="suppressions-screen"><h3>Suppressions</h3><p>Loading…</p></section>
@@ -153,6 +154,36 @@
       if (mode === 'import' && body.ok) await loadWorkbench();
     };
 
+
+    const createTemplateFromWorkbench = async () => {
+      const result = document.querySelector('#template-create-result');
+      const payload = {
+        name: document.querySelector('#template-name').value,
+        subject: document.querySelector('#template-subject').value,
+        html: document.querySelector('#template-html').value,
+        text: document.querySelector('#template-text').value
+      };
+      result.textContent = 'Creating safe draft template…';
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await res.json();
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'template_rejected']).join(', ')}`;
+        return;
+      }
+      const preview = await fetch('/api/templates/preview', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: body.template.id, data: { firstName: 'Preview', unsubscribeUrl: '/api/unsubscribe?email=preview@example.test&source=template-preview' } })
+      }).then((r) => r.json());
+      result.innerHTML = `Created ${body.template.id}. Preview subject: <strong>${preview.rendered?.subject || body.template.subject}</strong>. Real delivery: ${preview.realDelivery}.`;
+      await loadWorkbench();
+    };
+
     const listItems = (items, empty, render) => items.length
       ? `<ul>${items.slice(0, 5).map(render).join('')}</ul>`
       : `<p>${empty}</p>`;
@@ -174,6 +205,8 @@
       document.querySelector('#validate-contact-import').addEventListener('click', () => submitContactImport('validate'));
       document.querySelector('#run-contact-import').addEventListener('click', () => submitContactImport('import'));
       setScreen('#templates-screen', 'Templates', `<div class="kv"><span>Templates</span><strong>${templates.count || 0}</strong></div>${listItems(templates.templates || [], 'No templates yet. Create compliant templates with unsubscribe language before campaign dry-runs.', (t) => `<li>${t.name || t.id} · ${t.subject || 'no subject'} · safe preview ready</li>`)}`);
+      setScreen('#template-create-screen', 'Template creator', `<p>Create a draft template. HTML must include unsubscribe language; preview renders locally and never sends mail.</p><label>Name <input id="template-name" value="Welcome offer template" /></label><label>Subject <input id="template-subject" value="Hi {{firstName}}, your requested offer" /></label><label>HTML <textarea id="template-html"><p>Hello {{firstName}}, here is the affiliate offer you requested.</p><p>You can unsubscribe here: {{unsubscribeUrl}}</p></textarea></label><label>Text <textarea id="template-text">Hello {{firstName}}, here is the affiliate offer you requested. Unsubscribe: {{unsubscribeUrl}}</textarea></label><div class="toolbar"><button id="create-template" type="button">Create safe template</button></div><div id="template-create-result" class="status"></div>`);
+      document.querySelector('#create-template').addEventListener('click', createTemplateFromWorkbench);
       setScreen('#campaigns-screen', 'Campaigns', `<div class="kv"><span>Campaigns</span><strong>${campaigns.count || 0}</strong></div>${listItems(campaigns.campaigns || [], 'No campaigns yet. Drafts can be estimated, approved for dry-run, scheduled, then queued safely.', (c) => `<li>${c.name || c.id} · ${c.status} · audience ${c.estimatedAudience || 0}</li>`)}`);
       setScreen('#send-queue-screen', 'Send queue', `<div class="kv"><span>Jobs</span><strong>${queue.count || 0}</strong><span>Delivery mode</span><strong>dry-run</strong></div>${listItems(queue.jobs || [], 'Queue empty. Campaign enqueue creates dry-run jobs only.', (j) => `<li>${j.recipientEmail || j.to} · ${j.status} · ${j.campaignId || 'manual'}</li>`)}`);
       setScreen('#suppressions-screen', 'Suppressions', `<div class="kv"><span>Suppressed</span><strong>${suppressions.count || 0}</strong></div>${listItems(suppressions.suppressions || [], 'No suppressions recorded yet. Unsubscribes, bounces, and complaints will appear here.', (s) => `<li>${s.email} · ${s.reason} · ${s.source}</li>`)}`);

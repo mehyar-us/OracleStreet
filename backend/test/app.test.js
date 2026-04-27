@@ -224,6 +224,10 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Validate contacts/);
   assert.match(html, /Import valid batch/);
   assert.match(html, /templates-screen/);
+  assert.match(html, /template-create-screen/);
+  assert.match(html, /api\/templates/);
+  assert.match(html, /api\/templates\/preview/);
+  assert.match(html, /Create safe template/);
   assert.match(html, /campaigns-screen/);
   assert.match(html, /send-queue-screen/);
   assert.match(html, /suppressions-screen/);

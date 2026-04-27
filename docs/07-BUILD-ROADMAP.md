@@ -17,6 +17,7 @@
 - [ ] Convert in-memory module baselines to PostgreSQL-backed persistence
 - [x] Build initial visible admin screens for contacts, data sources, templates, campaigns, send queue, reputation, and reporting
 - [x] Add visible contact import validate/store workflow to admin workbench
+- [x] Add visible template creation/preview workflow to admin workbench
 - [ ] Convert remaining visible admin screens from safe-read panels into full CRUD workflows
 - [ ] Add SELECT-only remote PostgreSQL query/probe tool
 - [ ] Add reputation dashboard and warm-up controls UI
