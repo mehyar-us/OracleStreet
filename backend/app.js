@@ -7,7 +7,7 @@ import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateC
 import { controlledLiveTestReadiness } from './lib/controlledLiveTestReadiness.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns } from './lib/dataSources.js';
+import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -231,6 +231,17 @@ export const createHandler = () => {
       const audit = listAuditEventsByActionPrefix('data_source_sync');
       recordAuditEvent({ action: 'data_source_sync_audit_view', actorEmail: session.email, details: { count: audit.count, realSync: false } });
       return jsonResponse(res, 200, { ...audit, mode: 'data-source-sync-audit-baseline', realSync: false });
+    }
+
+    if (url.pathname === '/api/data-source-query/validate' || url.pathname === '/data-source-query/validate') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = validateDataSourceQuery({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'data_source_query_validate', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], rowsPulled: 0, realQuery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/email/config' || url.pathname === '/email/config') {

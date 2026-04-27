@@ -239,6 +239,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /send-queue-screen/);
   assert.match(html, /suppressions-screen/);
   assert.match(html, /remote-db-screen/);
+  assert.match(html, /api\/data-source-query\/validate/);
+  assert.match(html, /Validate SELECT query/);
   assert.match(html, /reputation-screen/);
   assert.match(html, /audit-screen/);
   assert.match(html, /loadWorkbench/);
@@ -474,6 +476,71 @@ test('data source sync dry-run requires admin and validates registered sources w
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_dry_run'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_runs_list'));
   });
+});
+
+test('data source SELECT-only query validator requires admin and rejects unsafe SQL without pulling rows', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATA_SOURCE_SECRET_KEY: 'test-data-source-secret-key-at-least-32-chars'
+  }, async () => {
+    const unauth = await request('/api/data-source-query/validate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dataSourceId: 'ds_missing', sql: 'select * from contacts' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const created = await request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        name: 'Query warehouse',
+        type: 'postgresql',
+        storeSecret: true,
+        connectionUrl: 'postgresql://reader:query-secret@warehouse.example.test:5432/affiliate?sslmode=require'
+      })
+    });
+
+    const rejected = await request('/api/data-source-query/validate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ dataSourceId: created.body.source.id, sql: 'delete from contacts', limit: 100, timeoutMs: 5000 })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('select_only_sql_required'));
+    assert.ok(rejected.body.errors.includes('destructive_sql_rejected'));
+    assert.equal(rejected.body.realQuery, false);
+    assert.equal(rejected.body.rowsReturned, 0);
+
+    const planned = await request('/api/data-source-query/validate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ dataSourceId: created.body.source.id, sql: 'select email, source from contacts', limit: 50, timeoutMs: 2500 })
+    });
+    assert.equal(planned.status, 200);
+    assert.equal(planned.body.mode, 'data-source-select-query-safe-plan');
+    assert.equal(planned.body.query.selectOnly, true);
+    assert.equal(planned.body.query.projectedSql, 'select email, source from contacts LIMIT 50');
+    assert.equal(planned.body.rowsPulled, 0);
+    assert.equal(planned.body.realQuery, false);
+    assert.equal(planned.body.networkProbe, 'skipped_until_pg_driver_and_operator_approval');
+    assert.ok(planned.body.requiredGates.includes('select_only_sql'));
+    assert.equal(JSON.stringify(planned.body).includes('query-secret'), false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_query_validate'));
+  });
+});
+
+test('data source query validator endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/data-source-query/validate', { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(res.status, 401);
 });
 
 test('data source sync audit log requires admin and returns sanitized sync events only', async () => {

@@ -95,6 +95,79 @@ const encryptConnectionSecret = (plainText) => {
   };
 };
 
+
+const destructiveSqlPattern = /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|copy|call|do|execute|merge|vacuum|analyze)\b/i;
+const hasSelectPrefix = (sql) => /^\s*(select|with)\b/i.test(sql);
+const hasLimit = (sql) => /\blimit\s+\d+\b/i.test(sql);
+
+export const validateDataSourceQuery = ({ dataSourceId, sql, limit = 100, timeoutMs = 5000, explain = true, actorEmail = null }) => {
+  const source = dataSources.get(String(dataSourceId || '').trim());
+  const cleanSql = String(sql || '').trim();
+  const parsedLimit = Number(limit);
+  const parsedTimeoutMs = Number(timeoutMs);
+  const errors = [];
+
+  if (!source) errors.push('data_source_not_found');
+  if (!cleanSql) errors.push('sql_required');
+  if (cleanSql && !hasSelectPrefix(cleanSql)) errors.push('select_only_sql_required');
+  if (cleanSql && destructiveSqlPattern.test(cleanSql)) errors.push('destructive_sql_rejected');
+  if (cleanSql && /;\s*\S/.test(cleanSql)) errors.push('single_statement_required');
+  if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 500) errors.push('valid_limit_1_500_required');
+  if (!Number.isInteger(parsedTimeoutMs) || parsedTimeoutMs < 100 || parsedTimeoutMs > 10000) errors.push('valid_timeout_100_10000_ms_required');
+
+  const projectedSql = cleanSql && hasLimit(cleanSql) ? cleanSql.replace(/;\s*$/, '') : `${cleanSql.replace(/;\s*$/, '')} LIMIT ${Number.isInteger(parsedLimit) ? parsedLimit : 100}`;
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      errors,
+      mode: 'data-source-select-query-safe-plan',
+      realQuery: false,
+      rowsReturned: 0,
+      networkProbe: 'skipped',
+      source: source ? { id: source.id, name: source.name, connection: { parsed: { ...source.connection.parsed }, secretStored: source.connection.secretStored } } : null
+    };
+  }
+
+  return {
+    ok: true,
+    mode: 'data-source-select-query-safe-plan',
+    dataSourceId: source.id,
+    sourceName: source.name,
+    query: {
+      originalSql: cleanSql,
+      projectedSql,
+      selectOnly: true,
+      limit: parsedLimit,
+      timeoutMs: parsedTimeoutMs,
+      explain: Boolean(explain)
+    },
+    schemaDiscovery: {
+      status: 'planned_no_network_probe',
+      candidateTablesQuery: "select table_schema, table_name from information_schema.tables where table_type = 'BASE TABLE' limit 100",
+      candidateColumnsQuery: "select table_schema, table_name, column_name, data_type from information_schema.columns limit 500"
+    },
+    rows: [],
+    rowsReturned: 0,
+    rowsPulled: 0,
+    realQuery: false,
+    networkProbe: 'skipped_until_pg_driver_and_operator_approval',
+    requiredGates: [
+      'admin_session',
+      'registered_postgresql_source',
+      'encrypted_secret_ref',
+      'select_only_sql',
+      'bounded_limit',
+      'bounded_timeout',
+      'redacted_errors',
+      'future_live_query_approval'
+    ],
+    blockers: source.connection.secretStored ? ['pg_driver_not_enabled', 'live_remote_query_disabled'] : ['encrypted_connection_secret_required', 'pg_driver_not_enabled', 'live_remote_query_disabled'],
+    actorEmail,
+    createdAt: nowIso()
+  };
+};
+
 export const resetDataSourcesForTests = () => {
   dataSources.clear();
   encryptedConnectionSecrets.clear();

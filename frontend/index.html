@@ -229,6 +229,31 @@
       await loadWorkbench();
     };
 
+
+    const validateRemoteQuery = async () => {
+      const result = document.querySelector('#remote-query-result');
+      const payload = {
+        dataSourceId: document.querySelector('#remote-query-source-id').value,
+        sql: document.querySelector('#remote-query-sql').value,
+        limit: Number(document.querySelector('#remote-query-limit').value || 100),
+        timeoutMs: Number(document.querySelector('#remote-query-timeout').value || 5000),
+        explain: true
+      };
+      result.className = 'status';
+      result.textContent = 'Validating SELECT-only query plan…';
+      const body = await fetch('/api/data-source-query/validate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'query_rejected']).join(', ')}`;
+        return;
+      }
+      result.innerHTML = `SELECT-only plan accepted for <strong>${body.sourceName}</strong>. Limit ${body.query.limit}, timeout ${body.query.timeoutMs}ms, rows pulled ${body.rowsPulled}. Real query: <strong>${body.realQuery}</strong>.`;
+    };
+
     const listItems = (items, empty, render) => items.length
       ? `<ul>${items.slice(0, 5).map(render).join('')}</ul>`
       : `<p>${empty}</p>`;
@@ -266,7 +291,9 @@
       document.querySelector('#enqueue-campaign').addEventListener('click', () => runCampaignAction('enqueue'));
       setScreen('#send-queue-screen', 'Send queue', `<div class="kv"><span>Jobs</span><strong>${queue.count || 0}</strong><span>Delivery mode</span><strong>dry-run</strong></div>${listItems(queue.jobs || [], 'Queue empty. Campaign enqueue creates dry-run jobs only.', (j) => `<li>${j.recipientEmail || j.to} · ${j.status} · ${j.campaignId || 'manual'}</li>`)}`);
       setScreen('#suppressions-screen', 'Suppressions', `<div class="kv"><span>Suppressed</span><strong>${suppressions.count || 0}</strong></div>${listItems(suppressions.suppressions || [], 'No suppressions recorded yet. Unsubscribes, bounces, and complaints will appear here.', (s) => `<li>${s.email} · ${s.reason} · ${s.source}</li>`)}`);
-      setScreen('#remote-db-screen', 'Remote PostgreSQL', `<div class="kv"><span>Sources</span><strong>${dataSources.count || 0}</strong><span>Sync dry-runs</span><strong>${syncRuns.count || 0}</strong></div>${listItems(dataSources.sources || [], 'No remote sources registered. Next: encrypted creds, probe, schema discovery, SELECT-only query runner.', (s) => `<li>${s.name} · ${s.connection?.parsed?.host || 'host redacted'} · ${s.connection?.secretStored ? 'encrypted secret' : 'metadata only'}</li>`)}`);
+      const firstSourceId = (dataSources.sources || [])[0]?.id || '';
+      setScreen('#remote-db-screen', 'Remote PostgreSQL', `<div class="kv"><span>Sources</span><strong>${dataSources.count || 0}</strong><span>Sync dry-runs</span><strong>${syncRuns.count || 0}</strong></div>${listItems(dataSources.sources || [], 'No remote sources registered. Add one through the protected data-source API, then validate SELECT-only query plans here.', (s) => `<li>${s.name} · ${s.connection?.parsed?.host || 'host redacted'} · ${s.connection?.secretStored ? 'encrypted secret' : 'metadata only'}</li>`)}<p>Validate a SELECT-only remote query plan. This enforces limit/timeout and redacted metadata while live remote execution stays locked until the PostgreSQL driver and approval gate are enabled.</p><label>Data source ID <input id="remote-query-source-id" value="${firstSourceId}" placeholder="ds_000001" /></label><label>SELECT query <textarea id="remote-query-sql">select email, consent_status, source from contacts</textarea></label><label>Limit <input id="remote-query-limit" type="number" min="1" max="500" value="100" /></label><label>Timeout ms <input id="remote-query-timeout" type="number" min="100" max="10000" value="5000" /></label><div class="toolbar"><button id="validate-remote-query" type="button">Validate SELECT query</button></div><div id="remote-query-result" class="status"></div>`);
+      document.querySelector('#validate-remote-query').addEventListener('click', validateRemoteQuery);
       setScreen('#audit-screen', 'Audit', `<div class="kv"><span>Audit events</span><strong>${audit.count || 0}</strong></div>${listItems(audit.events || [], 'No audit events in memory yet.', (e) => `<li>${e.action} · ${e.status || 'ok'} · ${e.actorEmail || 'system'}</li>`)}`);
       cmsWorkbench.classList.remove('hidden');
       workbenchStatus.textContent = 'CMS screens loaded. Forms stay safe/dry-run until PostgreSQL persistence and final gates are complete.';

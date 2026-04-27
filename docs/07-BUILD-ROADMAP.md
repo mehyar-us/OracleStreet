@@ -20,7 +20,8 @@
 - [x] Add visible template creation/preview workflow to admin workbench
 - [x] Add visible campaign estimate/approve/schedule/enqueue dry-run workflow to admin workbench
 - [ ] Convert remaining visible admin screens from safe-read panels into full CRUD workflows
-- [ ] Add SELECT-only remote PostgreSQL query/probe tool
+- [x] Add SELECT-only remote PostgreSQL query validator/planner UI/API
+- [ ] Add live remote PostgreSQL probe/schema discovery/query execution behind pg-driver and approval gates
 - [ ] Add reputation dashboard and warm-up controls UI
 
 ## Phase 1 — Product skeleton

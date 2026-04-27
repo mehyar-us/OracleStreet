@@ -56,6 +56,8 @@ Verification:
 
 ### O4 — Remote PostgreSQL connector and query runner
 
+Status: source registry, encrypted secret refs, sync dry-run validation/audit, and SELECT-only query validator/planner UI/API shipped; live probe/schema/query execution still gated pending pg-driver integration and explicit operator approval.
+
 Acceptance:
 - Save remote PostgreSQL connection metadata and encrypted credential refs.
 - Test connection with redacted errors.
