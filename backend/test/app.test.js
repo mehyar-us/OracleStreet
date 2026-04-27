@@ -1819,6 +1819,40 @@ test('web domain readiness endpoint requires admin and reports HTTP/TLS plan wit
   });
 });
 
+test('web TLS readiness endpoint requires admin and plans TLS without changing HTTPS', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_PRIMARY_DOMAIN: 'stuffprettygood.com',
+    ORACLESTREET_WWW_DOMAIN: 'www.stuffprettygood.com',
+    ORACLESTREET_VPS_IP: '187.124.147.49',
+    ORACLESTREET_TLS_MODE: 'origin-certbot'
+  }, async () => {
+    const unauth = await request('/api/web/tls-readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/web/tls-readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'web-tls-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.tlsMode, 'origin-certbot');
+    assert.equal(readiness.body.certificate.originCertbotSelected, true);
+    assert.deepEqual(readiness.body.certificate.candidateDomains, ['stuffprettygood.com', 'www.stuffprettygood.com']);
+    assert.equal(readiness.body.certificate.certificateProbe, 'skipped_safe_default');
+    assert.equal(readiness.body.certificate.installation, 'not_automated_by_readiness_endpoint');
+    assert.equal(readiness.body.httpsPlanned, true);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+    assert.ok(readiness.body.smokeTests.https.some((command) => command.includes('https://stuffprettygood.com/api/health')));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'web_tls_readiness_view'));
+  });
+});
+
 test('sending readiness reports provider blockers without exposing secrets', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
@@ -1850,4 +1884,6 @@ test('sending readiness endpoint also works behind nginx stripped api prefix', a
   assert.equal(domain.status, 401);
   const webDomain = await request('/web/domain-readiness');
   assert.equal(webDomain.status, 401);
+  const webTls = await request('/web/tls-readiness');
+  assert.equal(webTls.status, 401);
 });

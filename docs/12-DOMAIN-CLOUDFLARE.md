@@ -51,6 +51,14 @@ curl http://stuffprettygood.com/api/web/domain-readiness
 
 The endpoint reports expected apex/www A records, primary/fallback health URLs, TLS mode planning, and smoke-test commands without performing DNS probes, enabling HTTPS, or unlocking email sending.
 
+Protected TLS planning endpoint after admin login:
+
+```bash
+curl http://stuffprettygood.com/api/web/tls-readiness
+```
+
+The TLS readiness endpoint reports the selected TLS mode (`http-only`, `cloudflare-flexible`, `cloudflare-full`, or `origin-certbot`), candidate certificate domains, prerequisites, and HTTP/HTTPS smoke commands. It never requests certificates, edits Nginx, probes certificates, or unlocks real email delivery.
+
 Fallback IP checks:
 
 ```bash
