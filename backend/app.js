@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { validateContactImport } from './lib/contacts.js';
+import { validateDatabaseConfig } from './lib/database.js';
 import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
 import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
@@ -197,6 +198,13 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, { ok: true, migrations: listMigrations() });
+    }
+
+    if (url.pathname === '/api/database/status' || url.pathname === '/database/status') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, { ok: true, database: validateDatabaseConfig() });
     }
 
     if (url.pathname === '/api/contacts/import/validate' || url.pathname === '/contacts/import/validate') {

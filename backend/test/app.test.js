@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
+import { validateDatabaseConfig } from '../lib/database.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
 import { resetSuppressionsForTests } from '../lib/suppressions.js';
@@ -199,6 +200,34 @@ test('migration manifest is protected and lists initial PostgreSQL schema', asyn
     assert.match(res.body.migrations[0].description, /PostgreSQL schema/);
     assert.ok(res.body.migrations[0].statements >= 10);
   });
+});
+
+test('database status is protected and redacts PostgreSQL URL secrets', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATABASE_URL: 'postgresql://app_user:super-secret@db.example.test:5433/oraclestreet?sslmode=require'
+  }, async () => {
+    const unauth = await request('/api/database/status');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const res = await request('/api/database/status', { headers: { cookie: login.headers.get('set-cookie') } });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.database.ok, true);
+    assert.equal(res.body.database.config.parsed.host, 'db.example.test');
+    assert.equal(res.body.database.config.parsed.port, 5433);
+    assert.equal(res.body.database.config.parsed.database, 'oraclestreet');
+    assert.equal(res.body.database.config.parsed.passwordConfigured, true);
+    assert.equal(res.body.database.connectionProbe, 'skipped_until_pg_driver_enabled');
+    assert.equal(JSON.stringify(res.body).includes('super-secret'), false);
+  });
+});
+
+test('database status endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/database/status');
+  assert.equal(res.status, 401);
 });
 
 test('contact import validation requires admin session', async () => {

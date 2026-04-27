@@ -12,7 +12,7 @@
 
 - [ ] Choose frontend framework
 - [x] Choose backend framework
-- [ ] Add PostgreSQL app database
+- [x] Add PostgreSQL app database readiness/status baseline
 - [x] Add migrations
 - [x] Add auth and first admin login
 - [x] Add dashboard shell
