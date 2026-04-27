@@ -43,6 +43,14 @@ curl http://stuffprettygood.com/api/health
 curl http://stuffprettygood.com/api/email/config
 ```
 
+Protected readiness endpoint after admin login:
+
+```bash
+curl http://stuffprettygood.com/api/web/domain-readiness
+```
+
+The endpoint reports expected apex/www A records, primary/fallback health URLs, TLS mode planning, and smoke-test commands without performing DNS probes, enabling HTTPS, or unlocking email sending.
+
 Fallback IP checks:
 
 ```bash

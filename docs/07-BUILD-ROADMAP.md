@@ -67,7 +67,7 @@
 
 ## Phase 5 — Production hardening
 
-- [ ] Domain
+- [x] Domain readiness safe-gate baseline
 - [ ] TLS
 - [ ] Backups
 - [ ] Monitoring

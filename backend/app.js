@@ -15,6 +15,7 @@ import { createSegment, estimateSegmentAudience, listSegments } from './lib/segm
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
 import { createTemplate, listTemplates, renderTemplatePreview } from './lib/templates.js';
+import { webDomainReadiness } from './lib/webReadiness.js';
 
 const SESSION_COOKIE = 'oraclestreet_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
@@ -290,6 +291,15 @@ export const createHandler = () => {
       if (!session) return;
       const readiness = senderDomainReadiness();
       recordAuditEvent({ action: 'email_domain_readiness_view', actorEmail: session.email, target: readiness.senderDomain || readiness.primaryDomain, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/web/domain-readiness' || url.pathname === '/web/domain-readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = webDomainReadiness();
+      recordAuditEvent({ action: 'web_domain_readiness_view', actorEmail: session.email, target: readiness.primaryDomain, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, tlsMode: readiness.tls.mode, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, readiness);
     }
 
