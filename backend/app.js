@@ -4,6 +4,7 @@ import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
 import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
+import { emailReportingSummary } from './lib/reporting.js';
 import { enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
 
@@ -95,28 +96,36 @@ const requireSession = (req, res) => {
   return session;
 };
 
-const dashboardSummary = (session) => ({
-  ok: true,
-  user: { email: session.email },
-  summary: {
-    contacts: 0,
-    segments: 0,
-    templates: 0,
-    campaigns: 0,
-    queuedSends: 0,
-    emailProvider: process.env.ORACLESTREET_MAIL_PROVIDER || 'dry-run',
-    sendMode: 'safe-test-only'
-  },
-  safetyGates: {
-    consentTracking: 'planned',
-    suppressions: 'planned',
-    unsubscribe: 'planned',
-    bounceComplaints: 'planned',
-    rateLimits: 'planned',
-    auditLogs: 'planned',
-    realSendingAllowed: false
-  }
-});
+const dashboardSummary = (session) => {
+  const emailReporting = emailReportingSummary();
+  return {
+    ok: true,
+    user: { email: session.email },
+    summary: {
+      contacts: 0,
+      segments: 0,
+      templates: 0,
+      campaigns: 0,
+      queuedSends: emailReporting.totals.queuedDryRuns,
+      suppressions: emailReporting.totals.suppressions,
+      emailEvents: emailReporting.totals.emailEvents,
+      bounces: emailReporting.totals.bounces,
+      complaints: emailReporting.totals.complaints,
+      emailProvider: emailReporting.provider.provider,
+      sendMode: emailReporting.provider.sendMode
+    },
+    emailReporting,
+    safetyGates: {
+      consentTracking: 'baseline-enforced',
+      suppressions: 'baseline-enforced',
+      unsubscribe: 'baseline-recorded',
+      bounceComplaints: 'manual-ingest-baseline',
+      rateLimits: 'dry-run-warmup-baseline',
+      auditLogs: 'planned',
+      realSendingAllowed: false
+    }
+  };
+};
 
 export const createHandler = () => {
   return async (req, res) => {
@@ -174,6 +183,13 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, dashboardSummary(session));
+    }
+
+    if (url.pathname === '/api/email/reporting' || url.pathname === '/email/reporting') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, emailReportingSummary());
     }
 
     if (url.pathname === '/api/schema/migrations' || url.pathname === '/schema/migrations') {

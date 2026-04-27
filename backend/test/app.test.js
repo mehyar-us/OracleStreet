@@ -121,6 +121,9 @@ test('dashboard route requires an admin session', async () => {
 });
 
 test('dashboard route returns protected safe-test summary for admin session', async () => {
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  resetEmailEventsForTests();
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
@@ -138,6 +141,8 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.user.email, 'admin@example.test');
     assert.equal(dashboard.body.summary.emailProvider, 'dry-run');
     assert.equal(dashboard.body.summary.sendMode, 'safe-test-only');
+    assert.equal(dashboard.body.summary.queuedSends, 0);
+    assert.equal(dashboard.body.emailReporting.mode, 'safe-reporting');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
   });
 });
@@ -583,4 +588,51 @@ test('email event endpoints also work behind nginx stripped api prefix', async (
   assert.equal(list.status, 401);
   const ingest = await request('/email/events/ingest', { method: 'POST' });
   assert.equal(ingest.status, 401);
+});
+
+test('email reporting requires admin session and summarizes safe sending state', async () => {
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  resetEmailEventsForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'report@example.test',
+        subject: 'Report smoke',
+        html: '<p>dry run</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [{ type: 'bounce', email: 'bounce-report@example.test', source: 'report smoke' }] })
+    });
+
+    const unauth = await request('/api/email/reporting');
+    assert.equal(unauth.status, 401);
+
+    const report = await request('/api/email/reporting', { headers: { cookie } });
+    assert.equal(report.status, 200);
+    assert.equal(report.body.mode, 'safe-reporting');
+    assert.equal(report.body.totals.queuedDryRuns, 1);
+    assert.equal(report.body.totals.bounces, 1);
+    assert.equal(report.body.totals.suppressions, 1);
+    assert.equal(report.body.safety.realDeliveryAllowed, false);
+    assert.equal(report.body.safety.complianceGates.rateLimits, 'dry_run_warmup_enforced');
+
+    const dashboard = await request('/api/dashboard', { headers: { cookie } });
+    assert.equal(dashboard.body.summary.queuedSends, 1);
+    assert.equal(dashboard.body.summary.bounces, 1);
+  });
+});
+
+test('email reporting endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/email/reporting');
+  assert.equal(res.status, 401);
 });
