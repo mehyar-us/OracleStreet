@@ -23,7 +23,7 @@
 - [ ] Segments
 - [ ] Campaign CRUD
 - [ ] Templates
-- [ ] Audit log
+- [x] Audit log baseline
 
 ## Phase 3 — PMTA-first Email Engine
 

@@ -102,6 +102,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 
 ## Current validation endpoints
 
+- `GET /api/audit-log` requires an admin session and lists sanitized in-memory audit events until PostgreSQL persistence is wired.
 - `GET /api/email/config` exposes redacted provider readiness only.
 - `POST /api/email/provider/validate` requires an admin session and validates selected provider configuration without sending mail or opening a network connection.
 - `POST /api/email/test-send` requires an admin session and is dry-run only.

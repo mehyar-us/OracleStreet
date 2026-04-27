@@ -74,6 +74,7 @@ npm test --prefix backend
 - Rate-limit/warm-up baseline: `GET /api/email/rate-limits` must require admin auth; dry-run queue enqueue must enforce global and per-domain hourly caps before any provider path.
 - Bounce/complaint ingest baseline: `POST /api/email/events/ingest` must require admin auth, accept only `bounce`/`complaint` manual batches, record events, create suppressions, and block affected recipients from queue enqueue.
 - Safe reporting baseline: `GET /api/email/reporting` and `GET /api/dashboard` must require admin auth and summarize queue, suppression, bounce/complaint, provider, rate-limit, and compliance-gate state without enabling delivery.
+- Audit log baseline: `GET /api/audit-log` must require admin auth, sanitize sensitive fields, and record key admin/compliance actions such as login attempts, provider validation, queue enqueue, suppression, unsubscribe, event ingest, and database status checks.
 
 ## Domain readiness checklist
 

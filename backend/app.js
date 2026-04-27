@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
@@ -110,6 +111,7 @@ const dashboardSummary = (session) => {
       queuedSends: emailReporting.totals.queuedDryRuns,
       suppressions: emailReporting.totals.suppressions,
       emailEvents: emailReporting.totals.emailEvents,
+      auditEvents: emailReporting.totals.auditEvents,
       bounces: emailReporting.totals.bounces,
       complaints: emailReporting.totals.complaints,
       emailProvider: emailReporting.provider.provider,
@@ -122,7 +124,7 @@ const dashboardSummary = (session) => {
       unsubscribe: 'baseline-recorded',
       bounceComplaints: 'manual-ingest-baseline',
       rateLimits: 'dry-run-warmup-baseline',
-      auditLogs: 'planned',
+      auditLogs: 'baseline-in-memory',
       realSendingAllowed: false
     }
   };
@@ -164,8 +166,10 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       if (!adminPassword()) return jsonResponse(res, 503, { ok: false, error: 'admin_not_bootstrapped' });
       if (body.email !== adminEmail() || body.password !== adminPassword()) {
+        recordAuditEvent({ action: 'admin_login', actorEmail: body.email || null, status: 'rejected', details: { reason: 'invalid_credentials' } });
         return jsonResponse(res, 401, { ok: false, error: 'invalid_credentials' });
       }
+      recordAuditEvent({ action: 'admin_login', actorEmail: adminEmail(), status: 'ok' });
       const token = createSessionToken(adminEmail());
       return jsonResponse(res, 200, { ok: true, user: { email: adminEmail() } }, {
         'set-cookie': `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`
@@ -204,7 +208,16 @@ export const createHandler = () => {
       if (!requireMethod(req, res, 'GET')) return;
       const session = requireSession(req, res);
       if (!session) return;
-      return jsonResponse(res, 200, { ok: true, database: validateDatabaseConfig() });
+      const database = validateDatabaseConfig();
+      recordAuditEvent({ action: 'database_status_view', actorEmail: session.email, target: 'database', details: { ok: database.ok, source: database.config.source } });
+      return jsonResponse(res, 200, { ok: true, database });
+    }
+
+    if (url.pathname === '/api/audit-log' || url.pathname === '/audit-log') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, listAuditLog());
     }
 
     if (url.pathname === '/api/contacts/import/validate' || url.pathname === '/contacts/import/validate') {
@@ -214,6 +227,7 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = validateContactImport(body.contacts);
+      recordAuditEvent({ action: 'contact_import_validate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { acceptedCount: result.acceptedCount, rejectedCount: result.rejectedCount } });
       return jsonResponse(res, result.error ? 400 : 200, result);
     }
 
@@ -231,9 +245,11 @@ export const createHandler = () => {
       if (!requireMethod(req, res, 'POST')) return;
       const session = requireSession(req, res);
       if (!session) return;
+      const validation = validateSelectedProviderConfig();
+      recordAuditEvent({ action: 'email_provider_validate', actorEmail: session.email, target: validation.provider, status: validation.ok ? 'ok' : 'rejected', details: { errors: validation.errors } });
       return jsonResponse(res, 200, {
         ok: true,
-        validation: validateSelectedProviderConfig(),
+        validation,
         safeDefault: 'network_probe_skipped_no_delivery'
       });
     }
@@ -259,6 +275,7 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = enqueueDryRunSend(body, session.email);
+      recordAuditEvent({ action: 'send_queue_enqueue', actorEmail: session.email, target: body.to || null, status: result.ok ? 'ok' : 'rejected', details: { mode: result.mode, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
@@ -270,6 +287,7 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = addSuppression({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'suppression_upsert', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { reason: body.reason, errors: result.errors || [] } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
@@ -278,6 +296,7 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = recordUnsubscribe({ email: body.email, source: body.source || 'unsubscribe_endpoint' });
+      recordAuditEvent({ action: 'unsubscribe_record', actorEmail: null, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { source: body.source || 'unsubscribe_endpoint', errors: result.errors || [] } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
@@ -295,6 +314,7 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = ingestEmailEvents({ events: body.events, actorEmail: session.email });
+      recordAuditEvent({ action: 'email_events_ingest', actorEmail: session.email, status: result.ok ? 'ok' : 'partial_or_rejected', details: { acceptedCount: result.acceptedCount, rejectedCount: result.rejectedCount, error: result.error } });
       return jsonResponse(res, result.error ? 400 : 200, result);
     }
 

@@ -1,3 +1,4 @@
+import { listAuditLog } from './auditLog.js';
 import { listEmailEvents } from './emailEvents.js';
 import { getEmailProviderConfig, validateSelectedProviderConfig } from './emailProvider.js';
 import { getRateLimitConfig } from './rateLimits.js';
@@ -5,6 +6,7 @@ import { listSendQueue } from './sendQueue.js';
 import { listSuppressions } from './suppressions.js';
 
 export const emailReportingSummary = (env = process.env) => {
+  const audit = listAuditLog();
   const queue = listSendQueue();
   const suppressions = listSuppressions();
   const emailEvents = listEmailEvents();
@@ -27,6 +29,7 @@ export const emailReportingSummary = (env = process.env) => {
       queuedDryRuns: queuedDryRuns.length,
       suppressions: suppressions.count,
       emailEvents: emailEvents.count,
+      auditEvents: audit.count,
       bounces: eventCounts.bounce || 0,
       complaints: eventCounts.complaint || 0
     },
@@ -42,7 +45,7 @@ export const emailReportingSummary = (env = process.env) => {
         unsubscribe: 'baseline_records_suppression',
         bounceComplaint: 'manual_ingest_records_event_and_suppression',
         rateLimits: 'dry_run_warmup_enforced',
-        audit: 'planned'
+        audit: 'baseline_in_memory'
       }
     }
   };

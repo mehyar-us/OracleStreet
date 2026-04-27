@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
+import { resetAuditLogForTests } from '../lib/auditLog.js';
 import { validateDatabaseConfig } from '../lib/database.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
@@ -122,6 +123,7 @@ test('dashboard route requires an admin session', async () => {
 });
 
 test('dashboard route returns protected safe-test summary for admin session', async () => {
+  resetAuditLogForTests();
   resetSendQueueForTests();
   resetSuppressionsForTests();
   resetEmailEventsForTests();
@@ -227,6 +229,36 @@ test('database status is protected and redacts PostgreSQL URL secrets', async ()
 
 test('database status endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/database/status');
+  assert.equal(res.status, 401);
+});
+
+test('audit log requires admin session and records safe admin actions', async () => {
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/audit-log');
+    assert.equal(unauth.status, 401);
+
+    const rejected = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@example.test', password: 'wrong-password' })
+    });
+    assert.equal(rejected.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/email/provider/validate', { method: 'POST', headers: { cookie } });
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.equal(audit.status, 200);
+    assert.ok(audit.body.count >= 3);
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_login' && event.status === 'rejected'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_provider_validate'));
+    assert.equal(JSON.stringify(audit.body).includes('wrong-password'), false);
+  });
+});
+
+test('audit log endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/audit-log');
   assert.equal(res.status, 401);
 });
 
@@ -620,6 +652,7 @@ test('email event endpoints also work behind nginx stripped api prefix', async (
 });
 
 test('email reporting requires admin session and summarizes safe sending state', async () => {
+  resetAuditLogForTests();
   resetSendQueueForTests();
   resetSuppressionsForTests();
   resetEmailEventsForTests();
@@ -652,6 +685,7 @@ test('email reporting requires admin session and summarizes safe sending state',
     assert.equal(report.body.totals.queuedDryRuns, 1);
     assert.equal(report.body.totals.bounces, 1);
     assert.equal(report.body.totals.suppressions, 1);
+    assert.ok(report.body.totals.auditEvents >= 3);
     assert.equal(report.body.safety.realDeliveryAllowed, false);
     assert.equal(report.body.safety.complianceGates.rateLimits, 'dry_run_warmup_enforced');
 
