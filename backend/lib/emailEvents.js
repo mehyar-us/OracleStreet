@@ -1,3 +1,4 @@
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
 import { addSuppression } from './suppressions.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -17,17 +18,61 @@ export const resetEmailEventsForTests = () => {
   sequence = 0;
 };
 
-export const listEmailEvents = () => ({
-  ok: true,
-  count: events.length,
-  events: events.map((event) => ({ ...event }))
+const pgRowToEvent = ([id, eventType, email, source, detail, campaignId, contactId, providerMessageId, actorEmail, createdAt]) => ({
+  id,
+  type: eventType,
+  email,
+  source: source || 'postgresql_event',
+  detail: detail || null,
+  campaignId: campaignId || null,
+  contactId: contactId || null,
+  providerMessageId: providerMessageId || null,
+  actorEmail: actorEmail || null,
+  createdAt
 });
+
+const listEmailEventsFromPostgres = () => runLocalPgRows(`
+  SELECT id, event_type, coalesce(recipient_email, metadata->>'email', ''), coalesce(source, metadata->>'source', ''), coalesce(detail, metadata->>'detail', ''), coalesce(campaign_id, ''), coalesce(contact_id, ''), coalesce(provider_message_id, metadata->>'providerMessageId', ''), coalesce(actor_email, metadata->>'actorEmail', ''), created_at::text
+  FROM email_events
+  ORDER BY created_at DESC
+  LIMIT 1000;
+`).map(pgRowToEvent);
+
+export const listEmailEvents = () => {
+  if (isPgRepositoryEnabled('email_events')) {
+    try {
+      const pgEvents = listEmailEventsFromPostgres();
+      return { ok: true, count: pgEvents.length, events: pgEvents, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    count: events.length,
+    events: events.map((event) => ({ ...event })),
+    persistenceMode: isPgRepositoryEnabled('email_events') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
+  };
+};
 
 export const findEmailEventsByProviderMessageId = (providerMessageId) => {
   const cleanProviderMessageId = String(providerMessageId || '').trim();
   if (!cleanProviderMessageId) return { ok: false, error: 'provider_message_id_required' };
   if (cleanProviderMessageId.length > 200) return { ok: false, error: 'provider_message_id_too_long' };
-  const matches = events.filter((event) => event.providerMessageId === cleanProviderMessageId);
+  let matches = events.filter((event) => event.providerMessageId === cleanProviderMessageId);
+  if (isPgRepositoryEnabled('email_events')) {
+    try {
+      matches = runLocalPgRows(`
+        SELECT id, event_type, coalesce(recipient_email, metadata->>'email', ''), coalesce(source, metadata->>'source', ''), coalesce(detail, metadata->>'detail', ''), coalesce(campaign_id, ''), coalesce(contact_id, ''), coalesce(provider_message_id, metadata->>'providerMessageId', ''), coalesce(actor_email, metadata->>'actorEmail', ''), created_at::text
+        FROM email_events
+        WHERE provider_message_id = ${sqlLiteral(cleanProviderMessageId)} OR metadata->>'providerMessageId' = ${sqlLiteral(cleanProviderMessageId)}
+        ORDER BY created_at DESC
+        LIMIT 1000;
+      `).map(pgRowToEvent);
+    } catch (error) {
+      // keep in-memory lookup fallback
+    }
+  }
   return {
     ok: true,
     mode: 'provider-message-event-lookup',
@@ -68,7 +113,25 @@ export const recordEmailEvent = ({ type, email, source = 'manual_ingest', detail
     actorEmail,
     createdAt: nowIso()
   };
-  events.push(event);
+
+  let savedEvent = event;
+  let persistedToPostgres = false;
+  if (isPgRepositoryEnabled('email_events')) {
+    try {
+      const metadata = { email: normalized, source: cleanSource, detail: event.detail, providerMessageId: event.providerMessageId, actorEmail };
+      const rows = runLocalPgRows(`
+        INSERT INTO email_events (id, event_type, recipient_email, source, detail, campaign_id, contact_id, provider_message_id, actor_email, metadata)
+        VALUES (${sqlLiteral(event.id)}, ${sqlLiteral(cleanType)}, ${sqlLiteral(normalized)}, ${sqlLiteral(cleanSource)}, ${sqlLiteral(event.detail)}, ${sqlLiteral(event.campaignId)}, ${sqlLiteral(event.contactId)}, ${sqlLiteral(event.providerMessageId)}, ${sqlLiteral(actorEmail)}, ${sqlLiteral(JSON.stringify(metadata))}::jsonb)
+        RETURNING id, event_type, coalesce(recipient_email, metadata->>'email', ''), coalesce(source, metadata->>'source', ''), coalesce(detail, metadata->>'detail', ''), coalesce(campaign_id, ''), coalesce(contact_id, ''), coalesce(provider_message_id, metadata->>'providerMessageId', ''), coalesce(actor_email, metadata->>'actorEmail', ''), created_at::text;
+      `);
+      savedEvent = pgRowToEvent(rows[0]);
+      persistedToPostgres = true;
+    } catch (error) {
+      events.push(event);
+    }
+  } else {
+    events.push(event);
+  }
 
   const suppression = SUPPRESSION_TYPES.has(cleanType)
     ? addSuppression({
@@ -81,9 +144,10 @@ export const recordEmailEvent = ({ type, email, source = 'manual_ingest', detail
 
   return {
     ok: true,
-    event: { ...event },
+    event: { ...savedEvent },
     suppression: suppression?.ok ? suppression.suppression : null,
-    realDelivery: false
+    realDelivery: false,
+    persistenceMode: persistedToPostgres ? 'postgresql-local-psql-repository' : (isPgRepositoryEnabled('email_events') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled')
   };
 };
 

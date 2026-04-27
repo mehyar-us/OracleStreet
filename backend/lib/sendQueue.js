@@ -1,4 +1,5 @@
 import { dryRunSend, validateTestMessage } from './emailProvider.js';
+import { isPgRepositoryEnabled, runLocalPgRows, sqlLiteral } from './localPg.js';
 import { evaluateRateLimit, getRateLimitConfig } from './rateLimits.js';
 import { getSuppression, isSuppressed } from './suppressions.js';
 
@@ -12,15 +13,80 @@ export const resetSendQueueForTests = () => {
   sequence = 0;
 };
 
-export const listSendQueue = () => ({
-  ok: true,
-  mode: 'dry-run-queue',
-  count: queue.length,
-  rateLimits: getRateLimitConfig(),
-  jobs: queue.map((job) => ({ ...job, safety: { ...job.safety } }))
+const pgRowToJob = ([id, status, provider, providerMessageId, recipientEmail, subject, source, campaignId, contactId, unsubscribeUrl, openTrackingUrl, clickTrackingUrl, safetyJson, createdAt, dispatchedAt]) => ({
+  id,
+  status,
+  provider,
+  providerMessageId: providerMessageId || null,
+  to: recipientEmail,
+  subject,
+  source,
+  actorEmail: null,
+  campaignId: campaignId || null,
+  contactId: contactId || null,
+  unsubscribeUrl: unsubscribeUrl || null,
+  openTrackingUrl: openTrackingUrl || null,
+  clickTrackingUrl: clickTrackingUrl || null,
+  safety: safetyJson ? JSON.parse(safetyJson) : {},
+  createdAt,
+  dispatchedAt: dispatchedAt || null
 });
 
+const listSendQueueFromPostgres = () => runLocalPgRows(`
+  SELECT id, status, provider, coalesce(provider_message_id, ''), coalesce(recipient_email, ''), coalesce(subject, ''), coalesce(source, ''), coalesce(campaign_id, ''), coalesce(contact_id, ''), coalesce(unsubscribe_url, ''), coalesce(open_tracking_url, ''), coalesce(click_tracking_url, ''), safety::text, created_at::text, coalesce(dispatched_at::text, '')
+  FROM send_jobs
+  ORDER BY created_at DESC
+  LIMIT 1000;
+`).map(pgRowToJob);
+
+export const listSendQueue = () => {
+  if (isPgRepositoryEnabled('send_queue')) {
+    try {
+      const jobs = listSendQueueFromPostgres();
+      return { ok: true, mode: 'dry-run-queue', count: jobs.length, rateLimits: getRateLimitConfig(), jobs, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory view
+    }
+  }
+  return {
+    ok: true,
+    mode: 'dry-run-queue',
+    count: queue.length,
+    rateLimits: getRateLimitConfig(),
+    jobs: queue.map((job) => ({ ...job, safety: { ...job.safety } })),
+    persistenceMode: isPgRepositoryEnabled('send_queue') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
+  };
+};
+
 export const dispatchNextDryRunJob = ({ actorEmail = null } = {}) => {
+  if (isPgRepositoryEnabled('send_queue')) {
+    try {
+      const rows = runLocalPgRows(`
+        SELECT id, status, provider, coalesce(provider_message_id, ''), coalesce(recipient_email, ''), coalesce(subject, ''), coalesce(source, ''), coalesce(campaign_id, ''), coalesce(contact_id, ''), coalesce(unsubscribe_url, ''), coalesce(open_tracking_url, ''), coalesce(click_tracking_url, ''), safety::text, created_at::text, coalesce(dispatched_at::text, '')
+        FROM send_jobs
+        WHERE status = 'queued_dry_run'
+        ORDER BY created_at ASC
+        LIMIT 1;
+      `);
+      if (!rows[0]) return { ok: false, mode: 'dry-run-dispatch', errors: ['no_queued_dry_run_jobs'] };
+      const job = pgRowToJob(rows[0]);
+      const providerMessageId = `dryrun_dispatch_${Date.now().toString(36)}`;
+      const safety = { ...job.safety, providerAdapter: 'dry-run', dispatchMode: 'no_external_delivery', realDelivery: false };
+      const updatedRows = runLocalPgRows(`
+        UPDATE send_jobs
+        SET status = 'dispatched_dry_run',
+          provider_message_id = ${sqlLiteral(providerMessageId)},
+          safety = ${sqlLiteral(JSON.stringify(safety))}::jsonb,
+          dispatched_at = now()
+        WHERE id = ${sqlLiteral(job.id)}
+        RETURNING id, status, provider, coalesce(provider_message_id, ''), coalesce(recipient_email, ''), coalesce(subject, ''), coalesce(source, ''), coalesce(campaign_id, ''), coalesce(contact_id, ''), coalesce(unsubscribe_url, ''), coalesce(open_tracking_url, ''), coalesce(click_tracking_url, ''), safety::text, created_at::text, coalesce(dispatched_at::text, '');
+      `);
+      return { ok: true, mode: 'dry-run-dispatch', job: { ...pgRowToJob(updatedRows[0]), dispatchedBy: actorEmail }, realDelivery: false, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory dispatch
+    }
+  }
+
   const jobIndex = queue.findIndex((job) => job.status === 'queued_dry_run');
   if (jobIndex === -1) {
     return { ok: false, mode: 'dry-run-dispatch', errors: ['no_queued_dry_run_jobs'] };
@@ -46,7 +112,8 @@ export const dispatchNextDryRunJob = ({ actorEmail = null } = {}) => {
     ok: true,
     mode: 'dry-run-dispatch',
     job: { ...dispatched, safety: { ...dispatched.safety } },
-    realDelivery: false
+    realDelivery: false,
+    persistenceMode: isPgRepositoryEnabled('send_queue') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
   };
 };
 
@@ -116,12 +183,27 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
     },
     createdAt: nowIso()
   };
+
+  if (isPgRepositoryEnabled('send_queue')) {
+    try {
+      const rows = runLocalPgRows(`
+        INSERT INTO send_jobs (id, status, provider, recipient_email, subject, source, campaign_id, contact_id, unsubscribe_url, open_tracking_url, click_tracking_url, safety, scheduled_at)
+        VALUES (${sqlLiteral(job.id)}, 'queued_dry_run', ${sqlLiteral(job.provider)}, ${sqlLiteral(job.to)}, ${sqlLiteral(job.subject)}, ${sqlLiteral(job.source)}, ${sqlLiteral(job.campaignId)}, ${sqlLiteral(job.contactId)}, ${sqlLiteral(job.unsubscribeUrl)}, ${sqlLiteral(job.openTrackingUrl)}, ${sqlLiteral(job.clickTrackingUrl)}, ${sqlLiteral(JSON.stringify(job.safety))}::jsonb, now())
+        RETURNING id, status, provider, coalesce(provider_message_id, ''), coalesce(recipient_email, ''), coalesce(subject, ''), coalesce(source, ''), coalesce(campaign_id, ''), coalesce(contact_id, ''), coalesce(unsubscribe_url, ''), coalesce(open_tracking_url, ''), coalesce(click_tracking_url, ''), safety::text, created_at::text, coalesce(dispatched_at::text, '');
+      `);
+      return { ok: true, mode: 'dry-run-queue', job: pgRowToJob(rows[0]), realDelivery: false, persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to in-memory queue so the dry-run workflow remains usable.
+    }
+  }
+
   queue.push(job);
 
   return {
     ok: true,
     mode: 'dry-run-queue',
     job,
-    realDelivery: false
+    realDelivery: false,
+    persistenceMode: isPgRepositoryEnabled('send_queue') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled'
   };
 };

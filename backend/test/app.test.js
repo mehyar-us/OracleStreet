@@ -312,6 +312,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(campaignRepositoryMigration);
     assert.match(campaignRepositoryMigration.description, /campaign repository IDs/);
     assert.ok(campaignRepositoryMigration.statements >= 7);
+    const sendQueueEventMigration = res.body.migrations.find((migration) => migration.id === '006_send_queue_event_runtime_ids');
+    assert.ok(sendQueueEventMigration);
+    assert.match(sendQueueEventMigration.description, /send queue and email event IDs/);
+    assert.ok(sendQueueEventMigration.statements >= 10);
   });
 });
 
@@ -344,7 +348,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -352,12 +356,14 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 4);
+    assert.equal(res.body.summary.liveRepositoryModules, 6);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'templates' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'campaigns' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'send_queue' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'email_events' && module.liveRepositoryEnabled));
     assert.doesNotMatch(JSON.stringify(res.body), /super-secret/);
   });
 });
