@@ -36,7 +36,7 @@ Acceptance:
 
 Status:
 - PostgreSQL repository schema foundation now includes `004_policy_repository_foundation` for warm-up policies, reputation policies, and repository migration status, plus `GET /api/database/repositories` to expose audited module readiness without secrets.
-- Contacts, suppressions, templates, campaigns, send queue, and email events now have local `psql` runtime repository adapters enabled on VPS via `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions,templates,campaigns,send_queue,email_events`, with in-memory fallback for tests/local adapter failure.
+- Contacts, suppressions, templates, campaigns, send queue, email events, users, admin sessions, and audit log now have local `psql` runtime repository adapters enabled on VPS via `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log`, with in-memory fallback for tests/local adapter failure.
 
 Verification:
 - backend tests pass.
@@ -116,13 +116,14 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. Wire users/admin/session/audit runtime repositories to local PostgreSQL with in-memory test fallback.
+1. Wire warm-up/reputation policy runtime repositories to local PostgreSQL with in-memory test fallback.
 2. Controlled one-recipient MTA live-test runbook/gate.
 3. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
 4. Multi-user/RBAC admin workflow.
 5. Campaign calendar UI over warm-up caps.
 
 Latest shipped slice:
+- Users/admin sessions/audit PostgreSQL runtime adapter: admin login upserts the bootstrap admin into `users`, records a hashed session ledger in `admin_sessions`, and writes/list audit events through `audit_log` when enabled; signed cookies remain the auth verifier and raw tokens/passwords are never stored or exposed.
 - Send queue/email events PostgreSQL runtime adapter: local VPS runtime can persist dry-run queue jobs, dry-run dispatch status, and delivery/engagement/bounce/complaint events through the local `psql` adapter when `ORACLESTREET_PG_REPOSITORIES` includes `send_queue,email_events`; migration `006_send_queue_event_runtime_ids` relaxes queue/event runtime IDs while real delivery remains locked.
 - Templates/campaigns PostgreSQL runtime adapter: local VPS runtime can persist template drafts and campaign draft/approval/schedule/queue state through the local `psql` adapter when `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions,templates,campaigns`; campaign runtime ID columns are relaxed for app-generated IDs while real delivery remains locked.
 - Contacts/suppressions PostgreSQL runtime adapter: local VPS runtime can persist contact imports and suppression writes through the local `psql` adapter when `ORACLESTREET_PG_REPOSITORIES=contacts,suppressions`; list/segment/hygiene/queue gates read through the same repository and retain safe in-memory fallback for tests or adapter failure.

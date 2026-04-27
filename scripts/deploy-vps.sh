@@ -51,9 +51,9 @@ ensure_secret ORACLESTREET_DOMAIN 'printf stuffprettygood.com'
 ensure_secret ORACLESTREET_PUBLIC_BASE_URL 'printf http://stuffprettygood.com'
 ensure_secret ORACLESTREET_SESSION_SECRET 'openssl rand -hex 32'
 ensure_secret ORACLESTREET_INTERNAL_API_KEY 'openssl rand -hex 24'
-ensure_secret ORACLESTREET_PG_REPOSITORIES 'printf contacts,suppressions,templates,campaigns,send_queue,email_events'
+ensure_secret ORACLESTREET_PG_REPOSITORIES 'printf contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log'
 pg_repositories="$(grep '^ORACLESTREET_PG_REPOSITORIES=' /etc/oraclestreet/oraclestreet.env | tail -n1 | cut -d= -f2-)"
-for repo in contacts suppressions templates campaigns send_queue email_events; do
+for repo in contacts suppressions templates campaigns send_queue email_events users admin_sessions audit_log; do
   case ",$pg_repositories," in
     *",$repo,"*) ;;
     *) pg_repositories="${pg_repositories:+$pg_repositories,}$repo" ;;

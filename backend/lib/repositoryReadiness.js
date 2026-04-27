@@ -11,7 +11,8 @@ const MODULES = [
   { module: 'warmup_policies', targetTable: 'warmup_policies', runtimeMode: 'in-memory', priority: 7, blocker: 'enable_policy_repository_after_pg_driver' },
   { module: 'reputation_policies', targetTable: 'reputation_policies', runtimeMode: 'in-memory', priority: 8, blocker: 'enable_policy_repository_after_pg_driver' },
   { module: 'audit_log', targetTable: 'audit_log', runtimeMode: 'in-memory', priority: 9, blocker: 'wire_audit_repository_to_postgresql_driver' },
-  { module: 'users', targetTable: 'users', runtimeMode: 'bootstrap-env-plus-memory-session', priority: 10, blocker: 'wire_user_session_repository_to_postgresql_driver' }
+  { module: 'users', targetTable: 'users', runtimeMode: 'bootstrap-env-plus-memory-session', priority: 10, blocker: 'wire_user_repository_to_postgresql_driver' },
+  { module: 'admin_sessions', targetTable: 'admin_sessions', runtimeMode: 'signed-cookie-plus-memory-session-ledger', priority: 11, blocker: 'wire_session_repository_to_postgresql_driver' }
 ];
 
 export const repositoryReadiness = () => {

@@ -100,8 +100,8 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Wire users/admin/session/audit runtime repositories to local PostgreSQL with in-memory test fallback.
-2. PostgreSQL-backed repositories for warm-up/reputation policies, replacing remaining in-memory state.
+1. Wire warm-up/reputation policy runtime repositories to local PostgreSQL with in-memory test fallback.
+2. Controlled one-recipient MTA live-test runbook and gate.
 3. Live remote PostgreSQL read-only probe/query execution behind pg-driver, encrypted creds, timeout/limit, and explicit operator approval.
 4. Controlled one-recipient MTA live-test runbook and gate.
 5. Multi-user/RBAC admin workflow.

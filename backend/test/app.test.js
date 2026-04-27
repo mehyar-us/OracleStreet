@@ -316,6 +316,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(sendQueueEventMigration);
     assert.match(sendQueueEventMigration.description, /send queue and email event IDs/);
     assert.ok(sendQueueEventMigration.statements >= 10);
+    const userSessionAuditMigration = res.body.migrations.find((migration) => migration.id === '007_users_sessions_audit_runtime');
+    assert.ok(userSessionAuditMigration);
+    assert.match(userSessionAuditMigration.description, /users, admin sessions, and audit runtime/);
+    assert.ok(userSessionAuditMigration.statements >= 5);
   });
 });
 
@@ -348,7 +352,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -356,7 +360,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 6);
+    assert.equal(res.body.summary.liveRepositoryModules, 9);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
@@ -364,6 +368,9 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.ok(res.body.modules.some((module) => module.module === 'campaigns' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'send_queue' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'email_events' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'users' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'admin_sessions' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'audit_log' && module.liveRepositoryEnabled));
     assert.doesNotMatch(JSON.stringify(res.body), /super-secret/);
   });
 });

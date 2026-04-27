@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { recordAdminSession, revokeAdminSession, upsertAdminUser } from './lib/adminUsers.js';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
@@ -297,16 +298,23 @@ export const createHandler = () => {
         recordAuditEvent({ action: 'admin_login', actorEmail: body.email || null, status: 'rejected', details: { reason: 'invalid_credentials' } });
         return jsonResponse(res, 401, { ok: false, error: 'invalid_credentials' });
       }
-      recordAuditEvent({ action: 'admin_login', actorEmail: adminEmail(), status: 'ok' });
+      const userPersistence = upsertAdminUser({ email: adminEmail(), role: 'admin' });
+      recordAuditEvent({ action: 'admin_login', actorEmail: adminEmail(), status: 'ok', details: { userPersistenceMode: userPersistence.persistenceMode } });
       const token = createSessionToken(adminEmail());
-      return jsonResponse(res, 200, { ok: true, user: { email: adminEmail() } }, {
+      const expiresAt = new Date((Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS) * 1000).toISOString();
+      const sessionPersistence = recordAdminSession({ token, email: adminEmail(), expiresAt });
+      return jsonResponse(res, 200, { ok: true, user: { email: adminEmail() }, persistence: { user: userPersistence.persistenceMode, session: sessionPersistence.persistenceMode } }, {
         'set-cookie': `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`
       });
     }
 
     if (url.pathname === '/api/auth/logout' || url.pathname === '/auth/logout') {
       if (!requireMethod(req, res, 'POST')) return;
-      return jsonResponse(res, 200, { ok: true }, {
+      const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+      const session = getSession(req);
+      const sessionPersistence = token ? revokeAdminSession(token) : null;
+      if (session) recordAuditEvent({ action: 'admin_logout', actorEmail: session.email, status: 'ok', details: { sessionPersistenceMode: sessionPersistence?.persistenceMode || null } });
+      return jsonResponse(res, 200, { ok: true, persistence: { session: sessionPersistence?.persistenceMode || null } }, {
         'set-cookie': `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`
       });
     }

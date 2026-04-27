@@ -61,7 +61,7 @@ npm test --prefix backend
 
 ## Current verified feature paths
 
-- Admin auth/session: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout` with bootstrap credentials from `/etc/oraclestreet/initial-admin.env`.
+- Admin auth/session: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout` with bootstrap credentials from `/etc/oraclestreet/initial-admin.env`. On VPS, successful login upserts the bootstrap admin into `users` and records/revokes hashed session ledger rows in `admin_sessions` when `ORACLESTREET_PG_REPOSITORIES` includes `users,admin_sessions`; signed cookies remain the verifier and plaintext passwords/tokens are never stored.
 - Protected dashboard summary: `GET /api/dashboard` must return `401` without a session and safe-test counters with a valid admin session.
 - Protected migration manifest: `GET /api/schema/migrations` must return `401` without a session and list SQL migrations with a valid admin session.
 - PostgreSQL readiness/status: `GET /api/database/status` must require admin auth, validate PostgreSQL URL shape, redact credentials, and avoid live connection probes until the database driver/persistence slice is enabled.
@@ -126,12 +126,13 @@ npm test --prefix backend
 - Frontend remote PostgreSQL query workflow: `/` after admin login must show a visible SELECT-only query validator in the remote PostgreSQL panel, call `/api/data-source-query/validate`, report accepted/rejected plan status, avoid plaintext secrets, and keep live remote execution disabled.
 - Frontend remote PostgreSQL mapping/status UI baseline: `/` after admin login must show data source/sync dry-run counters and a redacted mapping/status panel, call only protected metadata endpoints, avoid plaintext secrets, and keep remote row pulls disabled.
 - Data source sync audit log baseline: `GET /api/data-source-sync-audit` must require admin auth, return sanitized `data_source_sync*` events only, audit the view action, avoid plaintext secrets, and keep `realSync: false`.
-- Audit log baseline: `GET /api/audit-log` must require admin auth, sanitize sensitive fields, and record key admin/compliance actions such as login attempts, provider validation, queue enqueue, suppression, unsubscribe, event ingest, and database status checks.
+- Audit log baseline: `GET /api/audit-log` must require admin auth, sanitize sensitive fields, and record key admin/compliance actions such as login attempts, provider validation, queue enqueue, suppression, unsubscribe, event ingest, and database status checks. On VPS, audit events use the local PostgreSQL `psql` repository adapter when `ORACLESTREET_PG_REPOSITORIES` includes `audit_log`; tests/local adapter failure keep safe in-memory fallback.
 - Email engine schema alignment migration: `GET /api/schema/migrations` must require admin auth and list `002_email_engine_alignment`, which aligns PostgreSQL campaign/send-job/event status constraints and dry-run queue metadata columns with the current safe email engine without applying migrations or mutating the database from the API.
 - Provider message traceability migration: `GET /api/schema/migrations` must list `003_provider_message_event_traceability`, which adds nullable `email_events.provider_message_id` plus filtered lookup indexes for PMTA/accounting traceability without storing secrets or applying migrations from the API.
 - Policy repository foundation migration: `GET /api/schema/migrations` must list `004_policy_repository_foundation`, which creates `warmup_policies`, `reputation_policies`, and `repository_migration_status` for the PostgreSQL persistence migration path without storing secrets or applying migrations from the API.
 - Campaign repository runtime migration: `GET /api/schema/migrations` must list `005_campaign_repository_runtime_ids`, which relaxes campaign segment/template IDs to text and adds dry-run campaign state metadata columns for the PostgreSQL runtime repository path without storing secrets or applying migrations from the API.
 - Send queue/event runtime migration: `GET /api/schema/migrations` must list `006_send_queue_event_runtime_ids`, which relaxes send queue and email event runtime IDs/foreign-key columns and adds event provenance columns for the PostgreSQL runtime repository path without storing secrets or applying migrations from the API.
+- Users/session/audit runtime migration: `GET /api/schema/migrations` must list `007_users_sessions_audit_runtime`, which adds the `admin_sessions` table and audit metadata columns for PostgreSQL runtime user/session/audit persistence without storing plaintext passwords/tokens or applying migrations from the API.
 
 ## Domain readiness checklist
 
