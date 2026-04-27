@@ -103,6 +103,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 8. [x] Dashboard reporting baseline for safe dry-run queue, suppressions, events, and compliance gates.
 9. [x] Campaign-to-send-queue dry-run enqueue baseline with rendered templates, segment audience, suppression exclusion, and no delivery.
 10. [x] Send queue dry-run dispatch baseline that marks queued jobs as dispatched through the dry-run adapter without external delivery.
+11. [x] Dry-run dispatch event tracking baseline that records internal `dispatched` events while keeping manual ingest limited to bounce/complaint.
 
 ## Current validation endpoints
 
@@ -113,11 +114,11 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/send-queue/enqueue` requires an admin session, applies the current safe test-message gates, and queues dry-run jobs only.
 - `POST /api/campaigns/enqueue-dry-run` requires an admin session, renders a draft campaign audience into dry-run queue jobs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
-- `POST /api/send-queue/dispatch-next-dry-run` requires an admin session and dispatches exactly one queued dry-run job through the dry-run adapter path with `realDelivery: false`.
+- `POST /api/send-queue/dispatch-next-dry-run` requires an admin session and dispatches exactly one queued dry-run job through the dry-run adapter path with `realDelivery: false`; successful dispatch records an internal `dispatched` email event.
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
 - `POST /api/unsubscribe` records an unsubscribe suppression without sending mail; this is the baseline for future tracked unsubscribe links.
 - `GET /api/email/rate-limits` requires an admin session and returns dry-run warm-up caps. Queue enqueue enforces global and per-domain hourly limits before any provider path.
-- `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery.
+- `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery. Internal `dispatched` events are recorded only by the dry-run dispatch path.
 - `GET /api/email/events` requires an admin session and lists in-memory event records until PostgreSQL persistence is wired.
 - `GET /api/email/local-capture` requires an admin session and lists captured local-provider messages for controlled smoke tests only.
 - `GET /api/email/reporting` requires an admin session and summarizes queue, suppression, bounce/complaint, provider, rate-limit, and compliance-gate state without enabling delivery.

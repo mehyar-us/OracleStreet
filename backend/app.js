@@ -3,7 +3,7 @@ import { listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
+import { ingestEmailEvents, listEmailEvents, recordEmailEvent } from './lib/emailEvents.js';
 import { dryRunSend, getEmailProviderConfig, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
@@ -385,8 +385,9 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       const result = dispatchNextDryRunJob({ actorEmail: session.email });
-      recordAuditEvent({ action: 'send_queue_dispatch_dry_run', actorEmail: session.email, target: result.job?.id || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], realDelivery: false } });
-      return jsonResponse(res, result.ok ? 200 : 400, result);
+      const event = result.ok ? recordEmailEvent({ type: 'dispatched', email: result.job.to, source: 'send_queue_dry_run_dispatch', detail: result.job.id, actorEmail: session.email }) : null;
+      recordAuditEvent({ action: 'send_queue_dispatch_dry_run', actorEmail: session.email, target: result.job?.id || null, status: result.ok ? 'ok' : 'rejected', details: { eventId: event?.event?.id || null, errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result.ok ? { ...result, event: event?.event || null } : result);
     }
 
     if (url.pathname === '/api/send-queue/enqueue' || url.pathname === '/send-queue/enqueue') {

@@ -31,7 +31,8 @@ export const emailReportingSummary = (env = process.env) => {
       emailEvents: emailEvents.count,
       auditEvents: audit.count,
       bounces: eventCounts.bounce || 0,
-      complaints: eventCounts.complaint || 0
+      complaints: eventCounts.complaint || 0,
+      dispatched: eventCounts.dispatched || 0
     },
     suppressionCounts,
     eventCounts,
@@ -43,6 +44,7 @@ export const emailReportingSummary = (env = process.env) => {
         consentSource: 'enforced_for_test_send_and_queue',
         suppression: 'enforced_for_queue',
         unsubscribe: 'baseline_records_suppression',
+        dispatchEvents: 'dry_run_dispatch_records_event',
         bounceComplaint: 'manual_ingest_records_event_and_suppression',
         rateLimits: 'dry_run_warmup_enforced',
         audit: 'baseline_in_memory'

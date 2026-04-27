@@ -40,6 +40,7 @@
 - [x] Rate limits and warm-up controls baseline
 - [x] Bounce/complaint ingestion baseline
 - [x] Event tracking baseline
+- [x] Dry-run dispatch event tracking baseline
 
 ## Phase 4 — Remote PostgreSQL pulls
 

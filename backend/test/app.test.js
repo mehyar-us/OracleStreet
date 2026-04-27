@@ -884,9 +884,16 @@ test('send queue enqueues and dispatches only compliant dry-run messages without
     assert.equal(dispatched.body.job.status, 'dispatched_dry_run');
     assert.equal(dispatched.body.job.safety.dispatchMode, 'no_external_delivery');
     assert.equal(dispatched.body.realDelivery, false);
+    assert.equal(dispatched.body.event.type, 'dispatched');
+    assert.equal(dispatched.body.event.email, 'owned-inbox@example.test');
 
     const afterDispatch = await request('/api/send-queue', { headers: { cookie } });
     assert.equal(afterDispatch.body.jobs[0].status, 'dispatched_dry_run');
+    const events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 1);
+    assert.equal(events.body.events[0].type, 'dispatched');
+    const reporting = await request('/api/email/reporting', { headers: { cookie } });
+    assert.equal(reporting.body.totals.dispatched, 1);
 
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'send_queue_dispatch_dry_run'));
@@ -1070,6 +1077,23 @@ test('manual bounce and complaint ingest records events and suppresses recipient
     assert.equal(blocked.status, 400);
     assert.ok(blocked.body.errors.includes('recipient_suppressed'));
     assert.equal(blocked.body.suppression.reason, 'bounce');
+  });
+});
+
+test('manual event ingest rejects internal dispatched events', async () => {
+  resetEmailEventsForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const res = await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [{ type: 'dispatched', email: 'owned@example.test', source: 'manual' }] })
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, false);
+    assert.equal(res.body.rejectedCount, 1);
+    assert.ok(res.body.rejected[0].errors.includes('valid_event_type_required'));
   });
 });
 
