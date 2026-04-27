@@ -35,8 +35,8 @@
 - [x] Send queue dry-run enqueue baseline
 - [x] Suppression/unsubscribe handling baseline
 - [x] Rate limits and warm-up controls baseline
-- [ ] Bounce/complaint ingestion
-- [ ] Event tracking
+- [x] Bounce/complaint ingestion baseline
+- [x] Event tracking baseline
 
 ## Phase 4 — Remote PostgreSQL pulls
 

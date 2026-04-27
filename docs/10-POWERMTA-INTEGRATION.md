@@ -97,7 +97,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 4. [x] Dry-run send queue enqueue baseline with consent/source/unsubscribe gates and no real delivery.
 5. [x] Suppression/unsubscribe baseline that blocks queued dry-run recipients.
 6. [x] Dry-run rate limit/warm-up baseline with per-domain and global hourly caps.
-7. [ ] Bounce ingestion.
+7. [x] Manual bounce/complaint ingest baseline that records events and suppresses recipients.
 8. [ ] Dashboard reporting.
 
 ## Current validation endpoints
@@ -110,6 +110,8 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
 - `POST /api/unsubscribe` records an unsubscribe suppression without sending mail; this is the baseline for future tracked unsubscribe links.
 - `GET /api/email/rate-limits` requires an admin session and returns dry-run warm-up caps. Queue enqueue enforces global and per-domain hourly limits before any provider path.
+- `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery.
+- `GET /api/email/events` requires an admin session and lists in-memory event records until PostgreSQL persistence is wired.
 
 ## PMTA-first development priority
 

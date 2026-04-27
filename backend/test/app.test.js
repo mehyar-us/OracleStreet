@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
+import { resetEmailEventsForTests } from '../lib/emailEvents.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
 import { resetSuppressionsForTests } from '../lib/suppressions.js';
 
@@ -521,4 +522,65 @@ test('dry-run queue enforces per-domain warmup rate limit', async () => {
 test('rate-limit endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/rate-limits');
   assert.equal(res.status, 401);
+});
+
+test('email event ingest requires admin session', async () => {
+  const res = await request('/api/email/events/ingest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ events: [] })
+  });
+  assert.equal(res.status, 401);
+});
+
+test('manual bounce and complaint ingest records events and suppresses recipients', async () => {
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  resetEmailEventsForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const ingest = await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [
+        { type: 'bounce', email: 'Bounced@Example.test', source: 'pmta csv smoke', detail: '550 mailbox unavailable' },
+        { type: 'complaint', email: 'complaint@example.test', source: 'manual abuse inbox' },
+        { type: 'open', email: 'not-allowed@example.test', source: 'tracking pixel' }
+      ] })
+    });
+    assert.equal(ingest.status, 200);
+    assert.equal(ingest.body.ok, false);
+    assert.equal(ingest.body.acceptedCount, 2);
+    assert.equal(ingest.body.rejectedCount, 1);
+    assert.equal(ingest.body.accepted[0].event.email, 'bounced@example.test');
+    assert.equal(ingest.body.accepted[0].suppression.reason, 'bounce');
+    assert.ok(ingest.body.rejected[0].errors.includes('valid_event_type_required'));
+
+    const events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.status, 200);
+    assert.equal(events.body.count, 2);
+
+    const blocked = await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'bounced@example.test',
+        subject: 'Should be blocked',
+        html: '<p>dry run</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(blocked.status, 400);
+    assert.ok(blocked.body.errors.includes('recipient_suppressed'));
+    assert.equal(blocked.body.suppression.reason, 'bounce');
+  });
+});
+
+test('email event endpoints also work behind nginx stripped api prefix', async () => {
+  const list = await request('/email/events');
+  assert.equal(list.status, 401);
+  const ingest = await request('/email/events/ingest', { method: 'POST' });
+  assert.equal(ingest.status, 401);
 });

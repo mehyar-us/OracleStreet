@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { validateContactImport } from './lib/contacts.js';
+import { ingestEmailEvents, listEmailEvents } from './lib/emailEvents.js';
 import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
@@ -254,6 +255,23 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = recordUnsubscribe({ email: body.email, source: body.source || 'unsubscribe_endpoint' });
       return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/email/events' || url.pathname === '/email/events') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      return jsonResponse(res, 200, listEmailEvents());
+    }
+
+    if (url.pathname === '/api/email/events/ingest' || url.pathname === '/email/events/ingest') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = ingestEmailEvents({ events: body.events, actorEmail: session.email });
+      return jsonResponse(res, result.error ? 400 : 200, result);
     }
 
     return jsonResponse(res, 404, {
