@@ -4,7 +4,7 @@ import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateC
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { ingestEmailEvents, listEmailEvents, recordEmailEvent } from './lib/emailEvents.js';
-import { dryRunSend, getEmailProviderConfig, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
+import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { emailReportingSummary, sendingReadinessSummary } from './lib/reporting.js';
@@ -377,6 +377,15 @@ export const createHandler = () => {
         validation,
         safeDefault: 'network_probe_skipped_no_delivery'
       });
+    }
+
+    if (url.pathname === '/api/email/provider/adapter' || url.pathname === '/email/provider/adapter') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const adapter = getProviderAdapter();
+      recordAuditEvent({ action: 'email_provider_adapter_view', actorEmail: session.email, target: adapter.name, details: { ok: adapter.ok, dispatchMode: adapter.capabilities.dispatchMode, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, adapter);
     }
 
     if (url.pathname === '/api/email/local-capture' || url.pathname === '/email/local-capture') {

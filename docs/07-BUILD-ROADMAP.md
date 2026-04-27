@@ -32,6 +32,7 @@
 - [x] PowerMTA config validation baseline
 - [x] Controlled test-send dry-run endpoint
 - [x] SMTP/provider adapter config validation
+- [x] Safe provider adapter interface baseline
 - [x] PowerMTA SMTP adapter config validation
 - [x] Send queue dry-run enqueue baseline
 - [x] Campaign dry-run approval baseline

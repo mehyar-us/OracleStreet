@@ -123,6 +123,53 @@ export const validateSelectedProviderConfig = (env = process.env) => {
   return validatePowerMtaConfig(env);
 };
 
+export const getProviderAdapter = (env = process.env) => {
+  const config = getEmailProviderConfig(env);
+  const validation = validateSelectedProviderConfig(env);
+  const adapterCapabilities = {
+    'dry-run': {
+      externalDelivery: false,
+      dispatchMode: 'dry-run-only',
+      supportsLocalCapture: false,
+      supportsSmtpTransport: false
+    },
+    'local-capture': {
+      externalDelivery: false,
+      dispatchMode: 'local-capture-only',
+      supportsLocalCapture: true,
+      supportsSmtpTransport: false
+    },
+    smtp: {
+      externalDelivery: false,
+      dispatchMode: 'configured-but-locked',
+      supportsLocalCapture: false,
+      supportsSmtpTransport: true
+    },
+    powermta: {
+      externalDelivery: false,
+      dispatchMode: 'configured-but-locked',
+      supportsLocalCapture: false,
+      supportsSmtpTransport: true
+    }
+  };
+
+  return {
+    ok: validation.ok,
+    name: config.provider,
+    mode: 'safe-provider-adapter',
+    config,
+    validation,
+    capabilities: adapterCapabilities[config.provider] || {
+      externalDelivery: false,
+      dispatchMode: 'unsupported',
+      supportsLocalCapture: false,
+      supportsSmtpTransport: false
+    },
+    canDeliverExternally: false,
+    realDeliveryAllowed: false
+  };
+};
+
 export const validateTestMessage = (message = {}) => {
   const errors = [];
   const to = String(message.to || '').trim().toLowerCase();
@@ -181,6 +228,7 @@ export const dryRunSend = (message, env = process.env) => {
     ok: true,
     mode: 'dry-run',
     provider: providerConfig.provider,
+    adapter: getProviderAdapter(env).capabilities.dispatchMode,
     providerMessageId,
     accepted: {
       to: validation.normalized.to,

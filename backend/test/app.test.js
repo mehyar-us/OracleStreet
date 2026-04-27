@@ -737,6 +737,51 @@ test('email provider validation accepts dry-run without network delivery', async
   });
 });
 
+test('provider adapter endpoint reports safe dispatch capability without delivery', async () => {
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/provider/adapter');
+    assert.equal(unauth.status, 401);
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const adapter = await request('/api/email/provider/adapter', { headers: { cookie } });
+    assert.equal(adapter.status, 200);
+    assert.equal(adapter.body.mode, 'safe-provider-adapter');
+    assert.equal(adapter.body.name, 'dry-run');
+    assert.equal(adapter.body.capabilities.dispatchMode, 'dry-run-only');
+    assert.equal(adapter.body.canDeliverExternally, false);
+    assert.equal(adapter.body.realDeliveryAllowed, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_provider_adapter_view'));
+  });
+});
+
+test('PowerMTA provider adapter remains configured-but-locked and redacts secrets', async () => {
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MAIL_PROVIDER: 'powermta',
+    ORACLESTREET_POWERMTA_HOST: 'pmta.example.test',
+    ORACLESTREET_POWERMTA_PORT: '2525',
+    ORACLESTREET_POWERMTA_USERNAME: 'pmta-user',
+    ORACLESTREET_POWERMTA_PASSWORD: 'pmta-secret',
+    ORACLESTREET_DEFAULT_FROM_EMAIL: 'sender@example.test'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const adapter = await request('/api/email/provider/adapter', { headers: { cookie: login.headers.get('set-cookie') } });
+    assert.equal(adapter.status, 200);
+    assert.equal(adapter.body.ok, true);
+    assert.equal(adapter.body.name, 'powermta');
+    assert.equal(adapter.body.capabilities.supportsSmtpTransport, true);
+    assert.equal(adapter.body.capabilities.dispatchMode, 'configured-but-locked');
+    assert.equal(adapter.body.capabilities.externalDelivery, false);
+    assert.equal(adapter.body.realDeliveryAllowed, false);
+    assert.ok(!JSON.stringify(adapter.body).includes('pmta-secret'));
+  });
+});
+
 test('local capture provider validates and records only controlled-domain messages without delivery', async () => {
   resetLocalCaptureForTests();
   await withEnv({
@@ -846,6 +891,8 @@ test('SMTP provider validation rejects missing safe sender config', async () => 
 test('email provider validation endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/provider/validate', { method: 'POST' });
   assert.equal(res.status, 401);
+  const adapter = await request('/email/provider/adapter');
+  assert.equal(adapter.status, 401);
   const capture = await request('/email/local-capture');
   assert.equal(capture.status, 401);
 });
