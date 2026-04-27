@@ -16,7 +16,8 @@
 - [x] Teach deploy to preserve/generate `ORACLESTREET_DATABASE_URL` and apply migrations
 - [ ] Convert in-memory module baselines to PostgreSQL-backed persistence
 - [x] Build initial visible admin screens for contacts, data sources, templates, campaigns, send queue, reputation, and reporting
-- [ ] Convert initial visible admin screens from safe-read panels into full CRUD workflows
+- [x] Add visible contact import validate/store workflow to admin workbench
+- [ ] Convert remaining visible admin screens from safe-read panels into full CRUD workflows
 - [ ] Add SELECT-only remote PostgreSQL query/probe tool
 - [ ] Add reputation dashboard and warm-up controls UI
 

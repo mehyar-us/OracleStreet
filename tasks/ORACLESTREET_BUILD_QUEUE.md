@@ -41,13 +41,13 @@ Verification:
 
 ### O3 — Visible admin CMS screens
 
-Status: initial safe-read workbench shipped; full CRUD workflows still pending.
+Status: initial safe-read workbench shipped; contact import validate/store workflow shipped; remaining CRUD workflows still pending.
 
 Acceptance:
 - Boss can log in and see actual modules, not just placeholder cards.
 - UI must expose contacts, data sources, templates, campaigns, send queue, suppressions, reputation/readiness, reporting, and admin/user surfaces.
 - Each screen can initially be safe-read or dry-run, but it must be visible and tied to backend routes.
-- Next upgrade: replace safe-read panels with forms/actions for import, template creation, campaign draft/approval, queue dispatch, and source setup.
+- Next upgrade: replace safe-read panels with forms/actions for template creation, campaign draft/approval, queue dispatch, and source setup.
 
 Verification:
 - Browser/manual smoke of `/` after login.

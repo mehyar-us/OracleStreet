@@ -45,6 +45,7 @@
     .screen p, .screen li { color:var(--muted); line-height:1.45; font-size:13px; }
     .screen ul { margin:8px 0 0; padding-left:18px; }
     .toolbar { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    textarea { width:100%; min-height:86px; border:1px solid var(--line); border-radius:12px; background:#070b12; color:var(--text); padding:12px 14px; font:inherit; resize:vertical; }
     .toolbar button { padding:8px 10px; font-size:12px; }
     .kv { display:grid; grid-template-columns:1fr auto; gap:6px 12px; color:var(--muted); font-size:13px; }
     .kv strong { color:var(--gold); }
@@ -83,6 +84,7 @@
         <div id="workbench-status" class="status"></div>
         <div class="workbench-grid">
           <section class="screen" id="contacts-screen"><h3>Contacts</h3><p>Loading…</p></section>
+          <section class="screen" id="contact-import-screen"><h3>Contact import</h3><p>Loading…</p></section>
           <section class="screen" id="templates-screen"><h3>Templates</h3><p>Loading…</p></section>
           <section class="screen" id="campaigns-screen"><h3>Campaigns</h3><p>Loading…</p></section>
           <section class="screen" id="send-queue-screen"><h3>Send queue</h3><p>Loading…</p></section>
@@ -125,6 +127,32 @@
       document.querySelector(id).innerHTML = `<h3>${title}</h3>${body}`;
     };
 
+    const parseContactsCsv = (csv) => csv.split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [email, consentStatus = 'opt_in', source = 'admin-ui-import', firstName = '', lastName = ''] = line.split(',').map((part) => part.trim());
+        return { email, consentStatus, source, firstName, lastName };
+      });
+
+    const submitContactImport = async (mode) => {
+      const csv = document.querySelector('#contact-import-csv').value;
+      const contacts = parseContactsCsv(csv);
+      const result = document.querySelector('#contact-import-result');
+      result.textContent = `${mode === 'validate' ? 'Validating' : 'Importing'} ${contacts.length} contact row(s)…`;
+      const res = await fetch(`/api/contacts/import${mode === 'validate' ? '/validate' : ''}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contacts })
+      });
+      const body = await res.json();
+      result.textContent = body.ok
+        ? `${mode === 'validate' ? 'Valid' : 'Imported'}: ${body.acceptedCount ?? body.importedCount ?? 0} accepted, ${body.rejectedCount ?? 0} rejected, ${body.totalContacts ?? 'not stored'} total.`
+        : `Rejected: ${body.error || (body.rejected || []).map((row) => `${row.email || `row ${row.index + 1}`}: ${row.errors.join('/')}`).join('; ')}`;
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (mode === 'import' && body.ok) await loadWorkbench();
+    };
+
     const listItems = (items, empty, render) => items.length
       ? `<ul>${items.slice(0, 5).map(render).join('')}</ul>`
       : `<p>${empty}</p>`;
@@ -142,6 +170,9 @@
         safeJson('/api/audit-log', { events: [], count: 0 })
       ]);
       setScreen('#contacts-screen', 'Contacts', `<div class="kv"><span>Total contacts</span><strong>${contacts.count || 0}</strong></div>${listItems(contacts.contacts || [], 'No contacts imported yet. Use the backend CSV import API with consent/source fields.', (c) => `<li>${c.email} · ${c.consentStatus || 'consent'} · ${c.source || 'source missing'}</li>`)}`);
+      setScreen('#contact-import-screen', 'Contact import', `<p>Paste one contact per line as <code>email,consentStatus,source,firstName,lastName</code>. Explicit consent and source are required; validation can run without storing rows.</p><textarea id="contact-import-csv" placeholder="reader@example.test,opt_in,owned newsletter,Ada,Lovelace"></textarea><div class="toolbar"><button id="validate-contact-import" type="button">Validate contacts</button><button id="run-contact-import" class="secondary" type="button">Import valid batch</button></div><div id="contact-import-result" class="status"></div>`);
+      document.querySelector('#validate-contact-import').addEventListener('click', () => submitContactImport('validate'));
+      document.querySelector('#run-contact-import').addEventListener('click', () => submitContactImport('import'));
       setScreen('#templates-screen', 'Templates', `<div class="kv"><span>Templates</span><strong>${templates.count || 0}</strong></div>${listItems(templates.templates || [], 'No templates yet. Create compliant templates with unsubscribe language before campaign dry-runs.', (t) => `<li>${t.name || t.id} · ${t.subject || 'no subject'} · safe preview ready</li>`)}`);
       setScreen('#campaigns-screen', 'Campaigns', `<div class="kv"><span>Campaigns</span><strong>${campaigns.count || 0}</strong></div>${listItems(campaigns.campaigns || [], 'No campaigns yet. Drafts can be estimated, approved for dry-run, scheduled, then queued safely.', (c) => `<li>${c.name || c.id} · ${c.status} · audience ${c.estimatedAudience || 0}</li>`)}`);
       setScreen('#send-queue-screen', 'Send queue', `<div class="kv"><span>Jobs</span><strong>${queue.count || 0}</strong><span>Delivery mode</span><strong>dry-run</strong></div>${listItems(queue.jobs || [], 'Queue empty. Campaign enqueue creates dry-run jobs only.', (j) => `<li>${j.recipientEmail || j.to} · ${j.status} · ${j.campaignId || 'manual'}</li>`)}`);

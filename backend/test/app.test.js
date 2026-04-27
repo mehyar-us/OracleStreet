@@ -218,6 +218,11 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   const html = readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
   assert.match(html, /Admin CMS workbench/);
   assert.match(html, /contacts-screen/);
+  assert.match(html, /contact-import-screen/);
+  assert.match(html, /api\/contacts\/import/);
+  assert.match(html, /mode === 'validate' \? '\/validate'/);
+  assert.match(html, /Validate contacts/);
+  assert.match(html, /Import valid batch/);
   assert.match(html, /templates-screen/);
   assert.match(html, /campaigns-screen/);
   assert.match(html, /send-queue-screen/);
