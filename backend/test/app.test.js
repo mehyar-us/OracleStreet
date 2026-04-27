@@ -229,6 +229,13 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/templates\/preview/);
   assert.match(html, /Create safe template/);
   assert.match(html, /campaigns-screen/);
+  assert.match(html, /campaign-builder-screen/);
+  assert.match(html, /api\/campaigns\/estimate/);
+  assert.match(html, /api\/campaigns\/approve-dry-run/);
+  assert.match(html, /api\/campaigns\/schedule-dry-run/);
+  assert.match(html, /api\/campaigns\/enqueue-dry-run/);
+  assert.match(html, /Estimate audience/);
+  assert.match(html, /Enqueue dry-run/);
   assert.match(html, /send-queue-screen/);
   assert.match(html, /suppressions-screen/);
   assert.match(html, /remote-db-screen/);
