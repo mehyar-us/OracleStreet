@@ -40,3 +40,7 @@ The VPS reset backup is stored under `/root/oraclestreet-reset-backup-*`. Deploy
 ## Auto-secrets and watchdog
 
 Deploy now self-generates missing runtime secrets on the VPS and installs a systemd watchdog timer. See `docs/08-WATCHDOG-AND-AUTOSECRETS.md`.
+
+## Current domain wiring
+
+OracleStreet is now wired toward `stuffprettygood.com` on VPS `187.124.147.49`. See `docs/12-DOMAIN-CLOUDFLARE.md`.

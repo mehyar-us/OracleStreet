@@ -37,3 +37,7 @@ The flow borrows the reliable parts of common SaaS deployment patterns: commit-a
 - `systemctl is-active oraclestreet-backend nginx docker ssh` passes.
 - `curl http://127.0.0.1/api/health` returns OK on VPS.
 - Frontend returns HTTP `200` on VPS.
+
+## Current domain wiring
+
+OracleStreet is now wired toward `stuffprettygood.com` on VPS `187.124.147.49`. See `docs/12-DOMAIN-CLOUDFLARE.md`.

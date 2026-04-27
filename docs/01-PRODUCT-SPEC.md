@@ -38,3 +38,7 @@ Comparable category: lightweight Mailchimp/Brevo-style campaign management, but 
 - Every deploy smoke-tested.
 - IP-based access first; domain and TLS later.
 - Email sending provider abstraction so SMTP, Brevo, SES, or another provider can be swapped later.
+
+## Current domain wiring
+
+OracleStreet is now wired toward `stuffprettygood.com` on VPS `187.124.147.49`. See `docs/12-DOMAIN-CLOUDFLARE.md`.

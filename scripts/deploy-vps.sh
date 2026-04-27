@@ -47,6 +47,8 @@ ensure_secret ORACLESTREET_APP_ENV 'printf production'
 ensure_secret ORACLESTREET_BACKEND_HOST 'printf 127.0.0.1'
 ensure_secret ORACLESTREET_BACKEND_PORT 'printf 4000'
 ensure_secret ORACLESTREET_FRONTEND_ROOT 'printf /var/www/oraclestreet'
+ensure_secret ORACLESTREET_DOMAIN 'printf stuffprettygood.com'
+ensure_secret ORACLESTREET_PUBLIC_BASE_URL 'printf http://stuffprettygood.com'
 ensure_secret ORACLESTREET_SESSION_SECRET 'openssl rand -hex 32'
 ensure_secret ORACLESTREET_INTERNAL_API_KEY 'openssl rand -hex 24'
 
@@ -103,6 +105,37 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 TIMER
+
+cat > /etc/nginx/sites-available/oraclestreet <<'NGINX'
+# OracleStreet production baseline
+# Frontend root: /var/www/oraclestreet
+# Backend target: http://127.0.0.1:4000
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name stuffprettygood.com www.stuffprettygood.com 187.124.147.49 _;
+
+    root /var/www/oraclestreet;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+NGINX
+rm -f /etc/nginx/sites-enabled/*
+ln -s /etc/nginx/sites-available/oraclestreet /etc/nginx/sites-enabled/oraclestreet
 
 cd /opt/oraclestreet/backend
 if [ -f package.json ]; then
