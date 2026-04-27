@@ -22,7 +22,7 @@
 - [x] Contacts list/import baseline
 - [x] Segments/safe audience estimate baseline
 - [ ] Campaign CRUD
-- [ ] Templates
+- [x] Templates safe preview baseline
 - [x] Audit log baseline
 
 ## Phase 3 — PMTA-first Email Engine

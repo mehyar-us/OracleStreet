@@ -9,6 +9,7 @@ import { resetEmailEventsForTests } from '../lib/emailEvents.js';
 import { resetSegmentsForTests } from '../lib/segments.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
 import { resetSuppressionsForTests } from '../lib/suppressions.js';
+import { resetTemplatesForTests } from '../lib/templates.js';
 
 const request = async (path, options = {}) => {
   const server = http.createServer(createHandler());
@@ -131,6 +132,7 @@ test('dashboard route returns protected safe-test summary for admin session', as
   resetSendQueueForTests();
   resetSuppressionsForTests();
   resetEmailEventsForTests();
+  resetTemplatesForTests();
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
@@ -150,6 +152,7 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.summary.sendMode, 'safe-test-only');
     assert.equal(dashboard.body.summary.contacts, 0);
     assert.equal(dashboard.body.summary.segments, 0);
+    assert.equal(dashboard.body.summary.templates, 0);
     assert.equal(dashboard.body.summary.queuedSends, 0);
     assert.equal(dashboard.body.emailReporting.mode, 'safe-reporting');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
@@ -454,6 +457,80 @@ test('segment endpoints also work behind nginx stripped api prefix', async () =>
   assert.equal(list.status, 401);
   const estimate = await request('/segments/estimate', { method: 'POST' });
   assert.equal(estimate.status, 401);
+});
+
+test('template endpoints require admin session', async () => {
+  const list = await request('/api/templates');
+  assert.equal(list.status, 401);
+  const create = await request('/api/templates', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Promo', subject: 'Hi', html: '<p>unsubscribe</p>' })
+  });
+  assert.equal(create.status, 401);
+  const preview = await request('/api/templates/preview', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'tpl_000001' })
+  });
+  assert.equal(preview.status, 401);
+});
+
+test('templates require unsubscribe language and render safe previews without delivery', async () => {
+  resetAuditLogForTests();
+  resetTemplatesForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/templates', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Bad template', subject: 'Hi {{firstName}}', html: '<p>Hello</p>' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('unsubscribe_language_required'));
+
+    const created = await request('/api/templates', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        name: 'Compliant promo',
+        subject: 'Hi {{firstName}}',
+        html: '<p>Hello {{firstName}}</p><p>unsubscribe anytime</p>',
+        text: 'Hello {{firstName}}\nunsubscribe anytime'
+      })
+    });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.mode, 'in-memory-template');
+
+    const preview = await request('/api/templates/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ id: created.body.template.id, data: { firstName: 'Pat' } })
+    });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.body.mode, 'safe-template-preview');
+    assert.equal(preview.body.realDelivery, false);
+    assert.equal(preview.body.rendered.subject, 'Hi Pat');
+    assert.match(preview.body.rendered.html, /Hello Pat/);
+
+    const list = await request('/api/templates', { headers: { cookie } });
+    assert.equal(list.body.count, 1);
+
+    const dashboard = await request('/api/dashboard', { headers: { cookie } });
+    assert.equal(dashboard.body.summary.templates, 1);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'template_create'));
+    assert.ok(audit.body.events.some((event) => event.action === 'template_preview'));
+  });
+});
+
+test('template endpoints also work behind nginx stripped api prefix', async () => {
+  const list = await request('/templates');
+  assert.equal(list.status, 401);
+  const preview = await request('/templates/preview', { method: 'POST' });
+  assert.equal(preview.status, 401);
 });
 
 

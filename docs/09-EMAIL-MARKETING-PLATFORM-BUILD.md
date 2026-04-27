@@ -57,9 +57,9 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 ### 4. Campaign CMS
 
 - campaigns CRUD
-- templates CRUD
+- [x] templates CRUD baseline with unsubscribe-language gate
 - [x] segments/saved filters baseline with safe audience estimate and suppression exclusion
-- preview/render test
+- [x] preview/render test baseline with no delivery
 
 ### 5. Send engine
 
