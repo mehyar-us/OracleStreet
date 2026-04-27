@@ -101,8 +101,7 @@ Every OracleStreet loop run must:
 ## Next Recommended Slices
 
 1. PostgreSQL-backed repositories for contacts/suppressions/templates/campaigns/send queue/events/users, replacing remaining in-memory state.
-2. List hygiene dashboard and cleanup planner UI/API.
-3. Reputation auto-pause threshold controls UI/API.
-4. Warm-up policy persistence and campaign-calendar cap enforcement.
-5. Live remote PostgreSQL read-only probe/query execution behind pg-driver, encrypted creds, timeout/limit, and explicit operator approval.
-6. Controlled one-recipient MTA live-test runbook and gate.
+2. Warm-up policy persistence and campaign-calendar cap enforcement.
+3. Live remote PostgreSQL read-only probe/query execution behind pg-driver, encrypted creds, timeout/limit, and explicit operator approval.
+4. Controlled one-recipient MTA live-test runbook and gate.
+5. Multi-user/RBAC admin workflow.

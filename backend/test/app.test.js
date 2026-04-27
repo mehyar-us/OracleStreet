@@ -10,6 +10,7 @@ import { validateDatabaseConfig } from '../lib/database.js';
 import { resetDataSourcesForTests } from '../lib/dataSources.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
 import { resetLocalCaptureForTests } from '../lib/emailProvider.js';
+import { resetReputationControlsForTests } from '../lib/reputationControls.js';
 import { resetSegmentsForTests } from '../lib/segments.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
 import { resetSuppressionsForTests } from '../lib/suppressions.js';
@@ -261,6 +262,10 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/warmup\/plan/);
   assert.match(html, /Plan warm-up preview/);
   assert.match(html, /warmup-domain/);
+  assert.match(html, /api\/email\/reputation\/policy/);
+  assert.match(html, /api\/email\/reputation\/auto-pause/);
+  assert.match(html, /Save auto-pause thresholds/);
+  assert.match(html, /Evaluate auto-pause/);
   assert.match(html, /reporting-screen/);
   assert.match(html, /api\/email\/reporting\/export/);
   assert.match(html, /Build CSV export/);
@@ -2400,9 +2405,84 @@ test('warm-up planner requires admin session and returns safe sender-domain prev
   });
 });
 
-test('warm-up planner endpoint also works behind nginx stripped api prefix', async () => {
-  const res = await request('/email/warmup/plan', { method: 'POST' });
-  assert.equal(res.status, 401);
+test('reputation auto-pause threshold controls are protected, recommendation-only, and auditable', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetReputationControlsForTests();
+  await withAdminEnv(async () => {
+    const unauthPolicy = await request('/api/email/reputation/policy');
+    assert.equal(unauthPolicy.status, 401);
+    const unauthEvaluate = await request('/api/email/reputation/auto-pause');
+    assert.equal(unauthEvaluate.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const saved = await request('/api/email/reputation/policy', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        domain: 'Example.test',
+        bounceRateThreshold: 0.2,
+        complaintRateThreshold: 0.5,
+        deferralRateThreshold: 0.5,
+        providerErrorRateThreshold: 0.5,
+        minimumEvents: 3
+      })
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.mode, 'reputation-auto-pause-policy-saved');
+    assert.equal(saved.body.policy.domain, 'example.test');
+    assert.equal(saved.body.policy.actionMode, 'recommendation_only');
+    assert.equal(saved.body.mutationScope, 'policy_only_no_queue_or_provider_pause');
+    assert.equal(saved.body.realDeliveryAllowed, false);
+
+    await request('/api/email/delivery-events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [
+        { type: 'delivered', email: 'one@example.test', source: 'qa' },
+        { type: 'deferred', email: 'two@example.test', source: 'qa' }
+      ] })
+    });
+    await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [
+        { type: 'bounce', email: 'three@example.test', source: 'qa' }
+      ] })
+    });
+
+    const evaluation = await request('/api/email/reputation/auto-pause?domain=example.test', { headers: { cookie } });
+    assert.equal(evaluation.status, 200);
+    assert.equal(evaluation.body.mode, 'reputation-auto-pause-evaluation');
+    assert.equal(evaluation.body.recommendPause, true);
+    assert.ok(evaluation.body.thresholdBreaches.includes('bounce_rate_threshold_exceeded'));
+    assert.equal(evaluation.body.safety.recommendationOnly, true);
+    assert.equal(evaluation.body.safety.noQueueMutation, true);
+    assert.equal(evaluation.body.realDeliveryAllowed, false);
+
+    const rejected = await request('/api/email/reputation/policy', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ domain: 'bad domain', bounceRateThreshold: 2 })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('valid_sender_domain_required'));
+    assert.ok(rejected.body.errors.includes('bounceRateThreshold_must_be_between_0_and_1'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_reputation_policy_save'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_reputation_auto_pause_evaluate'));
+  });
+});
+
+test('warm-up and reputation endpoints also work behind nginx stripped api prefix', async () => {
+  const warmup = await request('/email/warmup/plan', { method: 'POST' });
+  assert.equal(warmup.status, 401);
+  const policy = await request('/email/reputation/policy');
+  assert.equal(policy.status, 401);
+  const autoPause = await request('/email/reputation/auto-pause');
+  assert.equal(autoPause.status, 401);
 });
 
 test('sending readiness endpoint requires admin session and keeps real delivery locked', async () => {

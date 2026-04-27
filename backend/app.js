@@ -19,6 +19,7 @@ import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { rbacReadiness } from './lib/rbacReadiness.js';
+import { evaluateAutoPause, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { campaignReportingSummary, emailReportingSummary, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
@@ -126,6 +127,7 @@ const dashboardSummary = (session) => {
   const dataSourceList = listDataSources();
   const dataSourceSyncRunList = listDataSourceSyncRuns();
   const listHygiene = buildListHygienePlan();
+  const reputationAutoPause = evaluateAutoPause();
   const campaignEngagement = campaignReporting.campaigns.reduce((totals, campaign) => {
     totals.opens += campaign.engagement?.opens || 0;
     totals.clicks += campaign.engagement?.clicks || 0;
@@ -154,6 +156,8 @@ const dashboardSummary = (session) => {
       campaignClickRate: campaignEngagement.denominator > 0 ? campaignEngagement.clicks / campaignEngagement.denominator : 0,
       hygieneRiskContacts: listHygiene.totals.riskyContacts,
       hygieneCleanupActions: listHygiene.recommendations.length,
+      reputationRecommendPause: reputationAutoPause.recommendPause,
+      reputationBreaches: reputationAutoPause.thresholdBreaches.length,
       emailProvider: emailReporting.provider.provider,
       sendMode: emailReporting.provider.sendMode
     },
@@ -644,6 +648,33 @@ export const createHandler = () => {
       const result = planWarmupSchedule(body);
       recordAuditEvent({ action: 'email_warmup_plan_preview', actorEmail: session.email, target: result.domain || body.domain || null, status: result.ok ? 'ok' : 'rejected', details: { days: result.inputs?.days || body.days || null, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/email/reputation/policy' || url.pathname === '/email/reputation/policy') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') {
+        const result = getReputationPolicy();
+        recordAuditEvent({ action: 'email_reputation_policy_view', actorEmail: session.email, target: result.policy.domain, details: { actionMode: result.policy.actionMode, realDeliveryAllowed: false } });
+        return jsonResponse(res, 200, result);
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+        const result = saveReputationPolicy(body);
+        recordAuditEvent({ action: 'email_reputation_policy_save', actorEmail: session.email, target: result.policy?.domain || body.domain || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], actionMode: result.policy?.actionMode || 'recommendation_only', realDeliveryAllowed: false } });
+        return jsonResponse(res, result.ok ? 200 : 400, result);
+      }
+      return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/email/reputation/auto-pause' || url.pathname === '/email/reputation/auto-pause') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = evaluateAutoPause({ domain: url.searchParams.get('domain') || undefined });
+      recordAuditEvent({ action: 'email_reputation_auto_pause_evaluate', actorEmail: session.email, target: result.domain, status: result.recommendPause ? 'rejected' : 'ok', details: { thresholdBreaches: result.thresholdBreaches, insufficientData: result.insufficientData, recommendationOnly: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/send-queue/dispatch-next-dry-run' || url.pathname === '/send-queue/dispatch-next-dry-run') {

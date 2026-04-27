@@ -47,7 +47,7 @@ Acceptance:
 - Boss can log in and see actual modules, not just placeholder cards.
 - UI must expose contacts, data sources, templates, campaigns, send queue, suppressions, reputation/readiness, reporting, and admin/user surfaces.
 - Each screen can initially be safe-read or dry-run, but it must be visible and tied to backend routes.
-- Next upgrade: replace remaining safe-read panels with forms/actions for live-gated remote source probe/schema discovery, reputation auto-pause thresholds, and user/RBAC readiness.
+- Next upgrade: replace remaining safe-read panels with forms/actions for live-gated remote source probe/schema discovery, warm-up policy persistence/campaign cap enforcement, and user/RBAC readiness.
 
 Verification:
 - Browser/manual smoke of `/` after login.
@@ -112,11 +112,12 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. Reputation auto-pause threshold controls.
-2. Warm-up policy persistence and campaign schedule cap enforcement.
-3. PostgreSQL-backed repositories for remaining in-memory modules.
-4. Controlled one-recipient MTA live-test runbook/gate.
-5. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
+1. Warm-up policy persistence and campaign schedule cap enforcement.
+2. PostgreSQL-backed repositories for remaining in-memory modules.
+3. Controlled one-recipient MTA live-test runbook/gate.
+4. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
+5. Multi-user/RBAC admin workflow.
 
 Latest shipped slice:
+- Reputation auto-pause threshold controls: `GET/POST /api/email/reputation/policy` and `GET /api/email/reputation/auto-pause` let operators configure recommendation-only bounce/complaint/deferral/provider-error thresholds and evaluate events without mutating queues/providers or unlocking delivery.
 - List hygiene dashboard + cleanup planner API/UI: `GET /api/list-hygiene/plan` computes duplicate/risky/suppressed/stale/source-quality/domain-concentration signals without mutating contacts, probing networks, or unlocking delivery; the Contacts workbench now surfaces cleanup recommendations.

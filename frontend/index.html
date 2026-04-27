@@ -445,18 +445,66 @@
       result.innerHTML = `Warm-up preview for <strong>${body.domain}</strong>: ${body.schedule.length} day(s), day 1 cap ${body.schedule[0].dailyCap}, final cap ${body.schedule.at(-1).dailyCap}. Real delivery <strong>${body.realDeliveryAllowed}</strong>.<ul>${body.schedule.slice(0, 5).map((day) => `<li>Day ${day.day}: ${day.dailyCap}/day, ${day.perHourCap}/hour, pause on bounce ${Math.round(day.bouncePauseThreshold * 1000) / 10}% or complaint ${day.complaintPauseThreshold * 100}%</li>`).join('')}</ul>`;
     };
 
+    const reputationPayload = () => ({
+      domain: document.querySelector('#reputation-domain').value,
+      bounceRateThreshold: Number(document.querySelector('#reputation-bounce').value || 0.03),
+      complaintRateThreshold: Number(document.querySelector('#reputation-complaint').value || 0.001),
+      deferralRateThreshold: Number(document.querySelector('#reputation-deferral').value || 0.08),
+      providerErrorRateThreshold: Number(document.querySelector('#reputation-provider-error').value || 0.02),
+      minimumEvents: Number(document.querySelector('#reputation-min-events').value || 25)
+    });
+
+    const renderAutoPauseResult = (body) => {
+      const result = document.querySelector('#reputation-policy-result');
+      result.className = `status ${body.ok ? (body.recommendPause ? 'error' : 'ok') : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'reputation_policy_rejected']).join(', ')}`;
+        return;
+      }
+      const breaches = (body.thresholdBreaches || []).length ? body.thresholdBreaches.join(', ') : 'none';
+      result.innerHTML = `Auto-pause evaluation for <strong>${body.domain}</strong>: recommendation <strong>${body.recommendPause ? 'pause recommended' : 'continue gated warm-up'}</strong>; breaches ${breaches}; events ${body.counts?.denominator || 0}; real delivery <strong>${body.realDeliveryAllowed}</strong>.`;
+    };
+
+    const saveReputationPolicyFromWorkbench = async () => {
+      const result = document.querySelector('#reputation-policy-result');
+      result.className = 'status';
+      result.textContent = 'Saving recommendation-only auto-pause thresholds…';
+      const body = await fetch('/api/email/reputation/policy', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(reputationPayload())
+      }).then((r) => r.json());
+      if (!body.ok) return renderAutoPauseResult(body);
+      result.className = 'status ok';
+      result.textContent = `Saved ${body.policy.domain} thresholds in ${body.persistenceMode}; queues/providers were not mutated.`;
+    };
+
+    const evaluateAutoPauseFromWorkbench = async () => {
+      const result = document.querySelector('#reputation-policy-result');
+      result.className = 'status';
+      result.textContent = 'Evaluating auto-pause thresholds…';
+      const domain = encodeURIComponent(document.querySelector('#reputation-domain').value || 'stuffprettygood.com');
+      const body = await fetch(`/api/email/reputation/auto-pause?domain=${domain}`, { cache: 'no-store' }).then((r) => r.json());
+      renderAutoPauseResult(body);
+    };
+
     const loadReputation = async () => {
       workbenchStatus.textContent = 'Loading reputation/readiness gates…';
-      const [provider, adapter, rateLimits, domain, sending, queueReadiness] = await Promise.all([
+      const [provider, adapter, rateLimits, domain, sending, queueReadiness, reputationPolicy, autoPause] = await Promise.all([
         safeJson('/api/email/config', {}),
         safeJson('/api/email/provider/adapter', {}),
         safeJson('/api/email/rate-limits', {}),
         safeJson('/api/email/domain-readiness', {}),
         safeJson('/api/email/sending-readiness', {}),
-        safeJson('/api/send-queue/readiness', {})
+        safeJson('/api/send-queue/readiness', {}),
+        safeJson('/api/email/reputation/policy', { policy: {} }),
+        safeJson('/api/email/reputation/auto-pause', { counts: {}, rates: {}, thresholdBreaches: [] })
       ]);
-      setScreen('#reputation-screen', 'Reputation/readiness', `<div class="kv"><span>Provider</span><strong>${provider.provider || provider.emailProvider || 'dry-run'}</strong><span>Adapter</span><strong>${adapter.status || adapter.mode || 'locked'}</strong><span>Global cap</span><strong>${rateLimits.globalPerWindow || 0}</strong><span>Domain ready</span><strong>${domain.ok ? 'yes' : 'blocked'}</strong><span>Real delivery</span><strong>${sending.realDeliveryAllowed ? 'unlocked' : 'locked'}</strong><span>Queue posture</span><strong>${queueReadiness.mode || 'safe'}</strong></div><p>Real sending remains blocked until consent, suppression, bounce/complaint, warm-up, DNS, audit, and explicit live-test gates pass.</p><p>Plan a sender-domain warm-up preview without mutating providers, queues, DNS, or delivery state.</p><label>Sender domain <input id="warmup-domain" value="stuffprettygood.com" /></label><label>Start daily cap <input id="warmup-start-cap" type="number" min="1" max="10000" value="25" /></label><label>Max daily cap <input id="warmup-max-cap" type="number" min="1" max="100000" value="500" /></label><label>Ramp percent <input id="warmup-ramp-percent" type="number" min="1" max="100" value="25" /></label><label>Days <input id="warmup-days" type="number" min="1" max="90" value="14" /></label><div class="toolbar"><button id="plan-warmup" type="button">Plan warm-up preview</button></div><div id="warmup-plan-result" class="status"></div>`);
+      const policy = reputationPolicy.policy || {};
+      setScreen('#reputation-screen', 'Reputation/readiness', `<div class="kv"><span>Provider</span><strong>${provider.provider || provider.emailProvider || 'dry-run'}</strong><span>Adapter</span><strong>${adapter.status || adapter.mode || 'locked'}</strong><span>Global cap</span><strong>${rateLimits.globalPerWindow || 0}</strong><span>Domain ready</span><strong>${domain.ok ? 'yes' : 'blocked'}</strong><span>Real delivery</span><strong>${sending.realDeliveryAllowed ? 'unlocked' : 'locked'}</strong><span>Queue posture</span><strong>${queueReadiness.mode || 'safe'}</strong><span>Auto-pause</span><strong>${autoPause.recommendPause ? 'recommended' : 'clear'}</strong></div><p>Real sending remains blocked until consent, suppression, bounce/complaint, warm-up, DNS, audit, and explicit live-test gates pass.</p><p>Auto-pause thresholds are recommendation-only: they evaluate bounce/complaint/deferral/provider-error rates, audit operator changes, and never mutate queues or providers.</p><label>Policy domain <input id="reputation-domain" value="${policy.domain || 'stuffprettygood.com'}" /></label><label>Bounce threshold <input id="reputation-bounce" type="number" min="0" max="1" step="0.001" value="${policy.bounceRateThreshold ?? 0.03}" /></label><label>Complaint threshold <input id="reputation-complaint" type="number" min="0" max="1" step="0.0001" value="${policy.complaintRateThreshold ?? 0.001}" /></label><label>Deferral threshold <input id="reputation-deferral" type="number" min="0" max="1" step="0.001" value="${policy.deferralRateThreshold ?? 0.08}" /></label><label>Provider error threshold <input id="reputation-provider-error" type="number" min="0" max="1" step="0.001" value="${policy.providerErrorRateThreshold ?? 0.02}" /></label><label>Minimum events <input id="reputation-min-events" type="number" min="1" max="100000" value="${policy.minimumEvents || 25}" /></label><div class="toolbar"><button id="save-reputation-policy" type="button">Save auto-pause thresholds</button><button id="evaluate-auto-pause" class="secondary" type="button">Evaluate auto-pause</button></div><div id="reputation-policy-result" class="status">Current rates: bounce ${Math.round((autoPause.rates?.bounceRate || 0) * 1000) / 10}%, complaint ${Math.round((autoPause.rates?.complaintRate || 0) * 1000) / 10}%, deferral ${Math.round((autoPause.rates?.deferralRate || 0) * 1000) / 10}%. Recommendation: ${autoPause.recommendedAction || 'not evaluated'}.</div><p>Plan a sender-domain warm-up preview without mutating providers, queues, DNS, or delivery state.</p><label>Sender domain <input id="warmup-domain" value="stuffprettygood.com" /></label><label>Start daily cap <input id="warmup-start-cap" type="number" min="1" max="10000" value="25" /></label><label>Max daily cap <input id="warmup-max-cap" type="number" min="1" max="100000" value="500" /></label><label>Ramp percent <input id="warmup-ramp-percent" type="number" min="1" max="100" value="25" /></label><label>Days <input id="warmup-days" type="number" min="1" max="90" value="14" /></label><div class="toolbar"><button id="plan-warmup" type="button">Plan warm-up preview</button></div><div id="warmup-plan-result" class="status"></div>`);
       document.querySelector('#plan-warmup').addEventListener('click', planWarmupFromWorkbench);
+      document.querySelector('#save-reputation-policy').addEventListener('click', saveReputationPolicyFromWorkbench);
+      document.querySelector('#evaluate-auto-pause').addEventListener('click', evaluateAutoPauseFromWorkbench);
       workbenchStatus.textContent = 'Reputation gates loaded.';
     };
 
@@ -482,7 +530,9 @@
         ['opens', metrics.opens],
         ['clicks', metrics.clicks],
         ['hygieneRiskContacts', metrics.hygieneRiskContacts],
-        ['hygieneCleanupActions', metrics.hygieneCleanupActions]
+        ['hygieneCleanupActions', metrics.hygieneCleanupActions],
+        ['reputationRecommendPause', metrics.reputationRecommendPause ? 'yes' : 'no'],
+        ['reputationBreaches', metrics.reputationBreaches]
       ];
       dashboardMetrics.innerHTML = metricCards
         .map(([label, value]) => `<div class="metric"><strong>${value ?? 0}</strong>${label}</div>`)
