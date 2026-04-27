@@ -252,6 +252,9 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/data-source-query\/validate/);
   assert.match(html, /Validate SELECT query/);
   assert.match(html, /reputation-screen/);
+  assert.match(html, /api\/email\/warmup\/plan/);
+  assert.match(html, /Plan warm-up preview/);
+  assert.match(html, /warmup-domain/);
   assert.match(html, /reporting-screen/);
   assert.match(html, /api\/email\/reporting\/export/);
   assert.match(html, /Build CSV export/);
@@ -2305,6 +2308,51 @@ test('email reporting endpoint also works behind nginx stripped api prefix', asy
   assert.equal(res.status, 401);
   const exportPreview = await request('/email/reporting/export?dataset=summary');
   assert.equal(exportPreview.status, 401);
+});
+
+test('warm-up planner requires admin session and returns safe sender-domain preview without delivery', async () => {
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/warmup/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'stuffprettygood.com' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const plan = await request('/api/email/warmup/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ domain: 'StuffPrettyGood.com', startDailyCap: 10, maxDailyCap: 25, rampPercent: 50, days: 3 })
+    });
+    assert.equal(plan.status, 200);
+    assert.equal(plan.body.mode, 'warmup-plan-safe-preview');
+    assert.equal(plan.body.domain, 'stuffprettygood.com');
+    assert.equal(plan.body.schedule.length, 3);
+    assert.deepEqual(plan.body.schedule.map((day) => day.dailyCap), [10, 15, 23]);
+    assert.equal(plan.body.gates.suppressionRequired, true);
+    assert.equal(plan.body.safety.noProviderMutation, true);
+    assert.equal(plan.body.realDeliveryAllowed, false);
+
+    const rejected = await request('/api/email/warmup/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ domain: 'bad domain', days: 91 })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('valid_sender_domain_required'));
+    assert.ok(rejected.body.errors.includes('valid_days_1_90_required'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_warmup_plan_preview'));
+  });
+});
+
+test('warm-up planner endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/email/warmup/plan', { method: 'POST' });
+  assert.equal(res.status, 401);
 });
 
 test('sending readiness endpoint requires admin session and keeps real delivery locked', async () => {

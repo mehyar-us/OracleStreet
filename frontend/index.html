@@ -418,6 +418,31 @@
       workbenchStatus.textContent = 'CMS screens loaded. Forms stay safe/dry-run until PostgreSQL persistence and final gates are complete.';
     };
 
+
+    const planWarmupFromWorkbench = async () => {
+      const result = document.querySelector('#warmup-plan-result');
+      const payload = {
+        domain: document.querySelector('#warmup-domain').value,
+        startDailyCap: Number(document.querySelector('#warmup-start-cap').value || 25),
+        maxDailyCap: Number(document.querySelector('#warmup-max-cap').value || 500),
+        rampPercent: Number(document.querySelector('#warmup-ramp-percent').value || 25),
+        days: Number(document.querySelector('#warmup-days').value || 14)
+      };
+      result.className = 'status';
+      result.textContent = 'Planning safe warm-up preview…';
+      const body = await fetch('/api/email/warmup/plan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'warmup_plan_rejected']).join(', ')}`;
+        return;
+      }
+      result.innerHTML = `Warm-up preview for <strong>${body.domain}</strong>: ${body.schedule.length} day(s), day 1 cap ${body.schedule[0].dailyCap}, final cap ${body.schedule.at(-1).dailyCap}. Real delivery <strong>${body.realDeliveryAllowed}</strong>.<ul>${body.schedule.slice(0, 5).map((day) => `<li>Day ${day.day}: ${day.dailyCap}/day, ${day.perHourCap}/hour, pause on bounce ${Math.round(day.bouncePauseThreshold * 1000) / 10}% or complaint ${day.complaintPauseThreshold * 100}%</li>`).join('')}</ul>`;
+    };
+
     const loadReputation = async () => {
       workbenchStatus.textContent = 'Loading reputation/readiness gates…';
       const [provider, adapter, rateLimits, domain, sending, queueReadiness] = await Promise.all([
@@ -428,7 +453,8 @@
         safeJson('/api/email/sending-readiness', {}),
         safeJson('/api/send-queue/readiness', {})
       ]);
-      setScreen('#reputation-screen', 'Reputation/readiness', `<div class="kv"><span>Provider</span><strong>${provider.provider || provider.emailProvider || 'dry-run'}</strong><span>Adapter</span><strong>${adapter.status || adapter.mode || 'locked'}</strong><span>Global cap</span><strong>${rateLimits.globalPerWindow || 0}</strong><span>Domain ready</span><strong>${domain.ok ? 'yes' : 'blocked'}</strong><span>Real delivery</span><strong>${sending.realDeliveryAllowed ? 'unlocked' : 'locked'}</strong><span>Queue posture</span><strong>${queueReadiness.mode || 'safe'}</strong></div><p>Real sending remains blocked until consent, suppression, bounce/complaint, warm-up, DNS, audit, and explicit live-test gates pass.</p>`);
+      setScreen('#reputation-screen', 'Reputation/readiness', `<div class="kv"><span>Provider</span><strong>${provider.provider || provider.emailProvider || 'dry-run'}</strong><span>Adapter</span><strong>${adapter.status || adapter.mode || 'locked'}</strong><span>Global cap</span><strong>${rateLimits.globalPerWindow || 0}</strong><span>Domain ready</span><strong>${domain.ok ? 'yes' : 'blocked'}</strong><span>Real delivery</span><strong>${sending.realDeliveryAllowed ? 'unlocked' : 'locked'}</strong><span>Queue posture</span><strong>${queueReadiness.mode || 'safe'}</strong></div><p>Real sending remains blocked until consent, suppression, bounce/complaint, warm-up, DNS, audit, and explicit live-test gates pass.</p><p>Plan a sender-domain warm-up preview without mutating providers, queues, DNS, or delivery state.</p><label>Sender domain <input id="warmup-domain" value="stuffprettygood.com" /></label><label>Start daily cap <input id="warmup-start-cap" type="number" min="1" max="10000" value="25" /></label><label>Max daily cap <input id="warmup-max-cap" type="number" min="1" max="100000" value="500" /></label><label>Ramp percent <input id="warmup-ramp-percent" type="number" min="1" max="100" value="25" /></label><label>Days <input id="warmup-days" type="number" min="1" max="90" value="14" /></label><div class="toolbar"><button id="plan-warmup" type="button">Plan warm-up preview</button></div><div id="warmup-plan-result" class="status"></div>`);
+      document.querySelector('#plan-warmup').addEventListener('click', planWarmupFromWorkbench);
       workbenchStatus.textContent = 'Reputation gates loaded.';
     };
 

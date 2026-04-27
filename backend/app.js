@@ -18,6 +18,7 @@ import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { rbacReadiness } from './lib/rbacReadiness.js';
+import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { campaignReportingSummary, emailReportingSummary, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
 import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
@@ -611,6 +612,17 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, { ok: true, mode: 'dry-run-warmup', rateLimits: getRateLimitConfig() });
+    }
+
+    if (url.pathname === '/api/email/warmup/plan' || url.pathname === '/email/warmup/plan') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = planWarmupSchedule(body);
+      recordAuditEvent({ action: 'email_warmup_plan_preview', actorEmail: session.email, target: result.domain || body.domain || null, status: result.ok ? 'ok' : 'rejected', details: { days: result.inputs?.days || body.days || null, errors: result.errors || [], realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/send-queue/dispatch-next-dry-run' || url.pathname === '/send-queue/dispatch-next-dry-run') {

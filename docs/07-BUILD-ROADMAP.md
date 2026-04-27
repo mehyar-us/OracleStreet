@@ -27,7 +27,8 @@
 - [x] Add remote PostgreSQL schema discovery planner UI/API
 - [x] Add SELECT-only remote PostgreSQL query validator/planner UI/API
 - [ ] Add live remote PostgreSQL probe/schema discovery/query execution behind pg-driver and approval gates
-- [ ] Add reputation dashboard and warm-up controls UI
+- [x] Add warm-up planner controls UI
+- [ ] Add reputation dashboard auto-pause controls UI
 
 ## Phase 1 — Product skeleton
 
