@@ -421,6 +421,41 @@
     };
 
 
+    const warmupPolicyPayload = () => ({
+      domain: document.querySelector('#warmup-domain').value,
+      startDate: document.querySelector('#warmup-start-date').value,
+      startDailyCap: Number(document.querySelector('#warmup-start-cap').value || 25),
+      maxDailyCap: Number(document.querySelector('#warmup-max-cap').value || 500),
+      rampPercent: Number(document.querySelector('#warmup-ramp-percent').value || 25),
+      days: Number(document.querySelector('#warmup-days').value || 14)
+    });
+
+    const saveWarmupPolicyFromWorkbench = async () => {
+      const result = document.querySelector('#warmup-policy-result');
+      result.className = 'status';
+      result.textContent = 'Saving warm-up policy for dry-run schedule cap enforcement…';
+      const body = await fetch('/api/email/warmup/policy', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(warmupPolicyPayload())
+      }).then((r) => r.json());
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      result.textContent = body.ok ? `Saved ${body.policy.domain}: day-1 cap ${body.policy.startDailyCap}, max ${body.policy.maxDailyCap}; real delivery ${body.realDeliveryAllowed}.` : `Rejected: ${(body.errors || [body.error || 'warmup_policy_rejected']).join(', ')}`;
+    };
+
+    const checkWarmupScheduleCapFromWorkbench = async () => {
+      const result = document.querySelector('#warmup-policy-result');
+      result.className = 'status';
+      result.textContent = 'Checking scheduled audience against warm-up cap…';
+      const body = await fetch('/api/email/warmup/schedule-cap', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ domain: document.querySelector('#warmup-domain').value, scheduledAt: document.querySelector('#warmup-cap-scheduled-at').value, estimatedAudience: Number(document.querySelector('#warmup-cap-audience').value || 1) })
+      }).then((r) => r.json());
+      result.className = `status ${body.ok && !body.capExceeded ? 'ok' : 'error'}`;
+      result.textContent = body.ok && !body.capExceeded ? `Allowed: planned ${body.plannedCount}/${body.dailyCap} for ${body.domain} day ${body.dayNumber}; remaining ${body.remainingCap}.` : `Blocked: ${(body.errors || [body.error || 'warmup_cap_rejected']).join(', ')}; cap ${body.dailyCap || 'n/a'}.`;
+    };
+
     const planWarmupFromWorkbench = async () => {
       const result = document.querySelector('#warmup-plan-result');
       const payload = {
@@ -490,7 +525,7 @@
 
     const loadReputation = async () => {
       workbenchStatus.textContent = 'Loading reputation/readiness gates…';
-      const [provider, adapter, rateLimits, domain, sending, queueReadiness, reputationPolicy, autoPause] = await Promise.all([
+      const [provider, adapter, rateLimits, domain, sending, queueReadiness, reputationPolicy, autoPause, warmupPolicy] = await Promise.all([
         safeJson('/api/email/config', {}),
         safeJson('/api/email/provider/adapter', {}),
         safeJson('/api/email/rate-limits', {}),
@@ -498,11 +533,15 @@
         safeJson('/api/email/sending-readiness', {}),
         safeJson('/api/send-queue/readiness', {}),
         safeJson('/api/email/reputation/policy', { policy: {} }),
-        safeJson('/api/email/reputation/auto-pause', { counts: {}, rates: {}, thresholdBreaches: [] })
+        safeJson('/api/email/reputation/auto-pause', { counts: {}, rates: {}, thresholdBreaches: [] }),
+        safeJson('/api/email/warmup/policy', { policies: [] })
       ]);
       const policy = reputationPolicy.policy || {};
-      setScreen('#reputation-screen', 'Reputation/readiness', `<div class="kv"><span>Provider</span><strong>${provider.provider || provider.emailProvider || 'dry-run'}</strong><span>Adapter</span><strong>${adapter.status || adapter.mode || 'locked'}</strong><span>Global cap</span><strong>${rateLimits.globalPerWindow || 0}</strong><span>Domain ready</span><strong>${domain.ok ? 'yes' : 'blocked'}</strong><span>Real delivery</span><strong>${sending.realDeliveryAllowed ? 'unlocked' : 'locked'}</strong><span>Queue posture</span><strong>${queueReadiness.mode || 'safe'}</strong><span>Auto-pause</span><strong>${autoPause.recommendPause ? 'recommended' : 'clear'}</strong></div><p>Real sending remains blocked until consent, suppression, bounce/complaint, warm-up, DNS, audit, and explicit live-test gates pass.</p><p>Auto-pause thresholds are recommendation-only: they evaluate bounce/complaint/deferral/provider-error rates, audit operator changes, and never mutate queues or providers.</p><label>Policy domain <input id="reputation-domain" value="${policy.domain || 'stuffprettygood.com'}" /></label><label>Bounce threshold <input id="reputation-bounce" type="number" min="0" max="1" step="0.001" value="${policy.bounceRateThreshold ?? 0.03}" /></label><label>Complaint threshold <input id="reputation-complaint" type="number" min="0" max="1" step="0.0001" value="${policy.complaintRateThreshold ?? 0.001}" /></label><label>Deferral threshold <input id="reputation-deferral" type="number" min="0" max="1" step="0.001" value="${policy.deferralRateThreshold ?? 0.08}" /></label><label>Provider error threshold <input id="reputation-provider-error" type="number" min="0" max="1" step="0.001" value="${policy.providerErrorRateThreshold ?? 0.02}" /></label><label>Minimum events <input id="reputation-min-events" type="number" min="1" max="100000" value="${policy.minimumEvents || 25}" /></label><div class="toolbar"><button id="save-reputation-policy" type="button">Save auto-pause thresholds</button><button id="evaluate-auto-pause" class="secondary" type="button">Evaluate auto-pause</button></div><div id="reputation-policy-result" class="status">Current rates: bounce ${Math.round((autoPause.rates?.bounceRate || 0) * 1000) / 10}%, complaint ${Math.round((autoPause.rates?.complaintRate || 0) * 1000) / 10}%, deferral ${Math.round((autoPause.rates?.deferralRate || 0) * 1000) / 10}%. Recommendation: ${autoPause.recommendedAction || 'not evaluated'}.</div><p>Plan a sender-domain warm-up preview without mutating providers, queues, DNS, or delivery state.</p><label>Sender domain <input id="warmup-domain" value="stuffprettygood.com" /></label><label>Start daily cap <input id="warmup-start-cap" type="number" min="1" max="10000" value="25" /></label><label>Max daily cap <input id="warmup-max-cap" type="number" min="1" max="100000" value="500" /></label><label>Ramp percent <input id="warmup-ramp-percent" type="number" min="1" max="100" value="25" /></label><label>Days <input id="warmup-days" type="number" min="1" max="90" value="14" /></label><div class="toolbar"><button id="plan-warmup" type="button">Plan warm-up preview</button></div><div id="warmup-plan-result" class="status"></div>`);
+      const activeWarmup = (warmupPolicy.policies || [])[0] || { domain: 'stuffprettygood.com', startDate: new Date().toISOString().slice(0, 10), startDailyCap: 25, maxDailyCap: 500, rampPercent: 25, days: 14 };
+      setScreen('#reputation-screen', 'Reputation/readiness', `<div class="kv"><span>Provider</span><strong>${provider.provider || provider.emailProvider || 'dry-run'}</strong><span>Adapter</span><strong>${adapter.status || adapter.mode || 'locked'}</strong><span>Global cap</span><strong>${rateLimits.globalPerWindow || 0}</strong><span>Domain ready</span><strong>${domain.ok ? 'yes' : 'blocked'}</strong><span>Real delivery</span><strong>${sending.realDeliveryAllowed ? 'unlocked' : 'locked'}</strong><span>Queue posture</span><strong>${queueReadiness.mode || 'safe'}</strong><span>Auto-pause</span><strong>${autoPause.recommendPause ? 'recommended' : 'clear'}</strong></div><p>Real sending remains blocked until consent, suppression, bounce/complaint, warm-up, DNS, audit, and explicit live-test gates pass.</p><p>Auto-pause thresholds are recommendation-only: they evaluate bounce/complaint/deferral/provider-error rates, audit operator changes, and never mutate queues or providers.</p><label>Policy domain <input id="reputation-domain" value="${policy.domain || 'stuffprettygood.com'}" /></label><label>Bounce threshold <input id="reputation-bounce" type="number" min="0" max="1" step="0.001" value="${policy.bounceRateThreshold ?? 0.03}" /></label><label>Complaint threshold <input id="reputation-complaint" type="number" min="0" max="1" step="0.0001" value="${policy.complaintRateThreshold ?? 0.001}" /></label><label>Deferral threshold <input id="reputation-deferral" type="number" min="0" max="1" step="0.001" value="${policy.deferralRateThreshold ?? 0.08}" /></label><label>Provider error threshold <input id="reputation-provider-error" type="number" min="0" max="1" step="0.001" value="${policy.providerErrorRateThreshold ?? 0.02}" /></label><label>Minimum events <input id="reputation-min-events" type="number" min="1" max="100000" value="${policy.minimumEvents || 25}" /></label><div class="toolbar"><button id="save-reputation-policy" type="button">Save auto-pause thresholds</button><button id="evaluate-auto-pause" class="secondary" type="button">Evaluate auto-pause</button></div><div id="reputation-policy-result" class="status">Current rates: bounce ${Math.round((autoPause.rates?.bounceRate || 0) * 1000) / 10}%, complaint ${Math.round((autoPause.rates?.complaintRate || 0) * 1000) / 10}%, deferral ${Math.round((autoPause.rates?.deferralRate || 0) * 1000) / 10}%. Recommendation: ${autoPause.recommendedAction || 'not evaluated'}.</div><p>Plan a sender-domain warm-up preview without mutating providers, queues, DNS, or delivery state.</p><label>Sender domain <input id="warmup-domain" value="${activeWarmup.domain}" /></label><label>Policy start date <input id="warmup-start-date" type="date" value="${activeWarmup.startDate}" /></label><label>Start daily cap <input id="warmup-start-cap" type="number" min="1" max="10000" value="${activeWarmup.startDailyCap}" /></label><label>Max daily cap <input id="warmup-max-cap" type="number" min="1" max="100000" value="${activeWarmup.maxDailyCap}" /></label><label>Ramp percent <input id="warmup-ramp-percent" type="number" min="1" max="100" value="${activeWarmup.rampPercent}" /></label><label>Days <input id="warmup-days" type="number" min="1" max="365" value="${activeWarmup.days}" /></label><div class="toolbar"><button id="plan-warmup" type="button">Plan warm-up preview</button><button id="save-warmup-policy" class="secondary" type="button">Save warm-up policy</button></div><label>Schedule cap check time <input id="warmup-cap-scheduled-at" type="datetime-local" /></label><label>Estimated audience <input id="warmup-cap-audience" type="number" min="1" value="1" /></label><div class="toolbar"><button id="check-warmup-cap" class="secondary" type="button">Check schedule cap</button></div><div id="warmup-policy-result" class="status">Warm-up policies: ${(warmupPolicy.policies || []).length}; enforcement stays dry-run schedule gate only.</div><div id="warmup-plan-result" class="status"></div>`);
       document.querySelector('#plan-warmup').addEventListener('click', planWarmupFromWorkbench);
+      document.querySelector('#save-warmup-policy').addEventListener('click', saveWarmupPolicyFromWorkbench);
+      document.querySelector('#check-warmup-cap').addEventListener('click', checkWarmupScheduleCapFromWorkbench);
       document.querySelector('#save-reputation-policy').addEventListener('click', saveReputationPolicyFromWorkbench);
       document.querySelector('#evaluate-auto-pause').addEventListener('click', evaluateAutoPauseFromWorkbench);
       workbenchStatus.textContent = 'Reputation gates loaded.';

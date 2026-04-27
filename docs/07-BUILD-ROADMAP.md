@@ -28,6 +28,7 @@
 - [x] Add SELECT-only remote PostgreSQL query validator/planner UI/API
 - [ ] Add live remote PostgreSQL probe/schema discovery/query execution behind pg-driver and approval gates
 - [x] Add warm-up planner controls UI
+- [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI
 
 ## Phase 1 — Product skeleton

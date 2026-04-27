@@ -1,6 +1,7 @@
 import { enqueueDryRunSend } from './sendQueue.js';
 import { estimateSegmentAudience, getSegment } from './segments.js';
 import { buildClickTrackingUrl, buildOpenTrackingUrl, buildUnsubscribeUrl, getTemplate, renderTemplateContent } from './templates.js';
+import { evaluateWarmupScheduleCap } from './warmupPolicies.js';
 
 const campaigns = new Map();
 let sequence = 0;
@@ -121,7 +122,7 @@ export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
   };
 };
 
-export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, actorEmail = null }) => {
+export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, senderDomain = 'stuffprettygood.com', actorEmail = null }) => {
   const campaign = campaigns.get(String(campaignId || '').trim());
   if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
   if (campaign.status !== 'approved_dry_run') return { ok: false, errors: ['campaign_must_be_approved_dry_run'] };
@@ -133,12 +134,19 @@ export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, actorEmail = n
   const estimate = estimateCampaign({ segmentId: campaign.segmentId, templateId: campaign.templateId });
   if (!estimate.ok) errors.push(...estimate.errors);
   if (estimate.ok && estimate.estimatedAudience < 1) errors.push('campaign_audience_required');
-  if (errors.length > 0) return { ok: false, errors };
+  const warmupCap = estimate.ok ? evaluateWarmupScheduleCap({ domain: senderDomain, scheduledAt, estimatedAudience: estimate.estimatedAudience }) : null;
+  if (warmupCap && !warmupCap.ok) errors.push(...warmupCap.errors);
+  if (warmupCap?.capExceeded) errors.push('warmup_daily_cap_exceeded');
+  if (errors.length > 0) return { ok: false, errors, warmupCap, realDelivery: false };
 
   const updated = {
     ...campaign,
     status: 'scheduled_dry_run',
     scheduledAt: scheduledDate.toISOString(),
+    senderDomain: warmupCap.domain,
+    warmupDay: warmupCap.dayNumber,
+    warmupDailyCap: warmupCap.dailyCap,
+    warmupPlannedCount: warmupCap.plannedCount,
     scheduledBy: actorEmail,
     realDeliveryAllowed: false,
     updatedAt: nowIso()
@@ -156,8 +164,10 @@ export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, actorEmail = n
       unsubscribeLinkInjected: true,
       rateLimitsRequiredAtQueue: true,
       manualDispatchRequired: true,
+      warmupCapEnforced: true,
       realDeliveryAllowed: false
     },
+    warmupCap,
     realDelivery: false
   };
 };

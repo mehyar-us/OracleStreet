@@ -15,6 +15,7 @@ import { resetSegmentsForTests } from '../lib/segments.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
 import { resetSuppressionsForTests } from '../lib/suppressions.js';
 import { resetTemplatesForTests } from '../lib/templates.js';
+import { resetWarmupPoliciesForTests } from '../lib/warmupPolicies.js';
 
 const request = async (path, options = {}) => {
   const server = http.createServer(createHandler());
@@ -262,6 +263,10 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/warmup\/plan/);
   assert.match(html, /Plan warm-up preview/);
   assert.match(html, /warmup-domain/);
+  assert.match(html, /api\/email\/warmup\/policy/);
+  assert.match(html, /api\/email\/warmup\/schedule-cap/);
+  assert.match(html, /Save warm-up policy/);
+  assert.match(html, /Check schedule cap/);
   assert.match(html, /api\/email\/reputation\/policy/);
   assert.match(html, /api\/email\/reputation\/auto-pause/);
   assert.match(html, /Save auto-pause thresholds/);
@@ -1164,8 +1169,11 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(scheduled.body.mode, 'campaign-dry-run-schedule');
     assert.equal(scheduled.body.campaign.status, 'scheduled_dry_run');
     assert.equal(scheduled.body.campaign.scheduledAt, scheduledAt);
+    assert.equal(scheduled.body.campaign.warmupDailyCap, 25);
+    assert.equal(scheduled.body.warmupCap.capExceeded, false);
     assert.equal(scheduled.body.realDelivery, false);
     assert.equal(scheduled.body.compliance.manualDispatchRequired, true);
+    assert.equal(scheduled.body.compliance.warmupCapEnforced, true);
 
     const enqueued = await request('/api/campaigns/enqueue-dry-run', {
       method: 'POST',
@@ -2405,6 +2413,93 @@ test('warm-up planner requires admin session and returns safe sender-domain prev
   });
 });
 
+test('warm-up policy persistence and schedule cap checks are protected and dry-run enforced', async () => {
+  resetAuditLogForTests();
+  resetContactsForTests();
+  resetSegmentsForTests();
+  resetTemplatesForTests();
+  resetCampaignsForTests();
+  resetWarmupPoliciesForTests();
+  await withAdminEnv(async () => {
+    const unauthPolicy = await request('/api/email/warmup/policy');
+    assert.equal(unauthPolicy.status, 401);
+    const unauthCap = await request('/api/email/warmup/schedule-cap', { method: 'POST' });
+    assert.equal(unauthCap.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const saved = await request('/api/email/warmup/policy', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ domain: 'Example.test', startDate: new Date().toISOString().slice(0, 10), startDailyCap: 1, maxDailyCap: 5, rampPercent: 100, days: 3 })
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.mode, 'warmup-policy-saved');
+    assert.equal(saved.body.policy.domain, 'example.test');
+    assert.equal(saved.body.policy.enforcementMode, 'dry-run-schedule-gate');
+    assert.equal(saved.body.realDeliveryAllowed, false);
+
+    const capOk = await request('/api/email/warmup/schedule-cap', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ domain: 'example.test', scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), estimatedAudience: 1 })
+    });
+    assert.equal(capOk.status, 200);
+    assert.equal(capOk.body.mode, 'warmup-schedule-cap-evaluation');
+    assert.equal(capOk.body.capExceeded, false);
+    assert.equal(capOk.body.enforcement.dryRunOnly, true);
+
+    const capRejected = await request('/api/email/warmup/schedule-cap', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ domain: 'example.test', scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), estimatedAudience: 2 })
+    });
+    assert.equal(capRejected.status, 400);
+    assert.equal(capRejected.body.capExceeded, true);
+    assert.ok(capRejected.body.errors.includes('warmup_daily_cap_exceeded'));
+
+    await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'one@example.test', consentStatus: 'opt_in', source: 'owned signup form' },
+        { email: 'two@example.test', consentStatus: 'opt_in', source: 'owned signup form' }
+      ] })
+    });
+    const segment = await request('/api/segments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Example', criteria: { domain: 'example.test' } })
+    });
+    const template = await request('/api/templates', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Warmup Template', subject: 'Warmup', html: '<p>Hello</p><p>unsubscribe here</p>' })
+    });
+    const campaign = await request('/api/campaigns', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Warmup cap test', segmentId: segment.body.segment.id, templateId: template.body.template.id })
+    });
+    await request('/api/campaigns/approve-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: campaign.body.campaign.id })
+    });
+    const scheduleRejected = await request('/api/campaigns/schedule-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: campaign.body.campaign.id, senderDomain: 'example.test', scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() })
+    });
+    assert.equal(scheduleRejected.status, 400);
+    assert.ok(scheduleRejected.body.errors.includes('warmup_daily_cap_exceeded'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_warmup_policy_save'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_warmup_schedule_cap_evaluate'));
+  });
+});
+
 test('reputation auto-pause threshold controls are protected, recommendation-only, and auditable', async () => {
   resetAuditLogForTests();
   resetEmailEventsForTests();
@@ -2479,6 +2574,10 @@ test('reputation auto-pause threshold controls are protected, recommendation-onl
 test('warm-up and reputation endpoints also work behind nginx stripped api prefix', async () => {
   const warmup = await request('/email/warmup/plan', { method: 'POST' });
   assert.equal(warmup.status, 401);
+  const warmupPolicy = await request('/email/warmup/policy');
+  assert.equal(warmupPolicy.status, 401);
+  const warmupCap = await request('/email/warmup/schedule-cap', { method: 'POST' });
+  assert.equal(warmupCap.status, 401);
   const policy = await request('/email/reputation/policy');
   assert.equal(policy.status, 401);
   const autoPause = await request('/email/reputation/auto-pause');

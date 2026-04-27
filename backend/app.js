@@ -21,6 +21,7 @@ import { getRateLimitConfig } from './lib/rateLimits.js';
 import { rbacReadiness } from './lib/rbacReadiness.js';
 import { evaluateAutoPause, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
+import { evaluateWarmupScheduleCap, listWarmupPolicies, saveWarmupPolicy } from './lib/warmupPolicies.js';
 import { campaignReportingSummary, emailReportingSummary, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
 import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
@@ -561,7 +562,7 @@ export const createHandler = () => {
       if (!session) return;
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
-      const result = scheduleCampaignDryRun({ campaignId: body.campaignId, scheduledAt: body.scheduledAt, actorEmail: session.email });
+      const result = scheduleCampaignDryRun({ campaignId: body.campaignId, scheduledAt: body.scheduledAt, senderDomain: body.senderDomain, actorEmail: session.email });
       recordAuditEvent({ action: 'campaign_schedule_dry_run', actorEmail: session.email, target: body.campaignId || null, status: result.ok ? 'ok' : 'rejected', details: { scheduledAt: result.campaign?.scheduledAt || body.scheduledAt || null, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
@@ -648,6 +649,35 @@ export const createHandler = () => {
       const result = planWarmupSchedule(body);
       recordAuditEvent({ action: 'email_warmup_plan_preview', actorEmail: session.email, target: result.domain || body.domain || null, status: result.ok ? 'ok' : 'rejected', details: { days: result.inputs?.days || body.days || null, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/email/warmup/policy' || url.pathname === '/email/warmup/policy') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') {
+        const result = listWarmupPolicies();
+        recordAuditEvent({ action: 'email_warmup_policy_view', actorEmail: session.email, target: 'warmup-policy', details: { count: result.count, realDeliveryAllowed: false } });
+        return jsonResponse(res, 200, result);
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+        const result = saveWarmupPolicy(body);
+        recordAuditEvent({ action: 'email_warmup_policy_save', actorEmail: session.email, target: result.policy?.domain || body.domain || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], realDeliveryAllowed: false } });
+        return jsonResponse(res, result.ok ? 200 : 400, result);
+      }
+      return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/email/warmup/schedule-cap' || url.pathname === '/email/warmup/schedule-cap') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = evaluateWarmupScheduleCap(body);
+      recordAuditEvent({ action: 'email_warmup_schedule_cap_evaluate', actorEmail: session.email, target: result.domain || body.domain || null, status: result.capExceeded ? 'rejected' : 'ok', details: { estimatedAudience: result.estimatedAudience, dailyCap: result.dailyCap, errors: result.errors || [], realDeliveryAllowed: false } });
+      return jsonResponse(res, result.ok && !result.capExceeded ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/email/reputation/policy' || url.pathname === '/email/reputation/policy') {
