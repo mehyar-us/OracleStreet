@@ -137,6 +137,7 @@ export const importPowerMtaAccountingCsv = ({ csv, source = 'pmta_accounting_imp
       detail: row.event.detail,
       campaignId: row.event.campaignId,
       contactId: row.event.contactId,
+      providerMessageId: row.event.providerMessageId,
       actorEmail
     });
     if (result.ok) accepted.push({ row: row.row, result });

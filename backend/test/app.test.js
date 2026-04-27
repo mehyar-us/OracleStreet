@@ -1581,7 +1581,7 @@ test('PowerMTA accounting import records valid delivery CSV atomically', async (
       headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({
         source: 'owned pmta accounting import',
-        csv: 'recipient,status,action,diagnostic,campaignId,contactId\nHard@Example.test,5.1.1,failed,"550 mailbox",cmp_pmta,ct_hard\nSlow@Example.test,4.2.0,delayed,"451 temp",cmp_pmta,ct_slow\nOk@Example.test,2.0.0,delivered,"250 ok",cmp_pmta,ct_ok'
+        csv: 'recipient,status,action,diagnostic,campaignId,contactId,messageId\nHard@Example.test,5.1.1,failed,"550 mailbox",cmp_pmta,ct_hard,msg-hard\nSlow@Example.test,4.2.0,delayed,"451 temp",cmp_pmta,ct_slow,msg-slow\nOk@Example.test,2.0.0,delivered,"250 ok",cmp_pmta,ct_ok,msg-ok'
       })
     });
     assert.equal(imported.status, 200);
@@ -1595,6 +1595,7 @@ test('PowerMTA accounting import records valid delivery CSV atomically', async (
     events = await request('/api/email/events', { headers: { cookie } });
     assert.equal(events.body.count, 3);
     assert.deepEqual(events.body.events.map((event) => event.type), ['bounce', 'deferred', 'delivered']);
+    assert.deepEqual(events.body.events.map((event) => event.providerMessageId), ['msg-hard', 'msg-slow', 'msg-ok']);
     const suppressions = await request('/api/suppressions', { headers: { cookie } });
     assert.equal(suppressions.body.count, 1);
     assert.equal(suppressions.body.suppressions[0].email, 'hard@example.test');

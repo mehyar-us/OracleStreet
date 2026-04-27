@@ -51,6 +51,7 @@
 - [x] Bounce mailbox readiness safe-gate baseline
 - [x] PowerMTA accounting CSV import validation baseline
 - [x] PowerMTA accounting CSV import ingest baseline
+- [x] Provider message ID event metadata baseline
 - [x] Manual event CSV import validation baseline
 - [x] Manual event CSV import ingest baseline
 - [x] Event tracking baseline
