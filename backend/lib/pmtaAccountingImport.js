@@ -1,3 +1,5 @@
+import { recordEmailEvent } from './emailEvents.js';
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STATUS_RE = /\b[245]\.\d{1,3}\.\d{1,3}\b/;
 
@@ -105,6 +107,54 @@ export const validatePowerMtaAccountingCsv = ({ csv, source = 'pmta_accounting_i
       validationOnly: true,
       noEventRecorded: true,
       noSuppressionCreated: true,
+      noNetworkProbe: true,
+      noMailboxConnection: true,
+      realDelivery: false
+    },
+    realDelivery: false
+  };
+};
+
+export const importPowerMtaAccountingCsv = ({ csv, source = 'pmta_accounting_import', actorEmail = null }) => {
+  const validation = validatePowerMtaAccountingCsv({ csv, source });
+  if (!validation.ok) {
+    return {
+      ...validation,
+      mode: 'powermta-accounting-import',
+      eventRecorded: false,
+      suppressionCreated: false,
+      realDelivery: false
+    };
+  }
+
+  const accepted = [];
+  const rejected = [];
+  validation.accepted.forEach((row) => {
+    const result = recordEmailEvent({
+      type: row.event.type,
+      email: row.event.email,
+      source: row.event.source,
+      detail: row.event.detail,
+      campaignId: row.event.campaignId,
+      contactId: row.event.contactId,
+      actorEmail
+    });
+    if (result.ok) accepted.push({ row: row.row, result });
+    else rejected.push({ row: row.row, email: row.event.email, errors: result.errors || ['event_record_failed'] });
+  });
+
+  return {
+    ok: rejected.length === 0,
+    mode: 'powermta-accounting-import',
+    acceptedCount: accepted.length,
+    rejectedCount: rejected.length,
+    accepted,
+    rejected,
+    eventRecorded: accepted.length > 0,
+    suppressionCreated: accepted.some((row) => Boolean(row.result.suppression)),
+    safety: {
+      validationOnly: false,
+      atomicRejectsInvalidRowsBeforeRecording: true,
       noNetworkProbe: true,
       noMailboxConnection: true,
       realDelivery: false

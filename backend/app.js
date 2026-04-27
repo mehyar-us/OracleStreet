@@ -15,7 +15,7 @@ import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCaptur
 import { listMigrations } from './lib/migrations.js';
 import { monitoringReadiness } from './lib/monitoringReadiness.js';
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
-import { validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
+import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { rbacReadiness } from './lib/rbacReadiness.js';
 import { campaignReportingSummary, emailReportingSummary, sendingReadinessSummary } from './lib/reporting.js';
@@ -686,6 +686,17 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = validatePowerMtaAccountingCsv({ csv: body.csv, source: body.source });
       recordAuditEvent({ action: 'email_powermta_accounting_import_validate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { acceptedCount: result.acceptedCount || 0, rejectedCount: result.rejectedCount || 0, error: result.error || null, validationOnly: true, realDelivery: false } });
+      return jsonResponse(res, result.error ? 400 : 200, result);
+    }
+
+    if (url.pathname === '/api/email/powermta/accounting/import' || url.pathname === '/email/powermta/accounting/import') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = importPowerMtaAccountingCsv({ csv: body.csv, source: body.source, actorEmail: session.email });
+      recordAuditEvent({ action: 'email_powermta_accounting_import', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { acceptedCount: result.acceptedCount || 0, rejectedCount: result.rejectedCount || 0, eventRecorded: result.eventRecorded, suppressionCreated: result.suppressionCreated, realDelivery: false } });
       return jsonResponse(res, result.error ? 400 : 200, result);
     }
 

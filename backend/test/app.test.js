@@ -1550,6 +1550,59 @@ test('bounce mailbox readiness reports safe receive posture without connecting',
   });
 });
 
+test('PowerMTA accounting import records valid delivery CSV atomically', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/powermta/accounting/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ csv: 'recipient,status\nbounced@example.test,5.1.1' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/email/powermta/accounting/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ csv: 'recipient,status,action\nbad-recipient,5.1.1,failed\nvalid@example.test,2.0.0,delivered' })
+    });
+    assert.equal(rejected.status, 200);
+    assert.equal(rejected.body.ok, false);
+    assert.equal(rejected.body.eventRecorded, false);
+
+    let events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 0);
+
+    const imported = await request('/api/email/powermta/accounting/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        source: 'owned pmta accounting import',
+        csv: 'recipient,status,action,diagnostic,campaignId,contactId\nHard@Example.test,5.1.1,failed,"550 mailbox",cmp_pmta,ct_hard\nSlow@Example.test,4.2.0,delayed,"451 temp",cmp_pmta,ct_slow\nOk@Example.test,2.0.0,delivered,"250 ok",cmp_pmta,ct_ok'
+      })
+    });
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.ok, true);
+    assert.equal(imported.body.mode, 'powermta-accounting-import');
+    assert.equal(imported.body.acceptedCount, 3);
+    assert.equal(imported.body.suppressionCreated, true);
+    assert.equal(imported.body.realDelivery, false);
+    assert.equal(imported.body.safety.noNetworkProbe, true);
+
+    events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 3);
+    assert.deepEqual(events.body.events.map((event) => event.type), ['bounce', 'deferred', 'delivered']);
+    const suppressions = await request('/api/suppressions', { headers: { cookie } });
+    assert.equal(suppressions.body.count, 1);
+    assert.equal(suppressions.body.suppressions[0].email, 'hard@example.test');
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_powermta_accounting_import'));
+  });
+});
+
 test('PowerMTA accounting import validation parses delivery CSV without recording events', async () => {
   resetAuditLogForTests();
   resetEmailEventsForTests();
@@ -1938,6 +1991,8 @@ test('tracked open and click endpoints record engagement without auth or deliver
 test('email event endpoints also work behind nginx stripped api prefix', async () => {
   const list = await request('/email/events');
   assert.equal(list.status, 401);
+  const pmtaAccountingImport = await request('/email/powermta/accounting/import', { method: 'POST' });
+  assert.equal(pmtaAccountingImport.status, 401);
   const pmtaAccounting = await request('/email/powermta/accounting/validate-import', { method: 'POST' });
   assert.equal(pmtaAccounting.status, 401);
   const bounceMailbox = await request('/email/bounce-mailbox/readiness');
