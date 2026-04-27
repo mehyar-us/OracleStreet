@@ -1924,6 +1924,42 @@ test('monitoring readiness endpoint requires admin and reports safe checks witho
   });
 });
 
+test('platform rate-limit readiness requires admin and reports safe gates without traffic mutation', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_ADMIN_LOGIN_RATE_LIMIT: '8',
+    ORACLESTREET_API_RATE_LIMIT: '120',
+    ORACLESTREET_IMPORT_RATE_LIMIT: '6',
+    ORACLESTREET_DRY_RUN_GLOBAL_RATE_LIMIT: '30',
+    ORACLESTREET_DRY_RUN_DOMAIN_RATE_LIMIT: '5'
+  }, async () => {
+    const unauth = await request('/api/platform/rate-limit-readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/platform/rate-limit-readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'platform-rate-limit-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.limits.adminLoginPerWindow, 8);
+    assert.equal(readiness.body.limits.apiPerWindow, 120);
+    assert.equal(readiness.body.limits.importPerWindow, 6);
+    assert.equal(readiness.body.limits.dryRunGlobalPerHour, 30);
+    assert.equal(readiness.body.enforcement.dryRunQueue, 'implemented_per_window');
+    assert.equal(readiness.body.enforcement.externalDelivery, 'locked');
+    assert.equal(readiness.body.safety.noTrafficMutation, true);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+    assert.ok(readiness.body.protectedSurfaces.includes('admin_login'));
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'platform_rate_limit_readiness_view'));
+  });
+});
+
 test('sending readiness reports provider blockers without exposing secrets', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
@@ -1961,4 +1997,6 @@ test('sending readiness endpoint also works behind nginx stripped api prefix', a
   assert.equal(backups.status, 401);
   const monitoring = await request('/monitoring/readiness');
   assert.equal(monitoring.status, 401);
+  const platformRateLimits = await request('/platform/rate-limit-readiness');
+  assert.equal(platformRateLimits.status, 401);
 });

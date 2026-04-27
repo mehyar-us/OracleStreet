@@ -128,6 +128,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 33. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
 34. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
 35. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
+36. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
 
 ## Current validation endpoints
 
@@ -158,6 +159,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `GET /api/web/tls-readiness` requires an admin session and reports selected TLS mode, certificate candidate domains, prerequisites, and HTTP/HTTPS smoke-test commands without requesting certificates, editing Nginx, probing certificates, or delivery unlocks.
 - `GET /api/backups/readiness` requires an admin session and reports redacted database backup planning, storage path, schedule, retention, and restore/offsite recommendations without creating dumps, writing files, exposing secrets, or delivery unlocks.
 - `GET /api/monitoring/readiness` requires an admin session and reports health/frontend/service/nginx/watchdog check plans, monitor interval, alert posture, and recommended commands without probing networks, mutating services, exposing secrets, or delivery unlocks.
+- `GET /api/platform/rate-limit-readiness` requires an admin session and reports admin/API/import/dry-run queue rate-limit posture, protected surfaces, and enforcement gaps without mutating traffic, storing IPs, exposing secrets, or delivery unlocks.
 - `GET /api/campaigns/reporting` requires an admin session and summarizes per-campaign dry-run queue, dispatch, event, engagement, and unsubscribe counts/rates without enabling delivery.
 - `GET /api/dashboard` includes the same safe email reporting summary plus campaign engagement reporting totals/rates without enabling delivery.
 - `/` frontend dashboard displays safe counters for queue, suppressions, events, bounce/complaint, open/click, rates, provider mode, and the locked real-sending state after admin login.

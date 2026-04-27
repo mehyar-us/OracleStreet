@@ -71,7 +71,7 @@
 - [x] TLS readiness safe-gate baseline
 - [x] Backup readiness safe-gate baseline
 - [x] Monitoring readiness safe-gate baseline
-- [ ] Rate limits
+- [x] Platform rate-limit readiness safe-gate baseline
 - [ ] Role-based access controls
 
 ## Email platform execution docs
