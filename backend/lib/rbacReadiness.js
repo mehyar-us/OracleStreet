@@ -3,7 +3,7 @@ import { ROLE_MATRIX } from './adminUsers.js';
 const cleanEmail = (value) => String(value || '').trim().toLowerCase();
 
 export const RBAC_ROUTE_POLICY = [
-  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'POST /api/admin/users/invite-plan'] },
+  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
   { surface: 'audit_log', permission: 'view_audit_log', routes: ['GET /api/audit-log'] },
   { surface: 'contacts', permission: 'manage_contacts', routes: ['POST /api/contacts/import', 'POST /api/contacts/import/validate'] },
   { surface: 'contact_metadata', permission: 'view_contacts_metadata', routes: ['GET /api/contacts', 'GET /api/contacts/browser', 'GET /api/list-hygiene/plan'] },
@@ -36,7 +36,7 @@ export const rbacReadiness = (env = process.env) => {
     routePolicy: RBAC_ROUTE_POLICY,
     enforcement: {
       current: 'admin_session_plus_route_permission_policy_for_hardened_surfaces',
-      multiUser: 'locked_until_password_reset_and_invite_acceptance_ship',
+      multiUser: 'activation_workflow_available_after_postgresql_user_repository_enablement',
       perRoutePermissions: 'active_for_admin_user_audit_contacts_campaigns_templates_suppressions_data_sources_reporting_readiness',
       invitationFlow: 'safe_plan_only_no_email_token_or_user_mutation',
       auditRoleChanges: 'invite_plans_and_permission_denials_audited'
@@ -61,7 +61,7 @@ export const rbacReadiness = (env = process.env) => {
     },
     blockersBeforeMultiUser: [
       'persisted user table with password reset policy',
-      'password reset and invite acceptance workflow',
+      'operator onboarding runbook for out-of-band invite/reset code delivery',
       'role-change mutation endpoint with audit events',
       'session invalidation on role changes',
       'least-privilege defaults for non-owner users'

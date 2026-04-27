@@ -43,6 +43,8 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Permission-denial audit events with no user mutation, role mutation, secret output, or delivery unlock.
 - Admin user directory endpoint over the users repository/bootstrap admin fallback.
 - Safe admin invite-plan endpoint that validates role/email, audits the plan, sends no email, creates no password/token, and mutates no users.
+- PostgreSQL-backed manual-code invite creation, invite acceptance, password hashing, password-reset planning, and reset completion endpoints for multi-user activation.
+- Users/RBAC UI can create pending invites, accept invites, and plan password resets without email delivery or raw token/password output.
 - Raw passwords/tokens are not stored or exposed by the runtime adapter.
 
 ### Visible admin CMS workbench
@@ -215,6 +217,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Runtime persistence migration `009_schedule_proof_runtime` for remote import schedules and controlled proof audits.
 - Runtime persistence migration `010_campaign_affiliate_metadata` for campaign affiliate/planning metadata.
 - Runtime persistence migration `011_data_source_registry_runtime` for remote source registry and encrypted secret metadata.
+- Runtime persistence migration `012_user_invite_password_runtime` for invite acceptance and password reset metadata.
 - Tests for every shipped slice.
 
 ## Current safety posture
@@ -279,20 +282,23 @@ Acceptance:
 
 ### Flow C — Multi-user/RBAC admin workflow
 
-Status: shipped safe baseline. The admin workbench now includes a Users/RBAC panel backed by `GET /api/admin/users`, RBAC readiness, a role permission matrix, and `POST /api/admin/users/invite-plan` for validating a planned invite/create workflow without sending email, generating passwords/tokens, or mutating users.
+Status: shipped activation baseline. The admin workbench now includes a Users/RBAC panel backed by `GET /api/admin/users`, RBAC readiness, a role permission matrix, safe invite planning, PostgreSQL-backed pending invite creation, invite acceptance, and password reset planning/completion. Manual invite/reset codes are operator-supplied, hashed before storage, and never displayed by OracleStreet.
 
 Shipped:
 - user list/readiness panel
-- invite/create operator/read-only placeholder flow gated by admin session
+- invite/create operator/read-only workflow gated by admin session
+- manual-code invite acceptance endpoint with password hashing
+- manual-code password reset plan and completion endpoints
 - role permission matrix UI
-- audit events for role/user plan actions
-- password/token-safe invite plan surface without emailing secrets
+- audit events for role/user invite/reset actions
+- password/token-safe invite and reset surfaces without emailing secrets
 
 Acceptance:
-- protected routes
-- PostgreSQL users table used where enabled, bootstrap admin fallback otherwise
-- tests for role metadata and audit
-- no raw password/token display
+- protected routes for admin invite/reset planning
+- public acceptance/reset completion endpoints require valid manual codes
+- PostgreSQL users table used where enabled, bootstrap admin plus safe memory fallback otherwise
+- tests for invite acceptance, password reset, role metadata, login, audit, and secret redaction
+- no raw password/token/code display
 
 ### Flow D — Remote PostgreSQL import scheduler
 

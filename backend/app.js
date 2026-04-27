@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, roleHasPermission, upsertAdminUser } from './lib/adminUsers.js';
+import { acceptAdminUserInvite, completePasswordReset, createAdminUserInvite, createPasswordResetPlan, getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, roleHasPermission, upsertAdminUser, verifyAdminUserPassword } from './lib/adminUsers.js';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
@@ -369,17 +369,21 @@ export const createHandler = () => {
       if (!requireMethod(req, res, 'POST')) return;
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
-      if (!adminPassword()) return jsonResponse(res, 503, { ok: false, error: 'admin_not_bootstrapped' });
-      if (body.email !== adminEmail() || body.password !== adminPassword()) {
+      const cleanEmail = String(body.email || '').trim().toLowerCase();
+      const bootstrapLogin = cleanEmail === String(adminEmail()).trim().toLowerCase() && body.password === adminPassword();
+      const userLogin = bootstrapLogin ? { ok: false } : verifyAdminUserPassword({ email: cleanEmail, password: body.password });
+      if (!adminPassword() && !userLogin.ok) return jsonResponse(res, 503, { ok: false, error: 'admin_not_bootstrapped' });
+      if (!bootstrapLogin && !userLogin.ok) {
         recordAuditEvent({ action: 'admin_login', actorEmail: body.email || null, status: 'rejected', details: { reason: 'invalid_credentials' } });
         return jsonResponse(res, 401, { ok: false, error: 'invalid_credentials' });
       }
-      const userPersistence = upsertAdminUser({ email: adminEmail(), role: process.env.ORACLESTREET_BOOTSTRAP_ADMIN_ROLE || 'admin' });
-      recordAuditEvent({ action: 'admin_login', actorEmail: adminEmail(), status: 'ok', details: { userPersistenceMode: userPersistence.persistenceMode } });
-      const token = createSessionToken(adminEmail());
+      const loginEmail = bootstrapLogin ? adminEmail() : cleanEmail;
+      const userPersistence = bootstrapLogin ? upsertAdminUser({ email: adminEmail(), role: process.env.ORACLESTREET_BOOTSTRAP_ADMIN_ROLE || 'admin' }) : { persistenceMode: 'postgresql-local-psql-repository' };
+      recordAuditEvent({ action: 'admin_login', actorEmail: loginEmail, status: 'ok', details: { userPersistenceMode: userPersistence.persistenceMode, passwordRepositoryLogin: !bootstrapLogin } });
+      const token = createSessionToken(loginEmail);
       const expiresAt = new Date((Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS) * 1000).toISOString();
-      const sessionPersistence = recordAdminSession({ token, email: adminEmail(), expiresAt });
-      return jsonResponse(res, 200, { ok: true, user: { email: adminEmail() }, persistence: { user: userPersistence.persistenceMode, session: sessionPersistence.persistenceMode } }, {
+      const sessionPersistence = recordAdminSession({ token, email: loginEmail, expiresAt });
+      return jsonResponse(res, 200, { ok: true, user: { email: loginEmail }, persistence: { user: userPersistence.persistenceMode, session: sessionPersistence.persistenceMode } }, {
         'set-cookie': `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`
       });
     }
@@ -563,6 +567,46 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = planAdminUserInvite({ email: body.email, role: body.role, requestedBy: session.email });
       recordAuditEvent({ action: 'admin_user_invite_plan', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { role: body.role || null, errors: result.errors || [], noEmailSent: true, noUserMutation: true, noTokenOutput: true, realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/admin/users/invite' || url.pathname === '/admin/users/invite') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = createAdminUserInvite({ email: body.email, role: body.role, inviteCode: body.inviteCode, expiresInHours: body.expiresInHours, requestedBy: session.email });
+      recordAuditEvent({ action: 'admin_user_invite_create', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { role: body.role || null, errors: result.errors || [], noEmailSent: true, noTokenOutput: true, noPasswordOutput: true, realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/admin/users/accept-invite' || url.pathname === '/admin/users/accept-invite') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = acceptAdminUserInvite({ email: body.email, inviteCode: body.inviteCode, password: body.password });
+      recordAuditEvent({ action: 'admin_user_invite_accept', actorEmail: body.email || null, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], noEmailSent: true, noTokenOutput: true, noPasswordOutput: true, realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/admin/users/password-reset-plan' || url.pathname === '/admin/users/password-reset-plan') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = createPasswordResetPlan({ email: body.email, resetCode: body.resetCode, expiresInHours: body.expiresInHours, requestedBy: session.email });
+      recordAuditEvent({ action: 'admin_user_password_reset_plan', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], noEmailSent: true, noTokenOutput: true, noPasswordOutput: true, realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/auth/password-reset/complete' || url.pathname === '/auth/password-reset/complete') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = completePasswordReset({ email: body.email, resetCode: body.resetCode, password: body.password });
+      recordAuditEvent({ action: 'admin_user_password_reset_complete', actorEmail: body.email || null, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], noEmailSent: true, noTokenOutput: true, noPasswordOutput: true, realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

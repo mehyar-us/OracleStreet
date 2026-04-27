@@ -580,6 +580,70 @@
         : `Blocked: ${(body.errors || [body.error || 'invite_plan_rejected']).join(', ')}`;
     };
 
+    const createAdminInvite = async () => {
+      const result = document.querySelector('#admin-user-invite-result');
+      const payload = {
+        email: document.querySelector('#admin-user-email').value,
+        role: document.querySelector('#admin-user-role').value,
+        inviteCode: document.querySelector('#admin-user-invite-code').value,
+        expiresInHours: Number(document.querySelector('#admin-user-invite-hours').value || 24)
+      };
+      result.className = 'status';
+      result.textContent = 'Creating PostgreSQL-backed invite with hashed out-of-band code…';
+      const body = await fetch('/api/admin/users/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+      document.querySelector('#admin-user-invite-code').value = '';
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      result.textContent = body.ok
+        ? `Invite pending for ${body.invite.email}; deliver the code out-of-band. No email sent and no token/password output.`
+        : `Blocked: ${(body.errors || [body.error || 'invite_create_rejected']).join(', ')}`;
+      if (body.ok) await loadWorkbench();
+    };
+
+    const acceptAdminInvite = async () => {
+      const result = document.querySelector('#admin-user-activation-result');
+      const payload = {
+        email: document.querySelector('#admin-activation-email').value,
+        inviteCode: document.querySelector('#admin-activation-code').value,
+        password: document.querySelector('#admin-activation-password').value
+      };
+      result.className = 'status';
+      result.textContent = 'Accepting invite and setting password…';
+      const body = await fetch('/api/admin/users/accept-invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+      document.querySelector('#admin-activation-code').value = '';
+      document.querySelector('#admin-activation-password').value = '';
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      result.textContent = body.ok ? `Activated ${body.user.email}; password configured without displaying secrets.` : `Blocked: ${(body.errors || [body.error || 'invite_accept_rejected']).join(', ')}`;
+      if (body.ok) await loadWorkbench();
+    };
+
+    const planPasswordReset = async () => {
+      const result = document.querySelector('#admin-user-reset-result');
+      const payload = {
+        email: document.querySelector('#admin-reset-email').value,
+        resetCode: document.querySelector('#admin-reset-code').value,
+        expiresInHours: Number(document.querySelector('#admin-reset-hours').value || 2)
+      };
+      result.className = 'status';
+      result.textContent = 'Planning password reset with hashed out-of-band code…';
+      const body = await fetch('/api/admin/users/password-reset-plan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+      document.querySelector('#admin-reset-code').value = '';
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      result.textContent = body.ok ? `Reset planned for ${body.reset.email}; deliver the reset code out-of-band.` : `Blocked: ${(body.errors || [body.error || 'reset_plan_rejected']).join(', ')}`;
+      if (body.ok) await loadWorkbench();
+    };
+
     const buildReportingExport = async () => {
       const result = document.querySelector('#reporting-export-result');
       const dataset = document.querySelector('#reporting-export-dataset').value;
@@ -657,8 +721,11 @@
       document.querySelector('#plan-remote-import-schedule').addEventListener('click', planRemoteImportSchedule);
       setScreen('#reporting-screen', 'Reporting dashboard', `<div class="kv"><span>Campaigns</span><strong>${reportingDepth.cards?.campaigns || 0}</strong><span>Events</span><strong>${reportingDepth.cards?.events || 0}</strong><span>Opens</span><strong>${reportingDepth.cards?.opens || 0}</strong><span>Clicks</span><strong>${reportingDepth.cards?.clicks || 0}</strong><span>Bounces</span><strong>${reportingDepth.cards?.bounces || 0}</strong><span>Complaints</span><strong>${reportingDepth.cards?.complaints || 0}</strong></div><p>Safe reporting dashboard: aggregate campaign/source/domain/trend insight only, no network probes, no secrets, affiliate metadata only, and real delivery remains locked.</p><h4>Campaign leaderboard</h4>${listItems(reportingDepth.campaignLeaderboard || [], 'No campaign performance rows yet.', (c) => `<li>${c.name || c.campaignId} · ${c.status} · ${(c.affiliate?.affiliateProgram || 'affiliate unassigned')} · opens ${c.opens} · clicks ${c.clicks} · open rate ${Math.round((c.openRate || 0) * 1000) / 10}%</li>`)}<h4>Source performance</h4>${listItems(reportingDepth.sourcePerformance || [], 'No source performance yet.', (s) => `<li>${s.key}: contacts ${s.contacts}, events ${s.events}, opens ${s.opens}, clicks ${s.clicks}, bounces ${s.bounces}, risk ${s.riskLevel}</li>`)}<h4>Domain performance</h4>${listItems(reportingDepth.domainPerformance || [], 'No domain performance yet.', (d) => `<li>${d.key}: contacts ${d.contacts}, events ${d.events}, open ${Math.round((d.openRate || 0) * 1000) / 10}%, bounce ${Math.round((d.bounceRate || 0) * 1000) / 10}%, risk ${d.riskLevel}</li>`)}<h4>Event trend</h4>${listItems(reportingDepth.trends || [], 'No trend events yet.', (t) => `<li>${t.key}: events ${t.events}, opens ${t.opens}, clicks ${t.clicks}, bounces ${t.bounces}, complaints ${t.complaints}</li>`)}<h4>CSV export previews</h4><p>Build safe CSV previews for dashboard/reporting data. Exports are protected, dry-run metadata only, and contain no secrets or delivery unlocks.</p><label>Dataset <select id="reporting-export-dataset"><option value="campaigns">campaigns</option><option value="summary">summary</option><option value="events">events</option><option value="suppressions">suppressions</option></select></label><div class="toolbar"><button id="build-reporting-export" type="button">Build CSV export</button></div><div id="reporting-export-result" class="status"></div>`);
       document.querySelector('#build-reporting-export').addEventListener('click', buildReportingExport);
-      setScreen('#users-screen', 'Users/RBAC', `<div class="kv"><span>Admin users</span><strong>${adminUsers.count || 0}</strong><span>Roles</span><strong>${(adminUsers.roleMatrix || rbac.plannedRoles || []).length}</strong><span>Multi-user</span><strong>${rbac.currentAccess?.multiUserEnabled ? 'enabled' : 'locked'}</strong></div>${listItems(adminUsers.users || [], 'No admin users listed yet.', (u) => `<li>${u.email} · ${u.role} · ${u.status || 'active'} · password ${u.hasPassword ? 'configured' : 'not displayed'}</li>`)}<h4>Role permission matrix</h4>${listItems(adminUsers.roleMatrix || rbac.plannedRoles || [], 'No role matrix available.', (role) => `<li>${role.role}: ${(role.permissions || []).join(', ')}</li>`)}<h4>Invite/create placeholder</h4><p>Plans a role invite/create workflow for owner/admin review without sending email, generating passwords, outputting tokens, or mutating users.</p><label>Email <input id="admin-user-email" placeholder="operator@example.test" /></label><label>Role <select id="admin-user-role"><option value="operator">operator</option><option value="analyst">analyst</option><option value="compliance">compliance</option><option value="read_only">read_only</option><option value="admin">admin</option></select></label><div class="toolbar"><button id="plan-admin-invite" type="button">Plan safe invite</button></div><div id="admin-user-invite-result" class="status"></div><h4>Route permission enforcement</h4>${listItems(rbacPolicy.routePolicy || rbac.routePolicy || [], 'No route policy available.', (policy) => `<li>${policy.surface}: <strong>${policy.permission}</strong> · ${(policy.routes || []).slice(0, 3).join(', ')}</li>`)}<h4>RBAC blockers</h4>${listItems(rbac.blockersBeforeMultiUser || [], 'No RBAC blockers reported.', (b) => `<li>${b}</li>`)}`);
+      setScreen('#users-screen', 'Users/RBAC', `<div class="kv"><span>Admin users</span><strong>${adminUsers.count || 0}</strong><span>Roles</span><strong>${(adminUsers.roleMatrix || rbac.plannedRoles || []).length}</strong><span>Multi-user</span><strong>${rbac.currentAccess?.multiUserEnabled ? 'enabled' : 'activation workflow'}</strong></div>${listItems(adminUsers.users || [], 'No admin users listed yet.', (u) => `<li>${u.email} · ${u.role} · ${u.status || 'active'} · password ${u.hasPassword ? 'configured' : 'not displayed'} · invite ${u.invitePending ? 'pending' : 'none'} · reset ${u.resetPending ? 'pending' : 'none'}</li>`)}<h4>Role permission matrix</h4>${listItems(adminUsers.roleMatrix || rbac.plannedRoles || [], 'No role matrix available.', (role) => `<li>${role.role}: ${(role.permissions || []).join(', ')}</li>`)}<h4>Invite acceptance workflow</h4><p>Create a PostgreSQL-backed pending user with a hashed invite code. OracleStreet sends no email and never displays generated tokens or passwords; deliver the code manually out-of-band.</p><label>Email <input id="admin-user-email" placeholder="operator@example.test" /></label><label>Role <select id="admin-user-role"><option value="operator">operator</option><option value="analyst">analyst</option><option value="compliance">compliance</option><option value="read_only">read_only</option><option value="admin">admin</option></select></label><label>Invite code <input id="admin-user-invite-code" type="password" placeholder="manual strong code" /></label><label>Expires hours <input id="admin-user-invite-hours" type="number" value="24" min="1" max="168" /></label><div class="toolbar"><button id="plan-admin-invite" type="button">Plan safe invite</button><button id="create-admin-invite" type="button">Create pending invite</button></div><div id="admin-user-invite-result" class="status"></div><h4>Accept invite</h4><label>Email <input id="admin-activation-email" placeholder="operator@example.test" /></label><label>Invite code <input id="admin-activation-code" type="password" /></label><label>New password <input id="admin-activation-password" type="password" /></label><div class="toolbar"><button id="accept-admin-invite" type="button">Accept invite</button></div><div id="admin-user-activation-result" class="status"></div><h4>Password reset</h4><label>Email <input id="admin-reset-email" placeholder="operator@example.test" /></label><label>Reset code <input id="admin-reset-code" type="password" /></label><label>Expires hours <input id="admin-reset-hours" type="number" value="2" min="1" max="72" /></label><div class="toolbar"><button id="plan-password-reset" type="button">Plan password reset</button></div><div id="admin-user-reset-result" class="status"></div><h4>Route permission enforcement</h4>${listItems(rbacPolicy.routePolicy || rbac.routePolicy || [], 'No route policy available.', (policy) => `<li>${policy.surface}: <strong>${policy.permission}</strong> · ${(policy.routes || []).slice(0, 4).join(', ')}</li>`)}<h4>RBAC blockers</h4>${listItems(rbac.blockersBeforeMultiUser || [], 'No RBAC blockers reported.', (b) => `<li>${b}</li>`)}`);
       document.querySelector('#plan-admin-invite').addEventListener('click', planAdminInvite);
+      document.querySelector('#create-admin-invite').addEventListener('click', createAdminInvite);
+      document.querySelector('#accept-admin-invite').addEventListener('click', acceptAdminInvite);
+      document.querySelector('#plan-password-reset').addEventListener('click', planPasswordReset);
       setScreen('#audit-screen', 'Audit', `<div class="kv"><span>Audit events</span><strong>${audit.count || 0}</strong></div>${listItems(audit.events || [], 'No audit events in memory yet.', (e) => `<li>${e.action} · ${e.status || 'ok'} · ${e.actorEmail || 'system'}</li>`)}`);
       cmsWorkbench.classList.remove('hidden');
       workbenchStatus.textContent = 'CMS screens loaded. Forms stay safe/dry-run until PostgreSQL persistence and final gates are complete.';

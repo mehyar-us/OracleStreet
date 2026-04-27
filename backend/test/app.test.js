@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import test from 'node:test';
 import { createHandler } from '../app.js';
+import { resetAdminUsersForTests } from '../lib/adminUsers.js';
 import { resetAuditLogForTests } from '../lib/auditLog.js';
 import { resetControlledLiveTestProofAuditsForTests } from '../lib/controlledLiveTestReadiness.js';
 import { resetCampaignsForTests } from '../lib/campaigns.js';
@@ -345,6 +346,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(dataSourceRegistryMigration);
     assert.match(dataSourceRegistryMigration.description, /source registry and encrypted secret metadata/);
     assert.ok(dataSourceRegistryMigration.statements >= 5);
+    const userInvitePasswordMigration = res.body.migrations.find((migration) => migration.id === '012_user_invite_password_runtime');
+    assert.ok(userInvitePasswordMigration);
+    assert.match(userInvitePasswordMigration.description, /invite acceptance and password reset metadata/);
+    assert.ok(userInvitePasswordMigration.statements >= 4);
   });
 });
 
@@ -381,7 +386,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,admin_sessions,audit_log,warmup_policies,reputation_policies,data_sources,data_source_encrypted_secrets,data_source_import_schedules,controlled_live_test_proof_audits',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,user_invite_password_workflow,admin_sessions,audit_log,warmup_policies,reputation_policies,data_sources,data_source_encrypted_secrets,data_source_import_schedules,controlled_live_test_proof_audits',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -389,7 +394,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 15);
+    assert.equal(res.body.summary.liveRepositoryModules, 16);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
@@ -398,6 +403,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.ok(res.body.modules.some((module) => module.module === 'send_queue' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'email_events' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'users' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'user_invite_password_workflow' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'admin_sessions' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'audit_log' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'warmup_policies' && module.liveRepositoryEnabled));
@@ -3613,7 +3619,7 @@ test('RBAC readiness endpoint requires admin and reports planned roles without m
     assert.equal(readiness.body.currentAccess.adminEmailDomain, 'example.test');
     assert.equal(readiness.body.currentAccess.multiUserEnabled, false);
     assert.equal(readiness.body.enforcement.current, 'admin_session_plus_route_permission_policy_for_hardened_surfaces');
-    assert.equal(readiness.body.enforcement.multiUser, 'locked_until_password_reset_and_invite_acceptance_ship');
+    assert.equal(readiness.body.enforcement.multiUser, 'activation_workflow_available_after_postgresql_user_repository_enablement');
     assert.ok(readiness.body.plannedRoles.some((role) => role.role === 'compliance'));
     assert.ok(readiness.body.routePolicy.some((policy) => policy.surface === 'admin_users' && policy.permission === 'manage_users'));
     assert.ok(readiness.body.protectedSurfaces.includes('readiness_gates'));
@@ -3666,6 +3672,7 @@ test('RBAC policy endpoint reports route permissions and denies insufficient rol
 });
 
 test('admin user directory and invite-plan workflow require admin and avoid secrets or mutation', async () => {
+  resetAdminUsersForTests();
   resetAuditLogForTests();
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
@@ -3716,6 +3723,107 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_directory_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_plan'));
+  });
+});
+
+test('admin invite acceptance and password reset workflow activates users without email or secret output', async () => {
+  resetAdminUsersForTests();
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+  }, async () => {
+    const inviteCode = 'InviteCode123456789';
+    const resetCode = 'ResetCode1234567890';
+    const firstPassword = 'OperatorPass12345';
+    const secondPassword = 'OperatorPass67890';
+
+    const unauth = await request('/api/admin/users/invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'operator@example.test', role: 'operator', inviteCode })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/admin/users/invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'operator@example.test', role: 'operator', inviteCode: 'short' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.errors.includes('invite_code_min_16_chars'));
+
+    const invited = await request('/api/admin/users/invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'operator@example.test', role: 'operator', inviteCode, expiresInHours: 24 })
+    });
+    assert.equal(invited.status, 200);
+    assert.equal(invited.body.mode, 'admin-user-invite-create');
+    assert.equal(invited.body.invite.status, 'invite_pending');
+    assert.equal(invited.body.invite.tokenDisplayed, false);
+    assert.equal(invited.body.safety.noEmailSent, true);
+    assert.equal(JSON.stringify(invited.body).includes(inviteCode), false);
+
+    const accepted = await request('/api/admin/users/accept-invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'operator@example.test', inviteCode, password: firstPassword })
+    });
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.user.status, 'active');
+    assert.equal(accepted.body.user.hasPassword, true);
+    assert.equal(JSON.stringify(accepted.body).includes(inviteCode), false);
+    assert.equal(JSON.stringify(accepted.body).includes(firstPassword), false);
+
+    const operatorLogin = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'operator@example.test', password: firstPassword })
+    });
+    assert.equal(operatorLogin.status, 200);
+    assert.equal(operatorLogin.body.user.email, 'operator@example.test');
+
+    const resetPlan = await request('/api/admin/users/password-reset-plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'operator@example.test', resetCode, expiresInHours: 2 })
+    });
+    assert.equal(resetPlan.status, 200);
+    assert.equal(resetPlan.body.mode, 'admin-user-password-reset-plan');
+    assert.equal(resetPlan.body.reset.tokenDisplayed, false);
+    assert.equal(JSON.stringify(resetPlan.body).includes(resetCode), false);
+
+    const reset = await request('/api/auth/password-reset/complete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'operator@example.test', resetCode, password: secondPassword })
+    });
+    assert.equal(reset.status, 200);
+    assert.equal(reset.body.user.hasPassword, true);
+    assert.equal(JSON.stringify(reset.body).includes(secondPassword), false);
+
+    const oldLogin = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'operator@example.test', password: firstPassword })
+    });
+    assert.equal(oldLogin.status, 401);
+    const newLogin = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'operator@example.test', password: secondPassword })
+    });
+    assert.equal(newLogin.status, 200);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_create'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_accept'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_plan'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_complete'));
   });
 });
 
