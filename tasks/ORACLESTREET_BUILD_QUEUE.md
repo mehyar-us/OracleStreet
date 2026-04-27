@@ -60,7 +60,7 @@ Verification:
 
 ### O4 — Remote PostgreSQL connector and query runner
 
-Status: visible source registration UI, source registry, encrypted secret refs, schema discovery planner UI/API, sync dry-run validation/audit, SELECT-only query validator/planner UI/API, live read-only schema/query execution gates, and contact import preview/field mapping shipped. Live execution remains disabled unless `ORACLESTREET_REMOTE_PG_EXECUTION_ENABLED=true`, encrypted secret refs exist, bounded limits/timeouts pass, and the exact operator approval phrase is supplied; errors are redacted and destructive SQL is rejected. Import preview maps rows through contact validation without mutating contacts.
+Status: visible source registration UI, source registry, encrypted secret refs, schema discovery planner UI/API, sync dry-run validation/audit, SELECT-only query validator/planner UI/API, live read-only schema/query execution gates, contact import preview/field mapping, and approved contact import execution shipped. Live execution remains disabled unless `ORACLESTREET_REMOTE_PG_EXECUTION_ENABLED=true`, encrypted secret refs exist, bounded limits/timeouts pass, and the exact operator approval phrase is supplied; errors are redacted and destructive SQL is rejected. Import preview maps rows through contact validation without mutating contacts; approved import requires a separate exact import phrase and records sync-run history.
 
 Acceptance:
 - Save remote PostgreSQL connection metadata and encrypted credential refs.
@@ -116,13 +116,14 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. Remote PostgreSQL approved import execution into contacts with duplicate/update counts and sync-run history.
+1. Contact browser search/filter and source-quality drilldowns.
 2. Multi-user/RBAC admin workflow.
 3. Campaign calendar UI over warm-up caps.
 4. Contact browser search/filter and source-quality drilldowns.
 5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
 
 Latest shipped slice:
+- Remote PostgreSQL approved contact import: `/api/data-source-import/execute` reruns the preview validation, requires exact import approval phrase `I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT`, imports only zero-rejection mapped contacts through the normal contact repository, records imported/updated counts plus sync-run history, and keeps delivery locked.
 - Remote PostgreSQL contact import preview: `/api/data-source-import/preview` maps approved SELECT/sample rows into OracleStreet contact fields, enforces email/consent/source/duplicate validation, audits the preview, and never imports or mutates contacts.
 - Live remote PostgreSQL read-only execution gate: `/api/data-source-schema/discover` and `/api/data-source-query/execute` can execute only when env/operator gates pass, use encrypted secret refs, enforce SELECT/information_schema-only limits/timeouts, redact errors, reject destructive SQL, and expose visible UI controls without plaintext secrets.
 - Controlled one-recipient MTA live-test runbook gate: `POST /api/email/controlled-live-test/plan` and the reputation UI now collect owned-recipient/proof/approval phrase and return a one-message runbook without sending, probing, mutating queues/providers, exposing secrets, or unlocking delivery.

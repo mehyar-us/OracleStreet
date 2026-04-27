@@ -8,7 +8,7 @@ import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateC
 import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/controlledLiveTestReadiness.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, validateDataSourceQuery } from './lib/dataSources.js';
+import { createDataSource, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -260,6 +260,17 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = previewContactImportFromDataSource({ ...body, actorEmail: session.email });
       recordAuditEvent({ action: 'data_source_contact_import_preview', actorEmail: session.email, target: body.dataSourceId || null, status: result.previewOk ? 'ok' : 'rejected', details: { errors: result.errors || [], rowsSeen: result.rowsSeen || 0, acceptedCount: result.acceptedCount || 0, rejectedCount: result.rejectedCount || 0, importMutation: false, realQuery: Boolean(result.realQuery) } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/data-source-import/execute' || url.pathname === '/data-source-import/execute') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = importContactsFromDataSource({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'data_source_contact_import_execute', actorEmail: session.email, target: body.dataSourceId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], rowsSeen: result.rowsSeen || 0, importedCount: result.importedCount || 0, updatedCount: result.updatedCount || 0, importMutation: Boolean(result.importMutation), realQuery: Boolean(result.realQuery), realDeliveryAllowed: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

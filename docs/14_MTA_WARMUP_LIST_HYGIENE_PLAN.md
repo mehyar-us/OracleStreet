@@ -100,8 +100,8 @@ Every OracleStreet loop run must:
 
 ## Next Recommended Slices
 
-1. Remote PostgreSQL approved import execution into contacts with duplicate/update counts and sync-run history.
+1. Contact browser search/filter and source-quality drilldowns.
 2. Multi-user/RBAC admin workflow.
 3. Campaign calendar UI over warm-up caps.
-4. Contact browser search/filter and source-quality drilldowns.
+4. Remote PostgreSQL scheduled sync controls over the approved import path.
 5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.

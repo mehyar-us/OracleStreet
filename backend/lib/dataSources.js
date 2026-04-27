@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { validateContactImport } from './contacts.js';
+import { importContacts, validateContactImport } from './contacts.js';
 
 const dataSources = new Map();
 const encryptedConnectionSecrets = new Map();
@@ -118,6 +118,7 @@ const hasSelectPrefix = (sql) => /^\s*(select|with)\b/i.test(sql);
 const hasLimit = (sql) => /\blimit\s+\d+\b/i.test(sql);
 const liveExecutionEnabled = (env = process.env) => String(env.ORACLESTREET_REMOTE_PG_EXECUTION_ENABLED || '').trim().toLowerCase() === 'true';
 const requiredRemoteApprovalPhrase = 'I_APPROVE_REMOTE_POSTGRESQL_READ_ONLY_EXECUTION';
+const requiredRemoteContactImportApprovalPhrase = 'I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT';
 const quoteSqlLiteral = (value) => `'${String(value).replaceAll("'", "''")}'`;
 
 const psqlEnvFromUrl = (rawUrl, env = process.env) => {
@@ -509,6 +510,95 @@ export const previewContactImportFromDataSource = ({ rows, dataSourceId, sql, li
     sampleRejected: validation.rejected.slice(0, 10),
     actorEmail,
     createdAt: nowIso()
+  };
+};
+
+export const importContactsFromDataSource = ({ importApprovalPhrase, ...input } = {}, env = process.env) => {
+  const preview = previewContactImportFromDataSource(input, env);
+  const blockers = [];
+  if (!preview.ok) blockers.push(...(preview.errors || ['import_preview_failed']));
+  if (preview.ok && !preview.previewOk) blockers.push('import_preview_must_have_zero_rejected_rows');
+  if (importApprovalPhrase !== requiredRemoteContactImportApprovalPhrase) blockers.push('exact_remote_contact_import_approval_phrase_required');
+  if (blockers.length > 0) {
+    return {
+      ...preview,
+      ok: false,
+      mode: 'data-source-contact-import-approved-gate',
+      errors: blockers,
+      blockers,
+      importedCount: 0,
+      updatedCount: 0,
+      importMutation: false,
+      syncRun: null
+    };
+  }
+
+  const imported = importContacts(preview.accepted, input.actorEmail || null);
+  if (!imported.ok) {
+    return {
+      ...preview,
+      ok: false,
+      mode: 'data-source-contact-import-approved-gate',
+      errors: imported.error ? [imported.error] : (imported.errors || ['contact_import_failed']),
+      blockers: imported.error ? [imported.error] : (imported.errors || ['contact_import_failed']),
+      importedCount: 0,
+      updatedCount: 0,
+      importMutation: false,
+      syncRun: null
+    };
+  }
+
+  const source = input.dataSourceId ? dataSources.get(String(input.dataSourceId).trim()) : null;
+  const run = {
+    id: `sync_${(++syncRunSequence).toString().padStart(6, '0')}`,
+    dataSourceId: source?.id || input.dataSourceId || null,
+    dataSourceName: source?.name || 'manual-row-preview',
+    status: 'imported_contacts',
+    mode: 'data-source-contact-import-approved-gate',
+    validation: {
+      ok: true,
+      requiredGates: [
+        'admin_session',
+        'contact_import_preview_passed',
+        'exact_import_approval_phrase',
+        'explicit_consent_and_source',
+        'no_email_delivery'
+      ],
+      blockers: []
+    },
+    mapping: {
+      status: 'contact_import_mapping_applied',
+      fields: Object.entries(preview.mapping || {})
+        .filter(([key, value]) => value && key !== 'defaultsApplied')
+        .map(([key, value]) => `${key}:${value}`),
+      contactFields: preview.mapping
+    },
+    rowsSeen: preview.rowsSeen,
+    rowsImported: imported.importedCount || 0,
+    rowsUpdated: imported.updatedCount || 0,
+    rowsPulled: preview.rowsPulled || 0,
+    realSync: Boolean(preview.realQuery),
+    networkProbe: preview.realQuery ? 'read_only_select_executed_before_import' : 'not_required_for_supplied_rows',
+    actorEmail: input.actorEmail || null,
+    createdAt: nowIso(),
+    finishedAt: nowIso()
+  };
+  syncRuns.set(run.id, run);
+
+  return {
+    ...preview,
+    ok: true,
+    mode: 'data-source-contact-import-approved-gate',
+    previewOk: true,
+    importedCount: imported.importedCount || 0,
+    updatedCount: imported.updatedCount || 0,
+    totalContacts: imported.totalContacts,
+    imported: imported.imported || [],
+    updated: imported.updated || [],
+    persistenceMode: imported.persistenceMode,
+    importMutation: true,
+    realDeliveryAllowed: false,
+    syncRun: cloneSyncRun(run)
   };
 };
 

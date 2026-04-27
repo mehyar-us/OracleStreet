@@ -34,7 +34,8 @@
 - [x] Add SELECT-only remote PostgreSQL query validator/planner UI/API
 - [x] Add live remote PostgreSQL probe/schema discovery/query execution behind psql adapter and approval gates
 - [x] Add remote PostgreSQL import preview and field mapping into contact validation
-- [ ] Add remote PostgreSQL approved import execution into contacts
+- [x] Add remote PostgreSQL approved import execution into contacts
+- [ ] Add contact browser search/filter and source-quality drilldowns
 - [x] Add warm-up planner controls UI
 - [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI

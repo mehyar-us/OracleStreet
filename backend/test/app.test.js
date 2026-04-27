@@ -827,6 +827,59 @@ test('remote PostgreSQL contact import preview maps rows through contact validat
   });
 });
 
+test('approved remote PostgreSQL contact import gate imports only valid preview rows and records sync history', async () => {
+  resetAuditLogForTests();
+  resetDataSourcesForTests();
+  resetContactsForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable'
+  }, async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const payload = {
+      rows: [
+        { email_address: 'Reader@Example.test', consent: 'opt_in', list_source: 'owned remote warehouse', first_name: 'Ada' }
+      ],
+      mapping: { email: 'email_address', consentStatus: 'consent', source: 'list_source', firstName: 'first_name' },
+      defaults: { source: 'remote-postgresql-preview', consentStatus: 'opt_in' }
+    };
+
+    const blocked = await request('/api/data-source-import/execute', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ ...payload, importApprovalPhrase: 'wrong' })
+    });
+    assert.equal(blocked.status, 400);
+    assert.ok(blocked.body.errors.includes('exact_remote_contact_import_approval_phrase_required'));
+    assert.equal(blocked.body.importMutation, false);
+
+    const imported = await request('/api/data-source-import/execute', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ ...payload, importApprovalPhrase: 'I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT' })
+    });
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.mode, 'data-source-contact-import-approved-gate');
+    assert.equal(imported.body.importMutation, true);
+    assert.equal(imported.body.importedCount, 1);
+    assert.equal(imported.body.updatedCount, 0);
+    assert.equal(imported.body.realDeliveryAllowed, false);
+    assert.match(imported.body.syncRun.id, /^sync_/);
+    assert.equal(imported.body.syncRun.rowsImported, 1);
+
+    const contacts = await request('/api/contacts', { headers: { cookie } });
+    assert.equal(contacts.body.count, 1);
+    assert.equal(contacts.body.contacts[0].email, 'reader@example.test');
+
+    const syncRuns = await request('/api/data-source-sync-runs', { headers: { cookie } });
+    assert.ok(syncRuns.body.runs.some((run) => run.id === imported.body.syncRun.id && run.status === 'imported_contacts'));
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_contact_import_execute'));
+  });
+});
+
 test('data source sync audit log requires admin and returns sanitized sync events only', async () => {
   resetAuditLogForTests();
   resetDataSourcesForTests();
