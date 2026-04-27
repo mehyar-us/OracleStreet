@@ -1853,6 +1853,41 @@ test('web TLS readiness endpoint requires admin and plans TLS without changing H
   });
 });
 
+test('backup readiness endpoint requires admin and reports safe plan without dumping data', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_DATABASE_URL: 'postgresql://oracle:super-secret@db.example.test:5432/oraclestreet',
+    ORACLESTREET_BACKUP_PATH: '/var/backups/oraclestreet',
+    ORACLESTREET_BACKUP_SCHEDULE: 'daily',
+    ORACLESTREET_BACKUP_RETENTION_DAYS: '21'
+  }, async () => {
+    const unauth = await request('/api/backups/readiness');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const readiness = await request('/api/backups/readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'backup-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.database.urlConfigured, true);
+    assert.equal(readiness.body.database.secretsRedacted, true);
+    assert.equal(readiness.body.database.dumpProbe, 'skipped_readiness_only');
+    assert.equal(readiness.body.storage.path, '/var/backups/oraclestreet');
+    assert.equal(readiness.body.schedule.retentionDays, 21);
+    assert.equal(readiness.body.safety.noDumpCreated, true);
+    assert.equal(readiness.body.safety.noFilesystemWrites, true);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(readiness.body).includes('super-secret'), false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'backup_readiness_view'));
+  });
+});
+
 test('sending readiness reports provider blockers without exposing secrets', async () => {
   await withEnv({
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
@@ -1886,4 +1921,6 @@ test('sending readiness endpoint also works behind nginx stripped api prefix', a
   assert.equal(webDomain.status, 401);
   const webTls = await request('/web/tls-readiness');
   assert.equal(webTls.status, 401);
+  const backups = await request('/backups/readiness');
+  assert.equal(backups.status, 401);
 });

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
+import { backupReadiness } from './lib/backupReadiness.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
@@ -309,6 +310,15 @@ export const createHandler = () => {
       if (!session) return;
       const readiness = webTlsReadiness();
       recordAuditEvent({ action: 'web_tls_readiness_view', actorEmail: session.email, target: readiness.primaryDomain, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, tlsMode: readiness.tlsMode, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/backups/readiness' || url.pathname === '/backups/readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = backupReadiness();
+      recordAuditEvent({ action: 'backup_readiness_view', actorEmail: session.email, target: readiness.storage.path, status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, retentionDays: readiness.schedule.retentionDays, noDumpCreated: true } });
       return jsonResponse(res, 200, readiness);
     }
 
