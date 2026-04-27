@@ -230,6 +230,21 @@
     };
 
 
+
+    const dispatchNextDryRun = async () => {
+      const result = document.querySelector('#send-queue-dispatch-result');
+      result.className = 'status';
+      result.textContent = 'Dispatching one dry-run queue job…';
+      const body = await fetch('/api/send-queue/dispatch-next-dry-run', { method: 'POST' }).then((r) => r.json());
+      result.className = `status ${body.ok ? 'ok' : 'error'}`;
+      if (!body.ok) {
+        result.textContent = `Rejected: ${(body.errors || [body.error || 'dispatch_rejected']).join(', ')}`;
+        return;
+      }
+      result.innerHTML = `Dispatched dry-run job <strong>${body.job?.id || 'next job'}</strong>. Mode: ${body.dispatchMode || body.job?.dispatchMode || 'no_external_delivery'}. Real delivery: <strong>${body.realDelivery ?? false}</strong>.`;
+      await loadWorkbench();
+    };
+
     const validateRemoteQuery = async () => {
       const result = document.querySelector('#remote-query-result');
       const payload = {
@@ -289,7 +304,8 @@
       document.querySelector('#approve-campaign').addEventListener('click', () => runCampaignAction('approve'));
       document.querySelector('#schedule-campaign').addEventListener('click', () => runCampaignAction('schedule'));
       document.querySelector('#enqueue-campaign').addEventListener('click', () => runCampaignAction('enqueue'));
-      setScreen('#send-queue-screen', 'Send queue', `<div class="kv"><span>Jobs</span><strong>${queue.count || 0}</strong><span>Delivery mode</span><strong>dry-run</strong></div>${listItems(queue.jobs || [], 'Queue empty. Campaign enqueue creates dry-run jobs only.', (j) => `<li>${j.recipientEmail || j.to} · ${j.status} · ${j.campaignId || 'manual'}</li>`)}`);
+      setScreen('#send-queue-screen', 'Send queue', `<div class="kv"><span>Jobs</span><strong>${queue.count || 0}</strong><span>Delivery mode</span><strong>dry-run</strong></div>${listItems(queue.jobs || [], 'Queue empty. Campaign enqueue creates dry-run jobs only.', (j) => `<li>${j.recipientEmail || j.to} · ${j.status} · ${j.campaignId || 'manual'}</li>`)}<p>Dispatch exactly one queued dry-run job through the safe adapter. This records an internal dispatched event and never sends external mail.</p><div class="toolbar"><button id="dispatch-next-dry-run" type="button">Dispatch next dry-run job</button></div><div id="send-queue-dispatch-result" class="status"></div>`);
+      document.querySelector('#dispatch-next-dry-run').addEventListener('click', dispatchNextDryRun);
       setScreen('#suppressions-screen', 'Suppressions', `<div class="kv"><span>Suppressed</span><strong>${suppressions.count || 0}</strong></div>${listItems(suppressions.suppressions || [], 'No suppressions recorded yet. Unsubscribes, bounces, and complaints will appear here.', (s) => `<li>${s.email} · ${s.reason} · ${s.source}</li>`)}`);
       const firstSourceId = (dataSources.sources || [])[0]?.id || '';
       setScreen('#remote-db-screen', 'Remote PostgreSQL', `<div class="kv"><span>Sources</span><strong>${dataSources.count || 0}</strong><span>Sync dry-runs</span><strong>${syncRuns.count || 0}</strong></div>${listItems(dataSources.sources || [], 'No remote sources registered. Add one through the protected data-source API, then validate SELECT-only query plans here.', (s) => `<li>${s.name} · ${s.connection?.parsed?.host || 'host redacted'} · ${s.connection?.secretStored ? 'encrypted secret' : 'metadata only'}</li>`)}<p>Validate a SELECT-only remote query plan. This enforces limit/timeout and redacted metadata while live remote execution stays locked until the PostgreSQL driver and approval gate are enabled.</p><label>Data source ID <input id="remote-query-source-id" value="${firstSourceId}" placeholder="ds_000001" /></label><label>SELECT query <textarea id="remote-query-sql">select email, consent_status, source from contacts</textarea></label><label>Limit <input id="remote-query-limit" type="number" min="1" max="500" value="100" /></label><label>Timeout ms <input id="remote-query-timeout" type="number" min="100" max="10000" value="5000" /></label><div class="toolbar"><button id="validate-remote-query" type="button">Validate SELECT query</button></div><div id="remote-query-result" class="status"></div>`);
