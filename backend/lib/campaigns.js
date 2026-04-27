@@ -121,6 +121,47 @@ export const approveCampaignDryRun = ({ campaignId, actorEmail = null }) => {
   };
 };
 
+export const scheduleCampaignDryRun = ({ campaignId, scheduledAt, actorEmail = null }) => {
+  const campaign = campaigns.get(String(campaignId || '').trim());
+  if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
+  if (campaign.status !== 'approved_dry_run') return { ok: false, errors: ['campaign_must_be_approved_dry_run'] };
+
+  const scheduledDate = new Date(String(scheduledAt || ''));
+  const errors = [];
+  if (Number.isNaN(scheduledDate.getTime())) errors.push('valid_scheduled_at_required');
+  if (!Number.isNaN(scheduledDate.getTime()) && scheduledDate.getTime() <= Date.now()) errors.push('scheduled_at_must_be_future');
+  const estimate = estimateCampaign({ segmentId: campaign.segmentId, templateId: campaign.templateId });
+  if (!estimate.ok) errors.push(...estimate.errors);
+  if (estimate.ok && estimate.estimatedAudience < 1) errors.push('campaign_audience_required');
+  if (errors.length > 0) return { ok: false, errors };
+
+  const updated = {
+    ...campaign,
+    status: 'scheduled_dry_run',
+    scheduledAt: scheduledDate.toISOString(),
+    scheduledBy: actorEmail,
+    realDeliveryAllowed: false,
+    updatedAt: nowIso()
+  };
+  campaigns.set(campaign.id, updated);
+
+  return {
+    ok: true,
+    mode: 'campaign-dry-run-schedule',
+    campaign: { ...updated },
+    compliance: {
+      consentSource: 'segment_contacts_prevalidated',
+      suppressionsExcluded: true,
+      unsubscribeLanguagePresent: true,
+      unsubscribeLinkInjected: true,
+      rateLimitsRequiredAtQueue: true,
+      manualDispatchRequired: true,
+      realDeliveryAllowed: false
+    },
+    realDelivery: false
+  };
+};
+
 const contactRenderData = (contact) => ({
   email: contact.email,
   firstName: contact.firstName || '',
@@ -132,7 +173,7 @@ const contactRenderData = (contact) => ({
 export const enqueueCampaignDryRun = ({ campaignId, actorEmail = null, env = process.env }) => {
   const campaign = campaigns.get(String(campaignId || '').trim());
   if (!campaign) return { ok: false, errors: ['campaign_not_found'] };
-  if (campaign.status !== 'approved_dry_run') return { ok: false, errors: ['campaign_must_be_approved_dry_run'] };
+  if (!['approved_dry_run', 'scheduled_dry_run'].includes(campaign.status)) return { ok: false, errors: ['campaign_must_be_approved_or_scheduled_dry_run'] };
 
   const template = getTemplate(campaign.templateId);
   if (!template) return { ok: false, errors: ['template_not_found'] };

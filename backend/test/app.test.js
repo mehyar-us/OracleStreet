@@ -630,7 +630,7 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
       body: JSON.stringify({ campaignId: campaign.body.campaign.id })
     });
     assert.equal(prematureEnqueue.status, 400);
-    assert.ok(prematureEnqueue.body.errors.includes('campaign_must_be_approved_dry_run'));
+    assert.ok(prematureEnqueue.body.errors.includes('campaign_must_be_approved_or_scheduled_dry_run'));
 
     const approval = await request('/api/campaigns/approve-dry-run', {
       method: 'POST',
@@ -643,6 +643,27 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     assert.equal(approval.body.realDelivery, false);
     assert.equal(approval.body.compliance.realDeliveryAllowed, false);
     assert.equal(approval.body.compliance.unsubscribeLinkInjected, true);
+
+    const pastSchedule = await request('/api/campaigns/schedule-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: campaign.body.campaign.id, scheduledAt: '2020-01-01T00:00:00.000Z' })
+    });
+    assert.equal(pastSchedule.status, 400);
+    assert.ok(pastSchedule.body.errors.includes('scheduled_at_must_be_future'));
+
+    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const scheduled = await request('/api/campaigns/schedule-dry-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ campaignId: campaign.body.campaign.id, scheduledAt })
+    });
+    assert.equal(scheduled.status, 200);
+    assert.equal(scheduled.body.mode, 'campaign-dry-run-schedule');
+    assert.equal(scheduled.body.campaign.status, 'scheduled_dry_run');
+    assert.equal(scheduled.body.campaign.scheduledAt, scheduledAt);
+    assert.equal(scheduled.body.realDelivery, false);
+    assert.equal(scheduled.body.compliance.manualDispatchRequired, true);
 
     const enqueued = await request('/api/campaigns/enqueue-dry-run', {
       method: 'POST',
@@ -692,6 +713,7 @@ test('campaign draft baseline estimates and enqueues safe dry-run audience witho
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_create'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_approve_dry_run'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_schedule_dry_run'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_enqueue_dry_run'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_reporting_view'));
   });
@@ -704,6 +726,8 @@ test('campaign endpoints also work behind nginx stripped api prefix', async () =
   assert.equal(estimate.status, 401);
   const approve = await request('/campaigns/approve-dry-run', { method: 'POST' });
   assert.equal(approve.status, 401);
+  const schedule = await request('/campaigns/schedule-dry-run', { method: 'POST' });
+  assert.equal(schedule.status, 401);
   const enqueue = await request('/campaigns/enqueue-dry-run', { method: 'POST' });
   assert.equal(enqueue.status, 401);
   const reporting = await request('/campaigns/reporting');

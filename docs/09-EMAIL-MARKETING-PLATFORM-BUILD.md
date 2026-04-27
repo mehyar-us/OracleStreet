@@ -50,8 +50,8 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - [x] contacts list/import baseline
   - [x] validate-only import endpoint requiring admin session, explicit consent, source metadata, valid email, and no duplicate emails
   - [x] in-memory contact import/list endpoint until PostgreSQL persistence is wired
-- [ ] suppression list
-- [ ] unsubscribe endpoint
+- [x] suppression list baseline
+- [x] unsubscribe endpoint baseline
 - [x] source/consent fields required in import validation
 
 ### 4. Campaign CMS
@@ -65,6 +65,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 
 - [x] `send_jobs` dry-run queue baseline
 - [x] campaign dry-run approval baseline before queue enqueue
+- [x] campaign dry-run scheduling baseline that records a future schedule without delivery
 - [x] campaign-to-queue dry-run enqueue baseline with suppression/rate-limit gates
 - [x] safe provider adapter interface baseline
 - dry-run provider first
@@ -75,7 +76,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - delivery events
 - bounce parsing
 - unsubscribe tracking
-- campaign reporting dashboard
+- [x] campaign reporting safe summary baseline
 
 ## Definition of safe sending readiness
 
