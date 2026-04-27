@@ -158,6 +158,8 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.summary.segments, 0);
     assert.equal(dashboard.body.summary.templates, 0);
     assert.equal(dashboard.body.summary.campaigns, 0);
+    assert.equal(dashboard.body.summary.dataSources, 0);
+    assert.equal(dashboard.body.summary.dataSourceSyncRuns, 0);
     assert.equal(dashboard.body.summary.queuedSends, 0);
     assert.equal(dashboard.body.summary.opens, 0);
     assert.equal(dashboard.body.summary.clicks, 0);
@@ -165,6 +167,9 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.summary.campaignClickRate, 0);
     assert.equal(dashboard.body.emailReporting.mode, 'safe-reporting');
     assert.equal(dashboard.body.campaignReporting.mode, 'campaign-reporting-safe-summary');
+    assert.equal(dashboard.body.dataSourceReporting.mode, 'data-source-mapping-ui-safe-baseline');
+    assert.equal(dashboard.body.dataSourceReporting.mappingUi, 'safe-validation-only');
+    assert.equal(dashboard.body.dataSourceReporting.realSync, false);
     assert.equal(dashboard.body.safetyGates.engagementTracking, 'dry-run-events-only');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
   });

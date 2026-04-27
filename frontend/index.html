@@ -27,6 +27,9 @@
     .status.error { color:var(--danger); }
     .metric-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px; }
     .metric { border:1px solid var(--line); border-radius:12px; padding:12px; background:#070b12; }
+    .panel { border:1px solid var(--line); border-radius:14px; padding:14px; margin-top:16px; background:#070b12; }
+    .panel h3 { margin:0 0 8px; font-size:14px; color:var(--accent); }
+    .panel ul { margin:8px 0 0; padding-left:18px; color:var(--muted); line-height:1.6; }
     .metric strong { display:block; font-size:22px; color:var(--gold); }
     .metric small { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
     .hidden { display:none; }
@@ -53,6 +56,7 @@
         <h2>Protected dashboard</h2>
         <p>Safe-test product counters, engagement, and delivery gates behind the admin session gate.</p>
         <div id="dashboard-metrics" class="metric-list"></div>
+        <div id="data-source-panel" class="panel hidden"></div>
       </article>
       <article class="card"><h2>Contacts</h2><p>Import, sync, segment, and manage recipient records with consent/source metadata.</p></article>
       <article class="card"><h2>Campaigns</h2><p>Create affiliate campaign structures with audience, template, and status control.</p></article>
@@ -67,6 +71,7 @@
     const status = document.querySelector('#auth-status');
     const dashboardCard = document.querySelector('#dashboard-card');
     const dashboardMetrics = document.querySelector('#dashboard-metrics');
+    const dataSourcePanel = document.querySelector('#data-source-panel');
 
     const setStatus = (message, kind = '') => {
       status.textContent = message;
@@ -85,6 +90,8 @@
         ['segments', metrics.segments],
         ['templates', metrics.templates],
         ['campaigns', metrics.campaigns],
+        ['dataSources', metrics.dataSources],
+        ['syncDryRuns', metrics.dataSourceSyncRuns],
         ['queuedSends', metrics.queuedSends],
         ['suppressions', metrics.suppressions],
         ['emailEvents', metrics.emailEvents],
@@ -100,6 +107,14 @@
         + `<div class="metric"><strong>${percent(metrics.campaignClickRate)}</strong>campaign click rate<small>dry-run events only</small></div>`
         + `<div class="metric"><strong>${metrics.emailProvider}</strong>${metrics.sendMode}<small>real sending locked</small></div>`
         + `<div class="metric"><strong>${migrations.migrations.length}</strong>schema migrations</div>`;
+      const dataSources = await fetch('/api/data-sources', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { sources: [] });
+      const syncRuns = await fetch('/api/data-source-sync-runs', { cache: 'no-store' }).then((r) => r.ok ? r.json() : { runs: [] });
+      const sourceItems = dataSources.sources.length
+        ? dataSources.sources.map((source) => `<li>${source.name}: ${source.connection.parsed.host}/${source.connection.parsed.database} · secret ${source.connection.secretStored ? 'encrypted' : 'metadata-only'} · sync locked</li>`).join('')
+        : '<li>No remote PostgreSQL sources registered yet.</li>';
+      const latestRun = syncRuns.runs[0];
+      dataSourcePanel.innerHTML = `<h3>Remote PostgreSQL mapping</h3><p>Safe mapping/status view only. No remote rows are pulled from this UI.</p><ul>${sourceItems}</ul><p>Sync dry-runs: ${syncRuns.count || 0}${latestRun ? ` · latest ${latestRun.status} · rows pulled ${latestRun.rowsPulled}` : ''}</p>`;
+      dataSourcePanel.classList.remove('hidden');
       dashboardCard.classList.remove('hidden');
     };
 

@@ -62,7 +62,7 @@
 - [x] Data source registry baseline
 - [x] Encrypted connection secrets baseline
 - [x] Sync jobs dry-run validation baseline
-- [ ] Mapping UI
+- [x] Mapping UI safe status baseline
 - [ ] Sync audit logs
 
 ## Phase 5 — Production hardening

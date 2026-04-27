@@ -111,6 +111,8 @@ const dashboardSummary = (session) => {
   const segmentList = listSegments();
   const templateList = listTemplates();
   const campaignList = listCampaigns();
+  const dataSourceList = listDataSources();
+  const dataSourceSyncRunList = listDataSourceSyncRuns();
   const campaignEngagement = campaignReporting.campaigns.reduce((totals, campaign) => {
     totals.opens += campaign.engagement?.opens || 0;
     totals.clicks += campaign.engagement?.clicks || 0;
@@ -125,6 +127,8 @@ const dashboardSummary = (session) => {
       segments: segmentList.count,
       templates: templateList.count,
       campaigns: campaignList.count,
+      dataSources: dataSourceList.count,
+      dataSourceSyncRuns: dataSourceSyncRunList.count,
       queuedSends: emailReporting.totals.queuedDryRuns,
       suppressions: emailReporting.totals.suppressions,
       emailEvents: emailReporting.totals.emailEvents,
@@ -140,6 +144,14 @@ const dashboardSummary = (session) => {
     },
     emailReporting,
     campaignReporting,
+    dataSourceReporting: {
+      mode: 'data-source-mapping-ui-safe-baseline',
+      dataSources: dataSourceList.count,
+      syncRuns: dataSourceSyncRunList.count,
+      latestSyncRun: dataSourceSyncRunList.runs[0] || null,
+      mappingUi: 'safe-validation-only',
+      realSync: false
+    },
     safetyGates: {
       consentTracking: 'baseline-enforced',
       suppressions: 'baseline-enforced',
