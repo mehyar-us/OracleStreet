@@ -85,6 +85,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - [x] manual bounce parser validation baseline for DSN snippets without recording events or suppressions
 - [x] manual parsed bounce ingest baseline that records bounce/deferred candidates and suppresses hard bounces only
 - [x] bounce mailbox readiness safe-gate baseline that validates planned mailbox config without connecting or reading messages
+- [x] PowerMTA accounting CSV import validation baseline for delivered/deferred/bounce rows without recording events
 - unsubscribe tracking
 - [x] campaign reporting safe summary baseline
 

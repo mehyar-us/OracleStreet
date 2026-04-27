@@ -116,27 +116,28 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 21. [x] Manual bounce parser validation baseline for DSN snippets without recording events, suppressions, probes, or delivery.
 22. [x] Manual parsed bounce ingest baseline that records parsed bounce/deferred candidates while suppressing hard bounces only.
 23. [x] Bounce mailbox readiness safe-gate baseline that reports planned mailbox config without connecting, reading messages, or enabling polling.
-24. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
-25. [x] Manual event CSV import ingest baseline that atomically imports valid bounce/complaint files into events and suppressions without delivery.
-26. [x] Tracked open/click event baseline that records engagement events without auth, redirects, delivery, or external probes.
-27. [x] Campaign tracking URL injection baseline that adds open/click tracking URLs to dry-run campaign queue jobs without delivery.
-28. [x] Manual delivery event ingest baseline for delivered/deferred batches without suppressions, probes, or delivery.
-29. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
-30. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
-31. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
-32. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
-33. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
-34. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
-35. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
-36. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
-37. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
-38. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
-39. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
-40. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
-41. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
-42. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
-43. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
-44. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
+24. [x] PowerMTA accounting CSV import validation baseline for delivered/deferred/bounce rows without recording events or suppressions.
+25. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
+26. [x] Manual event CSV import ingest baseline that atomically imports valid bounce/complaint files into events and suppressions without delivery.
+27. [x] Tracked open/click event baseline that records engagement events without auth, redirects, delivery, or external probes.
+28. [x] Campaign tracking URL injection baseline that adds open/click tracking URLs to dry-run campaign queue jobs without delivery.
+29. [x] Manual delivery event ingest baseline for delivered/deferred batches without suppressions, probes, or delivery.
+30. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
+31. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
+32. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
+33. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
+34. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
+35. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
+36. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
+37. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
+38. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
+39. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
+40. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
+41. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
+42. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
+43. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
+44. [x] Email engine schema alignment migration for dry-run campaign/send-job statuses, delivery event types, tracking URLs, and queue safety metadata.
+45. [x] Controlled live-test readiness safe-gate baseline for a future one-message owned-recipient proof without sending, probing, or mutation.
 
 ## Current validation endpoints
 
@@ -159,6 +160,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/email/bounce-parse/validate` requires an admin session and validates DSN-style bounce/deferral snippets into normalized event candidates without recording events, creating suppressions, probing networks, or sending mail.
 - `POST /api/email/bounce-parse/ingest` requires an admin session and records parsed DSN hard bounces as bounce events with suppressions while recording deferrals without suppressions. It never connects to a mailbox, probes networks, sends mail, or unlocks delivery.
 - `GET /api/email/bounce-mailbox/readiness` requires an admin session and reports redacted planned mailbox config/polling posture without exposing passwords, connecting to a mailbox, reading messages, creating suppressions, or enabling delivery.
+- `POST /api/email/powermta/accounting/validate-import` requires an admin session and validates PowerMTA-style accounting CSV rows into delivered/deferred/bounce event candidates without recording events, creating suppressions, probing networks, connecting to mailboxes, sending mail, or unlocking delivery.
 - `POST /api/email/events/validate-import` requires an admin session and validates manual CSV bounce/complaint imports without recording events, creating suppressions, probing networks, or sending mail.
 - `POST /api/email/events/import` requires an admin session, atomically rejects invalid CSV files, and imports fully valid bounce/complaint rows into events and suppressions without probing networks or sending mail.
 - `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery. Internal `dispatched` events are recorded only by the dry-run dispatch path.

@@ -1550,6 +1550,49 @@ test('bounce mailbox readiness reports safe receive posture without connecting',
   });
 });
 
+test('PowerMTA accounting import validation parses delivery CSV without recording events', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/powermta/accounting/validate-import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ csv: 'recipient,status\nbounced@example.test,5.1.1' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const validation = await request('/api/email/powermta/accounting/validate-import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        source: 'owned pmta accounting sample',
+        csv: 'recipient,dsnStatus,dsnAction,diagnostic,campaignId,contactId,messageId\nHard@Example.test,5.1.1,failed,"550 mailbox",cmp_pmta,ct_hard,msg1\nSlow@Example.test,4.2.0,delayed,"451 temp",cmp_pmta,ct_slow,msg2\nOk@Example.test,2.0.0,delivered,"250 ok",cmp_pmta,ct_ok,msg3\nbad-recipient,5.0.0,failed,"bad row",cmp_pmta,ct_bad,msg4'
+      })
+    });
+    assert.equal(validation.status, 200);
+    assert.equal(validation.body.mode, 'powermta-accounting-import-validate');
+    assert.equal(validation.body.ok, false);
+    assert.equal(validation.body.acceptedCount, 3);
+    assert.equal(validation.body.rejectedCount, 1);
+    assert.deepEqual(validation.body.accepted.map((row) => row.event.type), ['bounce', 'deferred', 'delivered']);
+    assert.equal(validation.body.accepted[0].event.email, 'hard@example.test');
+    assert.equal(validation.body.accepted[0].event.providerMessageId, 'msg1');
+    assert.ok(validation.body.rejected[0].errors.includes('valid_recipient_required'));
+    assert.equal(validation.body.safety.validationOnly, true);
+    assert.equal(validation.body.realDelivery, false);
+
+    const events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 0);
+    const suppressions = await request('/api/suppressions', { headers: { cookie } });
+    assert.equal(suppressions.body.count, 0);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_powermta_accounting_import_validate'));
+  });
+});
+
 test('manual bounce parser validates DSN text without recording events or suppressions', async () => {
   resetAuditLogForTests();
   resetEmailEventsForTests();
@@ -1895,6 +1938,8 @@ test('tracked open and click endpoints record engagement without auth or deliver
 test('email event endpoints also work behind nginx stripped api prefix', async () => {
   const list = await request('/email/events');
   assert.equal(list.status, 401);
+  const pmtaAccounting = await request('/email/powermta/accounting/validate-import', { method: 'POST' });
+  assert.equal(pmtaAccounting.status, 401);
   const bounceMailbox = await request('/email/bounce-mailbox/readiness');
   assert.equal(bounceMailbox.status, 401);
   const bounceParse = await request('/email/bounce-parse/validate', { method: 'POST' });
