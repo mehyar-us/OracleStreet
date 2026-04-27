@@ -44,6 +44,7 @@ export const runLocalPgRows = (sql, env = process.env) => {
     '-p', config.port,
     '-U', config.username,
     '-d', config.database,
+    '-q',
     '-At',
     '-F', '\t',
     '-v', 'ON_ERROR_STOP=1',
@@ -55,5 +56,8 @@ export const runLocalPgRows = (sql, env = process.env) => {
     timeout: 10000
   }).trim();
   if (!output) return [];
-  return output.split('\n').map((line) => line.split('\t'));
+  return output
+    .split('\n')
+    .map((line) => line.split('\t'))
+    .filter((columns) => columns.length > 1 && !/^INSERT\s+\d+\s+\d+$/i.test(columns[0] || ''));
 };
