@@ -57,7 +57,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Warm-up policy controls.
 - Reputation auto-pause threshold controls.
 - Controlled live-test runbook gate UI.
-- Reporting export panel.
+- Reporting dashboard with campaign/source/domain/trend rollups plus export panel.
 - List hygiene planner dashboard.
 - Audit panel.
 - Users/RBAC panel with user directory, role permission matrix, blockers, and safe invite-plan controls.
@@ -146,6 +146,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Campaign tracking URL injection baseline.
 - Campaign reporting safe summary.
 - Campaign engagement dashboard summary.
+- Reporting dashboard depth API/UI with campaign leaderboard, source performance, domain performance, event trends, queue status, and aggregate-only safety posture.
 - Reporting CSV export preview API/UI for:
   - summary
   - campaigns
@@ -316,18 +317,18 @@ Acceptance:
 
 ### Flow F — Reporting dashboard depth
 
-Goal: turn safe reports into operator-grade insight.
+Status: shipped safe baseline. The Reporting workbench now calls `/api/email/reporting/dashboard` for aggregate campaign/source/domain/trend insight and still links to CSV export previews. The endpoint is admin-only, aggregate/read-only, contains no secrets, probes no networks, sends nothing, and never unlocks real delivery.
 
-Build:
-- campaign/domain/source report cards
-- bounce/complaint/open/click trend summaries
-- source-quality impact on engagement/suppression
+Shipped:
+- campaign/source/domain report cards and leaderboard
+- bounce/complaint/open/click event trend summaries
+- source-quality/domain impact on engagement and suppression risk
 - export buttons linked to existing CSV preview
 
 Acceptance:
 - visible reporting UI
-- protected API summary endpoints
-- tests for totals and redaction
+- protected API summary endpoint
+- tests for totals, trend/source/domain aggregation, audit, and redaction
 
 ## Required loop behavior
 

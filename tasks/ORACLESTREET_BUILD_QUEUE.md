@@ -45,7 +45,7 @@ Verification:
 
 ### O3 — Visible admin CMS screens
 
-Status: initial safe-read workbench shipped; contact import, template creation/preview, campaign dry-run builder, send queue dry-run dispatch, suppression management, reporting CSV export workflows, and list hygiene cleanup planner dashboard shipped; remaining CRUD workflows still pending.
+Status: initial safe-read workbench shipped; contact import, template creation/preview, campaign dry-run builder, send queue dry-run dispatch, suppression management, reporting dashboard/export workflows, and list hygiene cleanup planner dashboard shipped; remaining CRUD workflows still pending.
 
 Acceptance:
 - Boss can log in and see actual modules, not just placeholder cards.
@@ -92,7 +92,7 @@ Safety:
 Acceptance:
 - Campaign reporting, engagement, provider events, bounce/complaint, and affiliate metadata dashboards.
 - Audit timeline for contacts/campaigns/send jobs.
-- CSV export previews for summary/campaign/events/suppressions shipped; future work should persist/export from PostgreSQL once repositories migrate.
+- CSV export previews for summary/campaign/events/suppressions shipped; reporting dashboard now adds campaign/source/domain/trend rollups; future work should persist/export deeper affiliate/audit timelines from PostgreSQL once repositories migrate.
 
 ## Loop rules
 
@@ -117,11 +117,12 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Flow F — Reporting dashboard depth.
-2. Hardening pass: PostgreSQL-persist remote import schedules and controlled proof audits.
-3. Hardening pass: RBAC enforcement beyond safe planning baselines.
+1. Hardening pass: PostgreSQL-persist remote import schedules and controlled proof audits.
+2. Hardening pass: RBAC enforcement beyond safe planning baselines.
+3. Affiliate/campaign metadata and audit timeline depth.
 
 Latest shipped slice:
+- Flow F reporting dashboard depth safe baseline: `/api/email/reporting/dashboard` provides protected aggregate campaign leaderboard, source performance, domain performance, event trend, queue-status, and export-link metadata; the Reporting UI exposes the cards/lists after login, audits dashboard views, includes no secrets, probes no networks, sends no email, and keeps real delivery locked.
 - Flow E controlled one-recipient MTA proof path safe baseline: `/api/email/controlled-live-test/proof-audit` records manual/out-of-band proof outcomes, dry-run/local-capture proof IDs, optional provider message IDs, masked recipient metadata, and notes; it audits accepted/rejected records, sends no email, probes no network, mutates no queues/providers/suppressions, exposes no secrets, and the Reputation/readiness UI exposes proof audit history and controls after login.
 - Flow D remote PostgreSQL import scheduler safe baseline: `/api/data-source-import-schedules` plans recurring imports from a SELECT-only query plus contact mapping profile, interval, next-run preview timestamp, and exact approval phrase when marked enabled; it audits accepted/rejected plans, stores no raw credentials, performs no immediate remote pull, starts no worker, mutates no contacts, and the Remote PostgreSQL UI exposes schedule planning/history after login.
 - Flow C Users/RBAC safe baseline: `/api/admin/users` lists admin users from PostgreSQL where enabled or bootstrap fallback otherwise; `/api/admin/users/invite-plan` validates a planned role invite/create workflow, records audit, sends no email, creates no token/password, mutates no users, and the Users/RBAC UI exposes the directory, role matrix, blockers, and safe invite-plan controls after login.

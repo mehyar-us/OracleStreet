@@ -26,7 +26,7 @@ import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { evaluateWarmupScheduleCap, listWarmupPolicies, saveWarmupPolicy } from './lib/warmupPolicies.js';
-import { campaignReportingSummary, emailReportingSummary, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
+import { campaignReportingSummary, emailReportingSummary, reportingDashboardDepth, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
 import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
@@ -395,6 +395,15 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, emailReportingSummary());
+    }
+
+    if (url.pathname === '/api/email/reporting/dashboard' || url.pathname === '/email/reporting/dashboard') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = reportingDashboardDepth();
+      recordAuditEvent({ action: 'reporting_dashboard_depth_view', actorEmail: session.email, status: 'ok', details: { campaigns: result.campaignLeaderboard.length, sources: result.sourcePerformance.length, domains: result.domainPerformance.length, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/email/reporting/export' || url.pathname === '/email/reporting/export') {

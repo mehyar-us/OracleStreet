@@ -1,5 +1,6 @@
 import { listAuditLog } from './auditLog.js';
 import { listCampaigns } from './campaigns.js';
+import { listContacts } from './contacts.js';
 import { listEmailEvents } from './emailEvents.js';
 import { senderDomainReadiness } from './domainReadiness.js';
 import { getEmailProviderConfig, validateSelectedProviderConfig } from './emailProvider.js';
@@ -51,6 +52,52 @@ const increment = (counts, key) => {
   counts[key] = (counts[key] || 0) + 1;
 };
 
+const domainOf = (email) => String(email || '').toLowerCase().split('@')[1] || 'unknown';
+
+const rate = (numerator, denominator) => denominator > 0 ? numerator / denominator : 0;
+
+const eventCountsFor = (events) => events.reduce((counts, event) => {
+  increment(counts, event.type);
+  return counts;
+}, {});
+
+const sourceForEmail = (contactByEmail, email) => contactByEmail.get(String(email || '').toLowerCase())?.source || 'unknown';
+
+const addRollup = (map, key, event, contactByEmail) => {
+  const row = map.get(key) || {
+    key,
+    contacts: 0,
+    events: 0,
+    dispatched: 0,
+    delivered: 0,
+    deferred: 0,
+    bounces: 0,
+    complaints: 0,
+    opens: 0,
+    clicks: 0,
+    unsubscribes: 0
+  };
+  row.events += 1;
+  if (event.type === 'dispatched') row.dispatched += 1;
+  if (event.type === 'delivered') row.delivered += 1;
+  if (event.type === 'deferred') row.deferred += 1;
+  if (event.type === 'bounce') row.bounces += 1;
+  if (event.type === 'complaint') row.complaints += 1;
+  if (event.type === 'open') row.opens += 1;
+  if (event.type === 'click') row.clicks += 1;
+  map.set(key, row);
+};
+
+const finishRollup = (row) => ({
+  ...row,
+  openRate: rate(row.opens, Math.max(row.dispatched, row.delivered, 1)),
+  clickRate: rate(row.clicks, Math.max(row.dispatched, row.delivered, 1)),
+  bounceRate: rate(row.bounces, Math.max(row.dispatched, row.delivered, row.bounces, 1)),
+  complaintRate: rate(row.complaints, Math.max(row.dispatched, row.delivered, row.complaints, 1)),
+  riskLevel: row.complaints > 0 || row.bounceRate > 0.05 ? 'high' : (row.deferred > 0 || row.bounceRate > 0.02 ? 'watch' : 'normal'),
+  realDeliveryAllowed: false
+});
+
 export const campaignReportingSummary = () => {
   const campaignList = listCampaigns();
   const queue = listSendQueue();
@@ -95,6 +142,108 @@ export const campaignReportingSummary = () => {
     mode: 'campaign-reporting-safe-summary',
     count: rows.length,
     campaigns: rows,
+    realDeliveryAllowed: false
+  };
+};
+
+export const reportingDashboardDepth = (env = process.env) => {
+  const contacts = listContacts();
+  const campaigns = campaignReportingSummary();
+  const events = listEmailEvents();
+  const suppressions = listSuppressions();
+  const queue = listSendQueue();
+  const contactByEmail = new Map((contacts.contacts || []).map((contact) => [String(contact.email || '').toLowerCase(), contact]));
+  const sourceContactCounts = new Map();
+  const domainContactCounts = new Map();
+  (contacts.contacts || []).forEach((contact) => {
+    sourceContactCounts.set(contact.source || 'unknown', (sourceContactCounts.get(contact.source || 'unknown') || 0) + 1);
+    domainContactCounts.set(domainOf(contact.email), (domainContactCounts.get(domainOf(contact.email)) || 0) + 1);
+  });
+
+  const sourceMap = new Map();
+  const domainMap = new Map();
+  const trendMap = new Map();
+  (events.events || []).forEach((event) => {
+    addRollup(sourceMap, sourceForEmail(contactByEmail, event.email), event, contactByEmail);
+    addRollup(domainMap, domainOf(event.email), event, contactByEmail);
+    const day = String(event.createdAt || new Date().toISOString()).slice(0, 10);
+    addRollup(trendMap, day, event, contactByEmail);
+  });
+  sourceContactCounts.forEach((count, source) => {
+    const row = sourceMap.get(source) || { key: source, contacts: 0, events: 0, dispatched: 0, delivered: 0, deferred: 0, bounces: 0, complaints: 0, opens: 0, clicks: 0, unsubscribes: 0 };
+    row.contacts = count;
+    sourceMap.set(source, row);
+  });
+  domainContactCounts.forEach((count, domain) => {
+    const row = domainMap.get(domain) || { key: domain, contacts: 0, events: 0, dispatched: 0, delivered: 0, deferred: 0, bounces: 0, complaints: 0, opens: 0, clicks: 0, unsubscribes: 0 };
+    row.contacts = count;
+    domainMap.set(domain, row);
+  });
+  (suppressions.suppressions || []).forEach((suppression) => {
+    const source = sourceForEmail(contactByEmail, suppression.email);
+    const sourceRow = sourceMap.get(source) || { key: source, contacts: 0, events: 0, dispatched: 0, delivered: 0, deferred: 0, bounces: 0, complaints: 0, opens: 0, clicks: 0, unsubscribes: 0 };
+    sourceRow.unsubscribes += suppression.reason === 'unsubscribe' ? 1 : 0;
+    sourceMap.set(source, sourceRow);
+    const domain = domainOf(suppression.email);
+    const domainRow = domainMap.get(domain) || { key: domain, contacts: 0, events: 0, dispatched: 0, delivered: 0, deferred: 0, bounces: 0, complaints: 0, opens: 0, clicks: 0, unsubscribes: 0 };
+    domainRow.unsubscribes += suppression.reason === 'unsubscribe' ? 1 : 0;
+    domainMap.set(domain, domainRow);
+  });
+
+  const sourcePerformance = [...sourceMap.values()].map(finishRollup).sort((a, b) => (b.events + b.contacts) - (a.events + a.contacts)).slice(0, 12);
+  const domainPerformance = [...domainMap.values()].map(finishRollup).sort((a, b) => (b.events + b.contacts) - (a.events + a.contacts)).slice(0, 12);
+  const trends = [...trendMap.values()].map(finishRollup).sort((a, b) => a.key.localeCompare(b.key)).slice(-30);
+  const campaignLeaderboard = campaigns.campaigns.map((campaign) => ({
+    campaignId: campaign.campaignId,
+    name: campaign.name,
+    status: campaign.status,
+    estimatedAudience: campaign.estimatedAudience,
+    queuedDryRuns: campaign.queuedDryRuns,
+    dispatchedDryRuns: campaign.dispatchedDryRuns,
+    opens: campaign.engagement.opens,
+    clicks: campaign.engagement.clicks,
+    openRate: campaign.engagement.openRate,
+    clickRate: campaign.engagement.clickRate,
+    unsubscribes: campaign.unsubscribes,
+    realDeliveryAllowed: false
+  })).sort((a, b) => (b.opens + b.clicks) - (a.opens + a.clicks)).slice(0, 10);
+  const eventCounts = eventCountsFor(events.events || []);
+  const queuedByStatus = (queue.jobs || []).reduce((counts, job) => {
+    increment(counts, job.status || 'unknown');
+    return counts;
+  }, {});
+
+  return {
+    ok: true,
+    mode: 'reporting-dashboard-depth-safe-summary',
+    generatedAt: new Date().toISOString(),
+    cards: {
+      contacts: contacts.count || 0,
+      campaigns: campaigns.count || 0,
+      sendJobs: queue.count || 0,
+      events: events.count || 0,
+      suppressions: suppressions.count || 0,
+      opens: eventCounts.open || 0,
+      clicks: eventCounts.click || 0,
+      bounces: eventCounts.bounce || 0,
+      complaints: eventCounts.complaint || 0,
+      realDeliveryAllowed: false
+    },
+    eventCounts,
+    queueStatus: queuedByStatus,
+    campaignLeaderboard,
+    sourcePerformance,
+    domainPerformance,
+    trends,
+    exports: ['summary', 'campaigns', 'events', 'suppressions'],
+    safety: {
+      adminSessionRequired: true,
+      noSecretsIncluded: true,
+      noExternalDelivery: true,
+      noNetworkProbe: true,
+      aggregateOnly: true,
+      realDeliveryAllowed: false
+    },
     realDeliveryAllowed: false
   };
 };

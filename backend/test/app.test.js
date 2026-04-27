@@ -2754,9 +2754,80 @@ test('email reporting export preview requires admin and returns safe CSV without
   });
 });
 
+test('reporting dashboard depth requires admin and aggregates campaign source domain trends safely', async () => {
+  resetAuditLogForTests();
+  resetContactsForTests();
+  resetCampaignsForTests();
+  resetTemplatesForTests();
+  resetSegmentsForTests();
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  resetEmailEventsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/reporting/dashboard');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'source-a@example.test', consentStatus: 'opt_in', source: 'owned source A', firstName: 'A' },
+        { email: 'source-b@example.test', consentStatus: 'opt_in', source: 'owned source B', firstName: 'B' }
+      ] })
+    });
+    const segment = await request('/api/segments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Reporting segment', criteria: { sourceIncludes: 'owned source A' } })
+    });
+    const template = await request('/api/templates', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Reporting template', subject: 'Report', html: '<p>Hello</p><p>unsubscribe</p>', text: 'Hello unsubscribe' })
+    });
+    const campaign = await request('/api/campaigns', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Reporting campaign', segmentId: segment.body.segment.id, templateId: template.body.template.id })
+    });
+    await request(`/api/track/open?email=source-a@example.test&campaignId=${encodeURIComponent(campaign.body.campaign.id)}`);
+    await request(`/api/track/click?email=source-a@example.test&campaignId=${encodeURIComponent(campaign.body.campaign.id)}&url=https%3A%2F%2Fexample.test%2Foffer`);
+    await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [
+        { type: 'bounce', email: 'source-b@example.test', campaignId: campaign.body.campaign.id, source: 'report depth', providerMessageId: 'msg-bounce-1' }
+      ] })
+    });
+
+    const dashboard = await request('/api/email/reporting/dashboard', { headers: { cookie } });
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.body.mode, 'reporting-dashboard-depth-safe-summary');
+    assert.equal(dashboard.body.cards.contacts, 2);
+    assert.equal(dashboard.body.cards.campaigns, 1);
+    assert.equal(dashboard.body.cards.opens, 1);
+    assert.equal(dashboard.body.cards.clicks, 1);
+    assert.equal(dashboard.body.cards.bounces, 1);
+    assert.ok(dashboard.body.sourcePerformance.some((row) => row.key === 'owned source A' && row.opens === 1 && row.clicks === 1));
+    assert.ok(dashboard.body.domainPerformance.some((row) => row.key === 'example.test' && row.bounces === 1));
+    assert.ok(dashboard.body.trends.length >= 1);
+    assert.equal(dashboard.body.safety.aggregateOnly, true);
+    assert.equal(dashboard.body.safety.noSecretsIncluded, true);
+    assert.equal(dashboard.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(dashboard.body).includes('correct-horse-battery-staple'), false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'reporting_dashboard_depth_view'));
+  });
+});
+
 test('email reporting endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/reporting');
   assert.equal(res.status, 401);
+  const dashboard = await request('/email/reporting/dashboard');
+  assert.equal(dashboard.status, 401);
   const exportPreview = await request('/email/reporting/export?dataset=summary');
   assert.equal(exportPreview.status, 401);
 });
