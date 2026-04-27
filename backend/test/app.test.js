@@ -2740,6 +2740,55 @@ test('controlled live test readiness requires all gates and never sends', async 
   });
 });
 
+test('controlled live test runbook gate requires explicit proof and never sends', async () => {
+  resetAuditLogForTests();
+  await withEnv({
+    ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
+    ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
+    ORACLESTREET_MAIL_PROVIDER: 'powermta',
+    ORACLESTREET_POWERMTA_HOST: 'pmta.example.test',
+    ORACLESTREET_POWERMTA_PORT: '587',
+    ORACLESTREET_POWERMTA_USERNAME: 'pmta-user',
+    ORACLESTREET_POWERMTA_PASSWORD: 'pmta-secret',
+    ORACLESTREET_DEFAULT_FROM_EMAIL: 'sender@stuffprettygood.com',
+    ORACLESTREET_CONTROLLED_TEST_RECIPIENT_EMAIL: 'owned-inbox@example.test',
+    ORACLESTREET_CONTROLLED_TEST_RECIPIENT_OWNED: 'true'
+  }, async () => {
+    const unauth = await request('/api/email/controlled-live-test/plan', { method: 'POST', body: '{}' });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const rejected = await request('/api/email/controlled-live-test/plan', {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ recipientEmail: 'owned-inbox@example.test', approvalPhrase: 'approve', dryRunProofId: 'dryrun_123' })
+    });
+    assert.equal(rejected.status, 400);
+    assert.ok(rejected.body.blockers.includes('exact_live_test_approval_phrase_required'));
+    assert.equal(rejected.body.safety.noSend, true);
+
+    const planned = await request('/api/email/controlled-live-test/plan', {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ recipientEmail: 'owned-inbox@example.test', approvalPhrase: 'I_APPROVE_ONE_OWNED_RECIPIENT_LIVE_TEST', dryRunProofId: 'dryrun_123' })
+    });
+    assert.equal(planned.status, 200);
+    assert.equal(planned.body.mode, 'controlled-live-test-runbook-gate');
+    assert.equal(planned.body.acceptedForRunbook, true);
+    assert.equal(planned.body.readyForControlledLiveTest, false);
+    assert.equal(planned.body.recipient.email, 'ow***@example.test');
+    assert.equal(planned.body.runbook.maxMessages, 1);
+    assert.equal(planned.body.safety.requiresSeparateManualExecution, true);
+    assert.equal(planned.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(planned.body).includes('pmta-secret'), false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_plan'));
+  });
+});
+
 test('sender domain readiness endpoint requires admin session and reports safe DNS plan', async () => {
   resetAuditLogForTests();
   await withEnv({

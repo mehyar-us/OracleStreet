@@ -36,6 +36,7 @@
 - [x] Add warm-up planner controls UI
 - [x] Add warm-up policy persistence and campaign schedule cap enforcement baseline
 - [x] Add reputation dashboard auto-pause controls UI
+- [x] Add controlled one-recipient MTA live-test runbook gate UI/API without sending
 
 ## Phase 1 — Product skeleton
 

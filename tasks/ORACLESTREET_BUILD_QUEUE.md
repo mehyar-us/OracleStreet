@@ -116,13 +116,14 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices:
-1. Controlled one-recipient MTA live-test runbook/gate.
-2. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
-3. Multi-user/RBAC admin workflow.
-4. Campaign calendar UI over warm-up caps.
-5. Contact browser search/filter and source-quality drilldowns.
+1. Live remote PostgreSQL probe/query execution behind pg-driver and explicit approval gates.
+2. Multi-user/RBAC admin workflow.
+3. Campaign calendar UI over warm-up caps.
+4. Contact browser search/filter and source-quality drilldowns.
+5. One-message MTA proof execution remains manual/out-of-band after all readiness blockers are resolved and Boss explicitly approves.
 
 Latest shipped slice:
+- Controlled one-recipient MTA live-test runbook gate: `POST /api/email/controlled-live-test/plan` and the reputation UI now collect owned-recipient/proof/approval phrase and return a one-message runbook without sending, probing, mutating queues/providers, exposing secrets, or unlocking delivery.
 - Warm-up/reputation policy PostgreSQL runtime adapter: warm-up policy list/save/schedule-cap evaluation and reputation policy save/evaluate now use local PostgreSQL tables through the `psql` adapter when enabled; recommendation-only posture and real-delivery lock remain intact.
 - Users/admin sessions/audit PostgreSQL runtime adapter: admin login upserts the bootstrap admin into `users`, records a hashed session ledger in `admin_sessions`, and writes/list audit events through `audit_log` when enabled; signed cookies remain the auth verifier and raw tokens/passwords are never stored or exposed.
 - Send queue/email events PostgreSQL runtime adapter: local VPS runtime can persist dry-run queue jobs, dry-run dispatch status, and delivery/engagement/bounce/complaint events through the local `psql` adapter when `ORACLESTREET_PG_REPOSITORIES` includes `send_queue,email_events`; migration `006_send_queue_event_runtime_ids` relaxes queue/event runtime IDs while real delivery remains locked.

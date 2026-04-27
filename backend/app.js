@@ -5,7 +5,7 @@ import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { approveCampaignDryRun, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
-import { controlledLiveTestReadiness } from './lib/controlledLiveTestReadiness.js';
+import { controlledLiveTestReadiness, planControlledLiveTest } from './lib/controlledLiveTestReadiness.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { createDataSource, createDataSourceSyncRun, listDataSources, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, validateDataSourceQuery } from './lib/dataSources.js';
@@ -358,6 +358,17 @@ export const createHandler = () => {
       const readiness = controlledLiveTestReadiness();
       recordAuditEvent({ action: 'email_controlled_live_test_readiness_view', actorEmail: session.email, target: 'controlled-live-test', status: readiness.ok ? 'ok' : 'blocked', details: { blockers: readiness.blockers, noSend: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/email/controlled-live-test/plan' || url.pathname === '/email/controlled-live-test/plan') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = planControlledLiveTest({ ...body, actorEmail: session.email });
+      recordAuditEvent({ action: 'email_controlled_live_test_plan', actorEmail: session.email, target: 'controlled-live-test', status: result.ok ? 'ok' : 'rejected', details: { blockers: result.blockers, noSend: true, noProviderMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/email/domain-readiness' || url.pathname === '/email/domain-readiness') {
