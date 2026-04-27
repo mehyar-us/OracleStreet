@@ -116,3 +116,5 @@ export const listContacts = () => ({
   count: contacts.size,
   contacts: [...contacts.values()].map((contact) => ({ ...contact }))
 });
+
+export const getAllContacts = () => [...contacts.values()].map((contact) => ({ ...contact }));

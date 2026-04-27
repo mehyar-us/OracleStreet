@@ -7,6 +7,7 @@ import { dryRunSend, getEmailProviderConfig, validatePowerMtaConfig, validateSel
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { emailReportingSummary } from './lib/reporting.js';
+import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
 import { enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
 
@@ -101,12 +102,13 @@ const requireSession = (req, res) => {
 const dashboardSummary = (session) => {
   const emailReporting = emailReportingSummary();
   const contactList = listContacts();
+  const segmentList = listSegments();
   return {
     ok: true,
     user: { email: session.email },
     summary: {
       contacts: contactList.count,
-      segments: 0,
+      segments: segmentList.count,
       templates: 0,
       campaigns: 0,
       queuedSends: emailReporting.totals.queuedDryRuns,
@@ -248,6 +250,29 @@ export const createHandler = () => {
       const result = importContacts(body.contacts, session.email);
       recordAuditEvent({ action: 'contact_import', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { importedCount: result.importedCount, updatedCount: result.updatedCount, rejectedCount: result.rejectedCount, error: result.error } });
       return jsonResponse(res, result.error ? 400 : 200, result);
+    }
+
+    if (url.pathname === '/api/segments' || url.pathname === '/segments') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') return jsonResponse(res, 200, listSegments());
+      if (req.method !== 'POST') return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = createSegment({ name: body.name, criteria: body.criteria, actorEmail: session.email });
+      recordAuditEvent({ action: 'segment_create', actorEmail: session.email, target: body.name || null, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.segment?.estimatedAudience, errors: result.errors || [] } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/segments/estimate' || url.pathname === '/segments/estimate') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = estimateSegmentAudience(body.criteria || {});
+      recordAuditEvent({ action: 'segment_estimate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.estimatedAudience, errors: result.errors || [] } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/email/test-send' || url.pathname === '/email/test-send') {

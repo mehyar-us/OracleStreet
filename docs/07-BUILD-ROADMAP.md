@@ -20,7 +20,7 @@
 ## Phase 2 — CMS core
 
 - [x] Contacts list/import baseline
-- [ ] Segments
+- [x] Segments/safe audience estimate baseline
 - [ ] Campaign CRUD
 - [ ] Templates
 - [x] Audit log baseline

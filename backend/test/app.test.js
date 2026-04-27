@@ -6,6 +6,7 @@ import { resetAuditLogForTests } from '../lib/auditLog.js';
 import { resetContactsForTests } from '../lib/contacts.js';
 import { validateDatabaseConfig } from '../lib/database.js';
 import { resetEmailEventsForTests } from '../lib/emailEvents.js';
+import { resetSegmentsForTests } from '../lib/segments.js';
 import { resetSendQueueForTests } from '../lib/sendQueue.js';
 import { resetSuppressionsForTests } from '../lib/suppressions.js';
 
@@ -126,6 +127,7 @@ test('dashboard route requires an admin session', async () => {
 test('dashboard route returns protected safe-test summary for admin session', async () => {
   resetAuditLogForTests();
   resetContactsForTests();
+  resetSegmentsForTests();
   resetSendQueueForTests();
   resetSuppressionsForTests();
   resetEmailEventsForTests();
@@ -147,6 +149,7 @@ test('dashboard route returns protected safe-test summary for admin session', as
     assert.equal(dashboard.body.summary.emailProvider, 'dry-run');
     assert.equal(dashboard.body.summary.sendMode, 'safe-test-only');
     assert.equal(dashboard.body.summary.contacts, 0);
+    assert.equal(dashboard.body.summary.segments, 0);
     assert.equal(dashboard.body.summary.queuedSends, 0);
     assert.equal(dashboard.body.emailReporting.mode, 'safe-reporting');
     assert.equal(dashboard.body.safetyGates.realSendingAllowed, false);
@@ -372,6 +375,85 @@ test('contact endpoints also work behind nginx stripped api prefix', async () =>
   assert.equal(imported.status, 401);
   const validate = await request('/contacts/import/validate', { method: 'POST' });
   assert.equal(validate.status, 401);
+});
+
+test('segment endpoints require admin session', async () => {
+  const list = await request('/api/segments');
+  assert.equal(list.status, 401);
+  const create = await request('/api/segments', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Owned', criteria: {} })
+  });
+  assert.equal(create.status, 401);
+  const estimate = await request('/api/segments/estimate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ criteria: {} })
+  });
+  assert.equal(estimate.status, 401);
+});
+
+test('segments estimate safe audiences and exclude suppressed contacts', async () => {
+  resetAuditLogForTests();
+  resetContactsForTests();
+  resetSegmentsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ contacts: [
+        { email: 'a@example.test', consentStatus: 'opt_in', source: 'owned signup form' },
+        { email: 'b@example.test', consentStatus: 'double_opt_in', source: 'owned signup form' },
+        { email: 'c@other.test', consentStatus: 'opt_in', source: 'owned partner form' }
+      ] })
+    });
+    await request('/api/suppressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'a@example.test', reason: 'manual', source: 'segment smoke' })
+    });
+
+    const estimate = await request('/api/segments/estimate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ criteria: { sourceIncludes: 'owned', emailDomain: 'example.test' } })
+    });
+    assert.equal(estimate.status, 200);
+    assert.equal(estimate.body.mode, 'safe-segment-estimate');
+    assert.equal(estimate.body.totalContacts, 3);
+    assert.equal(estimate.body.suppressedCount, 1);
+    assert.equal(estimate.body.estimatedAudience, 1);
+    assert.equal(estimate.body.contacts[0].email, 'b@example.test');
+
+    const created = await request('/api/segments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Owned example.test safe audience', criteria: { sourceIncludes: 'owned', emailDomain: 'example.test' } })
+    });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.segment.estimatedAudience, 1);
+
+    const list = await request('/api/segments', { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.count, 1);
+
+    const dashboard = await request('/api/dashboard', { headers: { cookie } });
+    assert.equal(dashboard.body.summary.segments, 1);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'segment_create'));
+  });
+});
+
+test('segment endpoints also work behind nginx stripped api prefix', async () => {
+  const list = await request('/segments');
+  assert.equal(list.status, 401);
+  const estimate = await request('/segments/estimate', { method: 'POST' });
+  assert.equal(estimate.status, 401);
 });
 
 

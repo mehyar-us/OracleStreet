@@ -66,6 +66,7 @@ npm test --prefix backend
 - Protected migration manifest: `GET /api/schema/migrations` must return `401` without a session and list SQL migrations with a valid admin session.
 - PostgreSQL readiness/status: `GET /api/database/status` must require admin auth, validate PostgreSQL URL shape, redact credentials, and avoid live connection probes until the database driver/persistence slice is enabled.
 - Contact import/list baseline: `POST /api/contacts/import/validate` must return `401` without a session and reject rows missing valid email, explicit consent, source metadata, or with duplicate emails. `POST /api/contacts/import` must require admin auth, atomically reject invalid batches before storing any contact, and store/list valid consented contacts in memory until PostgreSQL persistence is wired.
+- Segment/safe audience estimate baseline: `POST /api/segments/estimate` and `POST /api/segments` must require admin auth, filter only existing consented contacts, exclude suppressed contacts by default, report suppressed counts, and audit segment estimate/create actions.
 - Frontend login/dashboard card: served from `/`, calls the auth, dashboard, and migration APIs through the Nginx `/api/` proxy.
 - Email config remains safe-test-only at `GET /api/email/config`; real sending stays disabled unless future safety gates pass.
 - SMTP/PowerMTA provider validation: `POST /api/email/provider/validate` must require admin auth, report redacted readiness, skip network probes by default, and never expose passwords.

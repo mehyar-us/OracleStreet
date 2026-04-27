@@ -58,7 +58,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 
 - campaigns CRUD
 - templates CRUD
-- segments/saved filters
+- [x] segments/saved filters baseline with safe audience estimate and suppression exclusion
 - preview/render test
 
 ### 5. Send engine
