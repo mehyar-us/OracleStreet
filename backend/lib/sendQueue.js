@@ -133,7 +133,11 @@ export const enqueueDryRunSend = (message, actorEmail, env = process.env) => {
     };
   }
 
-  const rateLimit = evaluateRateLimit({ queue, to: validation.normalized.to, env });
+  let rateLimitQueue = queue;
+  if (isPgRepositoryEnabled('send_queue')) {
+    try { rateLimitQueue = listSendQueueFromPostgres(); } catch (error) { rateLimitQueue = queue; }
+  }
+  const rateLimit = evaluateRateLimit({ queue: rateLimitQueue, to: validation.normalized.to, env });
   if (!rateLimit.ok) {
     return {
       ok: false,
