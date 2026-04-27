@@ -1184,6 +1184,44 @@ test('email event ingest requires admin session', async () => {
   assert.equal(res.status, 401);
 });
 
+test('manual event import validation parses CSV without recording events', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/events/validate-import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ csv: 'type,email,source\nbounce,bounced@example.test,pmta csv' })
+    });
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const validation = await request('/api/email/events/validate-import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        csv: 'type,email,source,detail,campaignId,contactId\n"bounce",Bounced@Example.test,"pmta csv","550 mailbox",cmp_123,ct_123\nopen,reader@example.test,tracking pixel,,cmp_123,ct_124'
+      })
+    });
+    assert.equal(validation.status, 200);
+    assert.equal(validation.body.mode, 'manual-event-import-validate');
+    assert.equal(validation.body.ok, false);
+    assert.equal(validation.body.acceptedCount, 1);
+    assert.equal(validation.body.rejectedCount, 1);
+    assert.equal(validation.body.accepted[0].event.type, 'bounce');
+    assert.equal(validation.body.accepted[0].event.email, 'bounced@example.test');
+    assert.equal(validation.body.accepted[0].event.campaignId, 'cmp_123');
+    assert.ok(validation.body.rejected[0].errors.includes('valid_event_type_required'));
+    assert.equal(validation.body.realDelivery, false);
+
+    const events = await request('/api/email/events', { headers: { cookie } });
+    assert.equal(events.body.count, 0);
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'email_events_import_validate'));
+  });
+});
+
 test('manual bounce and complaint ingest records events and suppresses recipients', async () => {
   resetSendQueueForTests();
   resetSuppressionsForTests();
@@ -1249,6 +1287,8 @@ test('manual event ingest rejects internal dispatched events', async () => {
 test('email event endpoints also work behind nginx stripped api prefix', async () => {
   const list = await request('/email/events');
   assert.equal(list.status, 401);
+  const validateImport = await request('/email/events/validate-import', { method: 'POST' });
+  assert.equal(validateImport.status, 401);
   const ingest = await request('/email/events/ingest', { method: 'POST' });
   assert.equal(ingest.status, 401);
 });

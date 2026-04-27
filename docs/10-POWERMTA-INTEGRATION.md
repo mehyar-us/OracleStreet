@@ -112,6 +112,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 17. [x] Sender domain readiness safe-gate baseline for SPF/DKIM/DMARC/TLS planning without DNS probing or delivery.
 18. [x] Campaign reporting safe summary baseline for dry-run queue, dispatch, event, and unsubscribe counts.
 19. [x] Campaign dry-run scheduling baseline that records future schedules while keeping manual dispatch and no delivery.
+20. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
 
 ## Current validation endpoints
 
@@ -129,6 +130,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
 - `GET /api/unsubscribe` / `GET /unsubscribe` accepts tracked link query params (`email`, `source`, `campaignId`, `contactId`) and records an unsubscribe suppression without auth or delivery. `POST /api/unsubscribe` remains available for JSON smoke tests.
 - `GET /api/email/rate-limits` requires an admin session and returns dry-run warm-up caps. Queue enqueue enforces global and per-domain hourly limits before any provider path.
+- `POST /api/email/events/validate-import` requires an admin session and validates manual CSV bounce/complaint imports without recording events, creating suppressions, probing networks, or sending mail.
 - `POST /api/email/events/ingest` requires an admin session and accepts manual `bounce`/`complaint` event batches only; accepted events create suppressions and do not trigger delivery. Internal `dispatched` events are recorded only by the dry-run dispatch path.
 - `GET /api/email/events` requires an admin session and lists in-memory event records until PostgreSQL persistence is wired.
 - `GET /api/email/local-capture` requires an admin session and lists captured local-provider messages for controlled smoke tests only.

@@ -5,6 +5,7 @@ import { importContacts, listContacts, validateContactImport } from './lib/conta
 import { validateDatabaseConfig } from './lib/database.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { ingestEmailEvents, listEmailEvents, recordEmailEvent } from './lib/emailEvents.js';
+import { validateEventImportCsv } from './lib/eventImport.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
 import { listMigrations } from './lib/migrations.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
@@ -501,6 +502,17 @@ export const createHandler = () => {
       const session = requireSession(req, res);
       if (!session) return;
       return jsonResponse(res, 200, listEmailEvents());
+    }
+
+    if (url.pathname === '/api/email/events/validate-import' || url.pathname === '/email/events/validate-import') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = validateEventImportCsv({ csv: body.csv });
+      recordAuditEvent({ action: 'email_events_import_validate', actorEmail: session.email, status: result.ok ? 'ok' : 'partial_or_rejected', details: { acceptedCount: result.acceptedCount || 0, rejectedCount: result.rejectedCount || 0, error: result.error, realDelivery: false } });
+      return jsonResponse(res, result.error ? 400 : 200, result);
     }
 
     if (url.pathname === '/api/email/events/ingest' || url.pathname === '/email/events/ingest') {
