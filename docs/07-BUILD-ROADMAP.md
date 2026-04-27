@@ -39,6 +39,7 @@
 - [x] Campaign dry-run scheduling baseline
 - [x] Campaign-to-send-queue dry-run enqueue baseline
 - [x] Send queue dry-run dispatch baseline
+- [x] Send queue readiness safe-gate baseline
 - [x] Suppression/unsubscribe handling baseline
 - [x] Campaign unsubscribe link injection baseline
 - [x] Tracked unsubscribe link suppression baseline

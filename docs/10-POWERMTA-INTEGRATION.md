@@ -105,32 +105,33 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 10. [x] Campaign-to-send-queue dry-run enqueue baseline with rendered templates, segment audience, suppression exclusion, and no delivery.
 11. [x] Send queue dry-run dispatch baseline that marks queued jobs as dispatched through the dry-run adapter without external delivery.
 12. [x] Dry-run dispatch event tracking baseline that records internal `dispatched` events while keeping manual ingest limited to bounce/complaint.
-13. [x] Real sending readiness safe-gate baseline that reports provider/config/compliance blockers while keeping delivery locked.
-14. [x] Safe provider adapter interface baseline that exposes adapter capability/readiness without enabling external delivery.
-15. [x] Campaign unsubscribe link injection baseline for dry-run queue jobs.
-16. [x] Tracked unsubscribe link suppression baseline that accepts per-campaign GET links and records suppressions without auth.
-17. [x] Sender domain readiness safe-gate baseline for SPF/DKIM/DMARC/TLS planning without DNS probing or delivery.
-18. [x] Campaign reporting safe summary baseline for dry-run queue, dispatch, event, and unsubscribe counts.
-19. [x] Campaign dry-run scheduling baseline that records future schedules while keeping manual dispatch and no delivery.
-20. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
-21. [x] Manual event CSV import ingest baseline that atomically imports valid bounce/complaint files into events and suppressions without delivery.
-22. [x] Tracked open/click event baseline that records engagement events without auth, redirects, delivery, or external probes.
-23. [x] Campaign tracking URL injection baseline that adds open/click tracking URLs to dry-run campaign queue jobs without delivery.
-24. [x] Manual delivery event ingest baseline for delivered/deferred batches without suppressions, probes, or delivery.
-25. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
-26. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
-27. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
-28. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
-29. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
-30. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
-31. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
-32. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
-33. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
-34. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
-35. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
-36. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
-37. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
-38. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
+13. [x] Send queue readiness safe-gate baseline that reports dry-run dispatch posture and queue safety gates without mutation or delivery.
+14. [x] Real sending readiness safe-gate baseline that reports provider/config/compliance blockers while keeping delivery locked.
+15. [x] Safe provider adapter interface baseline that exposes adapter capability/readiness without enabling external delivery.
+16. [x] Campaign unsubscribe link injection baseline for dry-run queue jobs.
+17. [x] Tracked unsubscribe link suppression baseline that accepts per-campaign GET links and records suppressions without auth.
+18. [x] Sender domain readiness safe-gate baseline for SPF/DKIM/DMARC/TLS planning without DNS probing or delivery.
+19. [x] Campaign reporting safe summary baseline for dry-run queue, dispatch, event, and unsubscribe counts.
+20. [x] Campaign dry-run scheduling baseline that records future schedules while keeping manual dispatch and no delivery.
+21. [x] Manual event CSV import validation baseline for bounce/complaint files without recording or delivery.
+22. [x] Manual event CSV import ingest baseline that atomically imports valid bounce/complaint files into events and suppressions without delivery.
+23. [x] Tracked open/click event baseline that records engagement events without auth, redirects, delivery, or external probes.
+24. [x] Campaign tracking URL injection baseline that adds open/click tracking URLs to dry-run campaign queue jobs without delivery.
+25. [x] Manual delivery event ingest baseline for delivered/deferred batches without suppressions, probes, or delivery.
+26. [x] Campaign engagement reporting baseline with dry-run open/click counts and rates.
+27. [x] Dashboard campaign engagement summary baseline that surfaces open/click totals and dry-run rates.
+28. [x] Frontend safe metrics dashboard baseline that displays email events, suppressions, engagement, provider mode, and locked delivery state.
+29. [x] Remote PostgreSQL data source registry baseline that validates and stores redacted source metadata without probing networks or syncing data.
+30. [x] Encrypted data source connection secret baseline that can store PostgreSQL connection URLs behind `ORACLESTREET_DATA_SOURCE_SECRET_KEY` using AES-256-GCM while returning only redacted metadata/secret refs and keeping sync disabled.
+31. [x] Remote PostgreSQL sync dry-run job baseline that validates registered sources/mapping without network probes, remote row pulls, imports, or enabling sync.
+32. [x] Frontend remote PostgreSQL mapping/status UI baseline that displays registered source metadata and sync dry-run status after admin login without exposing secrets or pulling remote rows.
+33. [x] Remote PostgreSQL sync audit log baseline that exposes sanitized sync dry-run audit events without secrets, probes, imports, or real sync.
+34. [x] Web/domain readiness safe-gate baseline that reports expected domain DNS, fallback URLs, TLS planning, and smoke-test commands without DNS probes or unlocking delivery.
+35. [x] TLS readiness safe-gate baseline that reports TLS mode, certificate candidates, prerequisites, and smoke tests without requesting certificates, editing Nginx, or unlocking delivery.
+36. [x] Backup readiness safe-gate baseline that reports database backup path, schedule, retention, and restore/offsite recommendations without dumping data, writing files, or exposing secrets.
+37. [x] Monitoring readiness safe-gate baseline that reports health/frontend/service/nginx/watchdog check plans and alert posture without probing networks or mutating services.
+38. [x] Platform rate-limit readiness safe-gate baseline that reports admin/API/import/dry-run queue rate-limit posture without mutating traffic or storing IPs.
+39. [x] RBAC readiness safe-gate baseline that reports single-admin access posture, planned least-privilege roles, protected surfaces, and multi-user blockers without mutating users or roles.
 
 ## Current validation endpoints
 
@@ -145,6 +146,7 @@ Initial implementation can ingest CSV/log imports manually. Production implement
 - `POST /api/campaigns/enqueue-dry-run` requires an admin session, requires `approved_dry_run` or `scheduled_dry_run`, renders the campaign audience into dry-run queue jobs, injects per-recipient `/api/unsubscribe` and tracking URLs, applies suppression/rate-limit gates, and keeps `realDelivery: false`.
 - `GET /api/send-queue` requires an admin session and lists in-memory dry-run queued jobs for smoke testing until PostgreSQL persistence is wired.
 - `POST /api/send-queue/dispatch-next-dry-run` requires an admin session and dispatches exactly one queued dry-run job through the dry-run adapter path with `realDelivery: false`; successful dispatch records an internal `dispatched` email event.
+- `GET /api/send-queue/readiness` requires an admin session and reports queue totals, dry-run-only dispatch posture, sample queued job IDs, and safety gates without mutating the queue, dispatching, probing networks, or enabling delivery.
 - `POST /api/suppressions` and `GET /api/suppressions` require an admin session for manual suppression smoke testing.
 - `GET /api/unsubscribe` / `GET /unsubscribe` accepts tracked link query params (`email`, `source`, `campaignId`, `contactId`) and records an unsubscribe suppression without auth or delivery. `POST /api/unsubscribe` remains available for JSON smoke tests.
 - `GET /api/email/rate-limits` requires an admin session and returns dry-run warm-up caps. Queue enqueue enforces global and per-domain hourly limits before any provider path.

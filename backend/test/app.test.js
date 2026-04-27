@@ -1239,6 +1239,51 @@ test('send queue requires admin session', async () => {
   assert.equal(enqueue.status, 401);
   const dispatch = await request('/api/send-queue/dispatch-next-dry-run', { method: 'POST' });
   assert.equal(dispatch.status, 401);
+  const readiness = await request('/api/send-queue/readiness');
+  assert.equal(readiness.status, 401);
+});
+
+test('send queue readiness reports dry-run dispatch gates without mutation', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetSendQueueForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const enqueued = await request('/api/send-queue/enqueue', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        to: 'readiness@example.test',
+        subject: 'Readiness queue smoke',
+        html: '<p>Controlled queue test.</p><p>unsubscribe</p>',
+        consentStatus: 'opt_in',
+        source: 'owned controlled inbox'
+      })
+    });
+    assert.equal(enqueued.status, 200);
+
+    const readiness = await request('/api/send-queue/readiness', { headers: { cookie } });
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.mode, 'send-queue-readiness-safe-gate');
+    assert.equal(readiness.body.ok, true);
+    assert.equal(readiness.body.totals.allJobs, 1);
+    assert.equal(readiness.body.totals.queuedDryRuns, 1);
+    assert.equal(readiness.body.totals.nonDryRunJobs, 0);
+    assert.equal(readiness.body.dispatchPolicy.current, 'manual_one_dry_run_job_at_a_time');
+    assert.equal(readiness.body.dispatchPolicy.externalDelivery, 'locked');
+    assert.equal(readiness.body.gates.suppression, 'checked_before_enqueue');
+    assert.deepEqual(readiness.body.sampleQueuedJobIds, [enqueued.body.job.id]);
+    assert.equal(readiness.body.safety.noQueueMutation, true);
+    assert.equal(readiness.body.safety.noDispatch, true);
+    assert.equal(readiness.body.realDeliveryAllowed, false);
+
+    const list = await request('/api/send-queue', { headers: { cookie } });
+    assert.equal(list.body.jobs[0].status, 'queued_dry_run');
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'send_queue_readiness_view'));
+  });
 });
 
 test('send queue enqueues and dispatches only compliant dry-run messages without delivery', async () => {
@@ -1312,6 +1357,8 @@ test('send queue endpoints also work behind nginx stripped api prefix', async ()
   assert.equal(res.status, 401);
   const dispatch = await request('/send-queue/dispatch-next-dry-run', { method: 'POST' });
   assert.equal(dispatch.status, 401);
+  const readiness = await request('/send-queue/readiness');
+  assert.equal(readiness.status, 401);
 });
 
 test('suppressions require admin session and block dry-run queue recipients', async () => {

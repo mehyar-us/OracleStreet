@@ -16,6 +16,7 @@ import { getRateLimitConfig } from './lib/rateLimits.js';
 import { rbacReadiness } from './lib/rbacReadiness.js';
 import { campaignReportingSummary, emailReportingSummary, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
+import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
 import { createTemplate, listTemplates, renderTemplatePreview } from './lib/templates.js';
@@ -576,6 +577,15 @@ export const createHandler = () => {
       const event = result.ok ? recordEmailEvent({ type: 'dispatched', email: result.job.to, source: 'send_queue_dry_run_dispatch', detail: result.job.id, campaignId: result.job.campaignId, contactId: result.job.contactId, actorEmail: session.email }) : null;
       recordAuditEvent({ action: 'send_queue_dispatch_dry_run', actorEmail: session.email, target: result.job?.id || null, status: result.ok ? 'ok' : 'rejected', details: { eventId: event?.event?.id || null, errors: result.errors || [], realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result.ok ? { ...result, event: event?.event || null } : result);
+    }
+
+    if (url.pathname === '/api/send-queue/readiness' || url.pathname === '/send-queue/readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const readiness = sendQueueReadiness();
+      recordAuditEvent({ action: 'send_queue_readiness_view', actorEmail: session.email, target: 'send-queue', status: readiness.ok ? 'ok' : 'rejected', details: { errors: readiness.errors, queuedDryRuns: readiness.totals.queuedDryRuns, noDispatch: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, readiness);
     }
 
     if (url.pathname === '/api/send-queue/enqueue' || url.pathname === '/send-queue/enqueue') {

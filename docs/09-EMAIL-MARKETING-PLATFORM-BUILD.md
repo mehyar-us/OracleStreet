@@ -72,6 +72,7 @@ OracleStreet is for lawful, permission-based email. The platform must enforce:
 - [x] campaign dry-run approval baseline before queue enqueue
 - [x] campaign dry-run scheduling baseline that records a future schedule without delivery
 - [x] campaign-to-queue dry-run enqueue baseline with suppression/rate-limit gates
+- [x] send queue readiness safe-gate baseline with dry-run dispatch posture and no mutation
 - [x] safe provider adapter interface baseline
 - dry-run provider first
 - PowerMTA SMTP provider after safety controls exist
