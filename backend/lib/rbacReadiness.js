@@ -12,7 +12,7 @@ export const RBAC_ROUTE_POLICY = [
   { surface: 'suppressions', permission: 'manage_suppressions', routes: ['GET /api/suppressions', 'POST /api/suppressions'] },
   { surface: 'data_sources', permission: 'manage_data_sources', routes: ['POST /api/data-sources', 'POST /api/data-source-query/execute', 'POST /api/data-source-schema/discover', 'POST /api/data-source-import/execute', 'POST /api/data-source-import-schedules', 'GET /api/data-source-import-schedules/worker-plan', 'GET /api/data-source-import-schedules/runbook'] },
   { surface: 'reporting', permission: 'view_reporting', routes: ['GET /api/email/reporting', 'GET /api/email/reporting/dashboard', 'GET /api/email/reporting/drilldown', 'GET /api/email/reporting/export', 'GET /api/campaigns/reporting'] },
-  { surface: 'sending_readiness', permission: 'review_sending_readiness', routes: ['GET /api/email/sending-readiness', 'GET /api/email/mta-operations', 'GET /api/email/controlled-live-test/readiness', 'POST /api/email/controlled-live-test/plan', 'GET /api/email/controlled-live-test/seed-observation', 'GET /api/send-queue/readiness'] }
+  { surface: 'sending_readiness', permission: 'review_sending_readiness', routes: ['GET /api/email/sending-readiness', 'GET /api/email/mta-operations', 'GET /api/email/provider/readiness-drilldown', 'GET /api/email/controlled-live-test/readiness', 'POST /api/email/controlled-live-test/plan', 'GET /api/email/controlled-live-test/seed-observation', 'GET /api/send-queue/readiness'] }
 ];
 
 export const rbacReadiness = (env = process.env) => {

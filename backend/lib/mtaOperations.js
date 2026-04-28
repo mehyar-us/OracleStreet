@@ -83,3 +83,72 @@ export const mtaOperationsDashboard = (env = process.env) => {
     realDeliveryAllowed: false
   };
 };
+
+export const providerReadinessDrilldown = (env = process.env) => {
+  const sendingReadiness = sendingReadinessSummary(env);
+  const adapter = getProviderAdapter(env);
+  const selected = adapter.name;
+  const providerRows = adapter.config.supportedProviders.map((name) => {
+    const prefix = name === 'powermta' ? 'powerMta' : name;
+    const config = adapter.config[prefix] || {};
+    const selectedProvider = name === selected;
+    const ready = selectedProvider ? adapter.validation.ok : name === 'dry-run' || name === 'local-capture'
+      ? true
+      : Boolean(config.hostConfigured && config.usernameConfigured && config.passwordConfigured && adapter.config.defaultFrom.emailConfigured);
+    return {
+      name,
+      selected: selectedProvider,
+      ready,
+      dispatchMode: name === 'dry-run'
+        ? 'dry-run-only'
+        : name === 'local-capture'
+          ? 'local-capture-only'
+          : 'configured-but-locked',
+      checks: name === 'dry-run'
+        ? { externalDelivery: false, networkProbe: 'not_applicable' }
+        : name === 'local-capture'
+          ? { allowedDomain: adapter.config.localCapture.allowedDomain, externalDelivery: false, networkProbe: 'not_applicable' }
+          : {
+            hostConfigured: Boolean(config.hostConfigured),
+            authConfigured: Boolean(config.usernameConfigured && config.passwordConfigured),
+            defaultFromConfigured: Boolean(adapter.config.defaultFrom.emailConfigured),
+            port: config.port,
+            secure: Boolean(config.secure),
+            networkProbe: 'skipped_safe_default'
+          },
+      realDeliveryAllowed: false
+    };
+  });
+  const gateChecklist = [
+    { gate: 'selected_provider_config_valid', passed: adapter.validation.ok },
+    { gate: 'real_email_flag_disabled_until_final_approval', passed: adapter.config.realSendingEnabled === false },
+    { gate: 'sender_domain_ready', passed: sendingReadiness.requiredGates.senderDomainReady },
+    { gate: 'suppression_enforced', passed: sendingReadiness.requiredGates.suppressionEnforced },
+    { gate: 'unsubscribe_required', passed: sendingReadiness.requiredGates.unsubscribeRequired },
+    { gate: 'rate_limits_configured', passed: sendingReadiness.requiredGates.rateLimitsConfigured },
+    { gate: 'manual_dry_run_proof_required', passed: sendingReadiness.requiredGates.manualDryRunProofRequired }
+  ];
+  return {
+    ok: true,
+    mode: 'provider-readiness-drilldown-safe-summary',
+    selectedProvider: selected,
+    selectedDispatchMode: adapter.capabilities.dispatchMode,
+    providerRows,
+    gateChecklist,
+    blockers: sendingReadiness.blockers,
+    recommendations: sendingReadiness.blockers.length
+      ? ['resolve_provider_dns_rate_limit_and_approval_blockers_before_controlled_live_test']
+      : ['prepare_manual_one_recipient_runbook_only_after_boss_approval'],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noProviderMutation: true,
+      noQueueMutation: true,
+      noNetworkProbe: true,
+      noSecretOutput: true,
+      noExternalDelivery: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};

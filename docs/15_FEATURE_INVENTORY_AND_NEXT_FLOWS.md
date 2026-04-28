@@ -63,6 +63,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Reputation auto-pause threshold controls.
 - Controlled live-test runbook gate UI.
 - MTA/reputation operations dashboard with provider, queue, event, suppression, blocker, and recommendation rollups.
+- Provider readiness drilldown with safe provider rows, dispatch modes, and gate checklist.
 - Reporting dashboard with campaign/source/domain/trend rollups plus export panel.
 - List hygiene planner dashboard.
 - Audit panel.
@@ -141,6 +142,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Provider message ID traceability.
 - PowerMTA accounting CSV validation/ingest baseline.
 - MTA operations dashboard API/UI for provider posture, queue readiness, event/suppression counts, reputation blockers, and next-safe-action recommendations.
+- Provider readiness drilldown API/UI for selected provider, dry-run/local-capture/SMTP/PowerMTA rows, dispatch posture, and safety-gate checklist without probes or mutation.
 - Real campaign-scale sending remains locked.
 
 ### Events, tracking, and reporting

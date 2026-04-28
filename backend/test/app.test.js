@@ -319,6 +319,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/sending-readiness/);
   assert.match(html, /api\/email\/mta-operations/);
   assert.match(html, /MTA operations dashboard/);
+  assert.match(html, /api\/email\/provider\/readiness-drilldown/);
+  assert.match(html, /Provider readiness drilldown/);
 });
 
 test('migration manifest is protected and lists initial PostgreSQL schema plus email engine alignment and provider traceability', async () => {
@@ -3526,6 +3528,33 @@ test('MTA operations dashboard requires admin and summarizes reputation safely',
   });
 });
 
+test('provider readiness drilldown requires admin and stays read-only', async () => {
+  resetAuditLogForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/provider/readiness-drilldown');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    const drilldown = await request('/api/email/provider/readiness-drilldown', { headers: { cookie } });
+    assert.equal(drilldown.status, 200);
+    assert.equal(drilldown.body.mode, 'provider-readiness-drilldown-safe-summary');
+    assert.equal(drilldown.body.selectedProvider, 'dry-run');
+    assert.ok(drilldown.body.providerRows.some((row) => row.name === 'dry-run' && row.selected && row.dispatchMode === 'dry-run-only'));
+    assert.ok(drilldown.body.providerRows.some((row) => row.name === 'powermta' && row.dispatchMode === 'configured-but-locked'));
+    assert.ok(drilldown.body.gateChecklist.some((gate) => gate.gate === 'selected_provider_config_valid' && gate.passed === true));
+    assert.ok(drilldown.body.blockers.includes('real_email_flag_disabled'));
+    assert.equal(drilldown.body.safety.noProviderMutation, true);
+    assert.equal(drilldown.body.safety.noQueueMutation, true);
+    assert.equal(drilldown.body.safety.noNetworkProbe, true);
+    assert.equal(drilldown.body.safety.noSecretOutput, true);
+    assert.equal(drilldown.body.realDeliveryAllowed, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'provider_readiness_drilldown_view'));
+  });
+});
+
 test('controlled live test readiness requires all gates and never sends', async () => {
   resetAuditLogForTests();
   await withEnv({
@@ -4206,6 +4235,8 @@ test('sending readiness endpoint also works behind nginx stripped api prefix', a
   assert.equal(res.status, 401);
   const mtaOperations = await request('/email/mta-operations');
   assert.equal(mtaOperations.status, 401);
+  const providerDrilldown = await request('/email/provider/readiness-drilldown');
+  assert.equal(providerDrilldown.status, 401);
   const controlledLiveTest = await request('/email/controlled-live-test/readiness');
   assert.equal(controlledLiveTest.status, 401);
   const domain = await request('/email/domain-readiness');
