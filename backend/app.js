@@ -4,7 +4,7 @@ import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from '.
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
-import { campaignCalendar, campaignCalendarDrilldown } from './lib/campaignCalendar.js';
+import { campaignCalendar, campaignCalendarAllocation, campaignCalendarDrilldown } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts, contactDetailDrilldown } from './lib/contactBrowser.js';
@@ -846,6 +846,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = campaignCalendar(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'campaign_calendar_view', actorEmail: session.email, status: 'ok', details: { domain: result.domain, days: result.days, scheduledCampaigns: result.totals.scheduledCampaigns, overCapDays: result.totals.overCapDays, noQueueMutation: true, realDelivery: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/campaigns/calendar/allocation' || url.pathname === '/campaigns/calendar/allocation') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = campaignCalendarAllocation(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'campaign_calendar_allocation_view', actorEmail: session.email, status: 'ok', details: { domains: result.totals.domains, days: result.days, scheduledCampaigns: result.totals.scheduledCampaigns, overCapDays: result.totals.overCapDays, tightDays: result.totals.tightDays, noScheduleMutation: true, noQueueMutation: true, realDelivery: false } });
       return jsonResponse(res, 200, result);
     }
 

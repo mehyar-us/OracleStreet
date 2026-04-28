@@ -145,3 +145,75 @@ export const campaignCalendarDrilldown = ({ domain = 'stuffprettygood.com', date
     realDeliveryAllowed: false
   };
 };
+
+export const campaignCalendarAllocation = ({ domains = '', startDate = null, days = 14 } = {}) => {
+  const firstDate = dateOnly(startDate) || new Date().toISOString().slice(0, 10);
+  const dayCount = Math.max(1, Math.min(60, Number(days) || 14));
+  const scheduledCampaigns = (listCampaigns().campaigns || []).filter((campaign) => campaign.status === 'scheduled_dry_run');
+  const policyDomains = (listWarmupPolicies().policies || []).map((policy) => policy.domain);
+  const requestedDomains = String(domains || '').split(',').map(normalizeDomain).filter(Boolean);
+  const domainList = [...new Set([
+    ...requestedDomains,
+    ...policyDomains.map(normalizeDomain),
+    ...scheduledCampaigns.map((campaign) => normalizeDomain(campaign.senderDomain || 'stuffprettygood.com')),
+    'stuffprettygood.com'
+  ])].slice(0, 12);
+  const domainAllocations = domainList.map((domain) => {
+    const calendar = campaignCalendar({ domain, startDate: firstDate, days: dayCount });
+    const tightDays = calendar.calendar.filter((day) => day.remainingCap <= Math.max(1, Math.ceil((day.dailyCap || 0) * 0.2))).length;
+    return {
+      domain,
+      totals: calendar.totals,
+      days: calendar.calendar.map((day) => ({
+        date: day.date,
+        dailyCap: day.dailyCap,
+        scheduledCount: day.scheduledCount,
+        remainingCap: day.remainingCap,
+        capExceeded: day.capExceeded,
+        campaignCount: day.campaigns.length,
+        warmupDay: day.warmupDay,
+        realDeliveryAllowed: false
+      })),
+      tightDays,
+      recommendation: calendar.totals.overCapDays > 0
+        ? 'move_or_split_over_cap_campaigns'
+        : tightDays > 0
+          ? 'reserve_tight_capacity_for_highest_priority_dry_runs'
+          : 'capacity_available_for_dry_run_planning',
+      realDeliveryAllowed: false
+    };
+  });
+  const totals = domainAllocations.reduce((acc, entry) => ({
+    domains: acc.domains + 1,
+    scheduledCampaigns: acc.scheduledCampaigns + entry.totals.scheduledCampaigns,
+    scheduledRecipients: acc.scheduledRecipients + entry.totals.scheduledRecipients,
+    calendarCap: acc.calendarCap + entry.totals.calendarCap,
+    remainingCap: acc.remainingCap + entry.totals.remainingCap,
+    overCapDays: acc.overCapDays + entry.totals.overCapDays,
+    tightDays: acc.tightDays + entry.tightDays
+  }), { domains: 0, scheduledCampaigns: 0, scheduledRecipients: 0, calendarCap: 0, remainingCap: 0, overCapDays: 0, tightDays: 0 });
+
+  return {
+    ok: true,
+    mode: 'campaign-calendar-multi-domain-allocation',
+    startDate: firstDate,
+    days: dayCount,
+    totals,
+    domainAllocations,
+    recommendations: [
+      totals.overCapDays > 0 ? 'resolve_over_cap_domain_days_before_enqueue' : 'no_over_cap_domain_days_detected',
+      totals.tightDays > 0 ? 'review_tight_capacity_days_before_new_schedules' : 'multi_domain_capacity_available'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noScheduleMutation: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};
