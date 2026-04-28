@@ -7,7 +7,7 @@ import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.j
 import { campaignCalendar, campaignCalendarDrilldown } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
-import { browseContacts } from './lib/contactBrowser.js';
+import { browseContacts, contactDetailDrilldown } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
@@ -714,6 +714,15 @@ export const createHandler = () => {
       const result = browseContacts(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'contact_browser_search', actorEmail: session.email, status: 'ok', details: { filters: result.filters, matchedContacts: result.totals.matchedContacts, noContactMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/contacts/detail' || url.pathname === '/contacts/detail') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = contactDetailDrilldown(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'contact_detail_drilldown_view', actorEmail: session.email, target: result.contact?.email || url.searchParams.get('email') || url.searchParams.get('id') || null, status: result.ok ? 'ok' : 'not_found', details: { suppressed: Boolean(result.contact?.suppressed), riskFlags: result.contact?.riskFlags || [], noContactMutation: true, noSuppressionMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, result.ok ? 200 : 404, result);
     }
 
     if (url.pathname === '/api/contacts/import/validate' || url.pathname === '/contacts/import/validate') {

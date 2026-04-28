@@ -117,9 +117,9 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Remaining CRUD polish for visible admin CMS screens.
-2. Campaign calendar UX polish for multi-domain allocation views.
-3. Continued MTA/reputation operational depth.
+1. Campaign calendar UX polish for multi-domain allocation views.
+2. Continued MTA/reputation operational depth.
+3. Remaining CRUD polish for visible admin CMS screens.
 
 Latest shipped slice:
 - Remote source persistence for source registry/encrypted secret metadata: migration `011_data_source_registry_runtime` adds `data_source_registry` and `data_source_encrypted_secrets`; `/api/data-sources` now uses local PostgreSQL runtime persistence when enabled, keeps safe in-memory fallback, stores encrypted secret ciphertext metadata only, displays registry persistence in the UI, and never returns plaintext credentials.
@@ -141,6 +141,7 @@ Latest shipped slice:
 - Flow C Users/RBAC activation baseline: `/api/admin/users` lists admin users from PostgreSQL where enabled or bootstrap fallback otherwise; `/api/admin/users/invite-plan` validates no-mutation invite plans; `/api/admin/users/invite` creates PostgreSQL-backed pending invites with hashed manual codes; `/api/admin/users/accept-invite` activates users with password hashing; `/api/admin/users/password-reset-plan` and `/api/auth/password-reset/complete` support manual-code password resets. The Users/RBAC UI exposes directory status, role matrix, invite creation, invite acceptance, and reset planning without email delivery or raw token/password output.
 - Flow B campaign calendar drilldown: `/api/campaigns/calendar/drilldown` shows a read-only selected sender-domain/day capacity usage, campaign breakdown, and warm-up recommendations without schedule/queue/provider mutation or delivery unlock.
 - Flow B campaign calendar over warm-up caps: `/api/campaigns/calendar` shows scheduled dry-run campaigns by sender-domain/day, daily cap, planned count, remaining capacity, and over-cap state; scheduling now counts existing scheduled campaigns on the same day/domain before allowing another dry-run schedule, and the Campaigns UI exposes the calendar after login.
+- Flow A contact detail drilldown: `/api/contacts/detail` provides protected per-contact source/consent/suppression/risk, event/queue counts, timeline metadata, and hygiene recommendations while remaining read-only with no contact/suppression/queue/provider mutation or delivery unlock.
 - Flow A contact browser/search drilldowns: `/api/contacts/browser` provides protected email/name/source/domain/status search, consent/source/domain/suppression/risk filters, source-quality scores, domain concentration, and contact timeline stubs from imports/events/jobs; the Contacts UI exposes the controls after login and remains read-only/no-delivery.
 - Remote PostgreSQL approved contact import: `/api/data-source-import/execute` reruns the preview validation, requires exact import approval phrase `I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT`, imports only zero-rejection mapped contacts through the normal contact repository, records imported/updated counts plus sync-run history, and keeps delivery locked.
 - Remote PostgreSQL contact import preview: `/api/data-source-import/preview` maps approved SELECT/sample rows into OracleStreet contact fields, enforces email/consent/source/duplicate validation, audits the preview, and never imports or mutates contacts.

@@ -158,3 +158,79 @@ export const browseContacts = ({ search = '', status = '', consentStatus = '', s
     persistenceMode: contactsResult.persistenceMode
   };
 };
+
+export const contactDetailDrilldown = ({ email = '', id = '', staleAfterDays = 180 } = {}) => {
+  const contactsResult = listContacts();
+  const suppressionsResult = listSuppressions();
+  const eventsResult = listEmailEvents();
+  const queueResult = listSendQueue();
+  const emailKey = clean(email);
+  const idKey = String(id || '').trim();
+  const contact = (contactsResult.contacts || []).find((entry) => (emailKey && clean(entry.email) === emailKey) || (idKey && String(entry.id || '') === idKey));
+  if (!contact) {
+    return {
+      ok: false,
+      mode: 'contact-detail-drilldown',
+      error: 'contact_not_found',
+      contact: null,
+      realDeliveryAllowed: false
+    };
+  }
+  const targetEmail = clean(contact.email);
+  const suppression = (suppressionsResult.suppressions || []).find((entry) => clean(entry.email) === targetEmail) || null;
+  const events = (eventsResult.events || []).filter((event) => clean(event.email) === targetEmail);
+  const jobs = (queueResult.jobs || []).filter((job) => clean(job.to || job.email) === targetEmail);
+  const staleDays = Math.max(1, Math.min(3650, Number(staleAfterDays) || 180));
+  const riskFlags = riskFlagsFor(contact, suppression, events, staleDays);
+  const eventCounts = events.reduce((counts, event) => ({ ...counts, [event.type]: (counts[event.type] || 0) + 1 }), {});
+  const queueCounts = jobs.reduce((counts, job) => ({ ...counts, [job.status || 'unknown']: (counts[job.status || 'unknown'] || 0) + 1 }), {});
+  const timeline = [
+    { type: 'contact_imported', at: contact.createdAt || null, source: contact.source || null, id: contact.id || null },
+    ...events.map((event) => ({ type: `event:${event.type}`, at: event.createdAt || null, source: event.source || null, campaignId: event.campaignId || null, providerMessageIdPresent: Boolean(event.providerMessageId), id: event.id || null })),
+    ...jobs.map((job) => ({ type: `send_job:${job.status}`, at: job.createdAt || null, campaignId: job.campaignId || null, id: job.id || null }))
+  ].filter((entry) => entry.at || entry.source || entry.id || entry.campaignId)
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+    .slice(0, 25);
+  const recommendations = [];
+  if (suppression) recommendations.push('keep_suppressed_until_manual_review_confirms_repermission');
+  if (riskFlags.includes('role_account')) recommendations.push('review_role_account_before_campaign_audience_use');
+  if (riskFlags.includes('stale_contact')) recommendations.push('refresh_consent_before_future_campaign_scheduling');
+  if (eventCounts.bounce || eventCounts.complaint) recommendations.push('exclude_from_future_sends_and_review_source_quality');
+  if (!recommendations.length) recommendations.push('contact_currently_clear_for_dry_run_planning_only');
+
+  return {
+    ok: true,
+    mode: 'contact-detail-drilldown',
+    contact: {
+      id: contact.id || null,
+      email: contact.email,
+      domain: domainOf(contact.email),
+      name: contactName(contact),
+      source: contact.source || null,
+      sourceDetail: contact.sourceDetail || null,
+      consentStatus: contact.consentStatus || null,
+      status: contact.status || null,
+      createdAt: contact.createdAt || null,
+      updatedAt: contact.updatedAt || null,
+      suppressed: Boolean(suppression),
+      suppressionReason: suppression?.reason || null,
+      riskFlags
+    },
+    eventCounts,
+    queueCounts,
+    timeline,
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: contactsResult.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};

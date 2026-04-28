@@ -233,6 +233,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/list-hygiene\/plan/);
   assert.match(html, /Cleanup planner/);
   assert.match(html, /Source quality/);
+  assert.match(html, /api\/contacts\/detail/);
+  assert.match(html, /Contact detail drilldown/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
   assert.match(html, /Dedupe\/merge planner/);
   assert.match(html, /segments-screen/);
@@ -1319,6 +1321,8 @@ test('contact browser search filters and source-quality drilldowns require admin
   }, async () => {
     const unauth = await request('/api/contacts/browser?search=example');
     assert.equal(unauth.status, 401);
+    const unauthDetail = await request('/api/contacts/detail?email=ada@example.test');
+    assert.equal(unauthDetail.status, 401);
     const unauthMerge = await request('/api/contacts/dedupe-merge-plan');
     assert.equal(unauthMerge.status, 401);
 
@@ -1339,6 +1343,11 @@ test('contact browser search filters and source-quality drilldowns require admin
       headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({ email: 'support@example.test', reason: 'manual', source: 'test suppression' })
     });
+    await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [{ type: 'bounce', email: 'support@example.test', source: 'manual detail smoke', providerMessageId: 'detail-bounce-1' }] })
+    });
 
     const search = await request('/api/contacts/browser?search=ada@example.test&domain=example.test&suppression=not_suppressed', { headers: { cookie } });
     assert.equal(search.status, 200);
@@ -1355,6 +1364,23 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(risky.body.sourceQuality.some((source) => source.source === 'support imports' && source.suppressed === 1));
     assert.ok(risky.body.domainConcentration.some((entry) => entry.domain === 'example.test'));
 
+    const detail = await request('/api/contacts/detail?email=support@example.test', { headers: { cookie } });
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.mode, 'contact-detail-drilldown');
+    assert.equal(detail.body.contact.email, 'support@example.test');
+    assert.equal(detail.body.contact.suppressed, true);
+    assert.ok(detail.body.contact.riskFlags.includes('role_account'));
+    assert.equal(detail.body.eventCounts.bounce, 1);
+    assert.ok(detail.body.timeline.some((entry) => entry.type === 'event:bounce' && entry.providerMessageIdPresent === true));
+    assert.ok(detail.body.recommendations.includes('exclude_from_future_sends_and_review_source_quality'));
+    assert.equal(detail.body.safety.noContactMutation, true);
+    assert.equal(detail.body.safety.noQueueMutation, true);
+    assert.equal(detail.body.realDeliveryAllowed, false);
+
+    const missingDetail = await request('/api/contacts/detail?email=missing@example.test', { headers: { cookie } });
+    assert.equal(missingDetail.status, 404);
+    assert.equal(missingDetail.body.error, 'contact_not_found');
+
     const mergePlan = await request('/api/contacts/dedupe-merge-plan', { headers: { cookie } });
     assert.equal(mergePlan.status, 200);
     assert.equal(mergePlan.body.mode, 'contact-dedupe-merge-plan');
@@ -1368,6 +1394,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(contacts.body.count, 4);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
   });
 });
@@ -1423,6 +1450,8 @@ test('contact endpoints also work behind nginx stripped api prefix', async () =>
   assert.equal(validate.status, 401);
   const hygiene = await request('/list-hygiene/plan');
   assert.equal(hygiene.status, 401);
+  const detail = await request('/contacts/detail');
+  assert.equal(detail.status, 401);
   const mergePlan = await request('/contacts/dedupe-merge-plan');
   assert.equal(mergePlan.status, 401);
 });
