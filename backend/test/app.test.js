@@ -240,6 +240,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/contacts\/source-hygiene-plan/);
   assert.match(html, /Source hygiene action plan/);
   assert.match(html, /api\/contacts\/source-quality-matrix/);
+  assert.match(html, /api\/contacts\/source-quarantine-plan/);
   assert.match(html, /api\/contacts\/browser\/export-preview/);
   assert.match(html, /api\/contacts\/suppression-review/);
   assert.match(html, /api\/contacts\/risk-triage/);
@@ -1441,6 +1442,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthSourceHygiene.status, 401);
     const unauthSourceMatrix = await request('/api/contacts/source-quality-matrix');
     assert.equal(unauthSourceMatrix.status, 401);
+    const unauthSourceQuarantine = await request('/api/contacts/source-quarantine-plan');
+    assert.equal(unauthSourceQuarantine.status, 401);
     const unauthRiskTriage = await request('/api/contacts/risk-triage');
     assert.equal(unauthRiskTriage.status, 401);
     const unauthExclusionPreview = await request('/api/contacts/audience-exclusion-preview');
@@ -1540,6 +1543,20 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(sourceHygiene.body.safety.noProviderMutation, true);
     assert.equal(sourceHygiene.body.realDeliveryAllowed, false);
 
+    const sourceQuarantine = await request('/api/contacts/source-quarantine-plan?scoreThreshold=90', { headers: { cookie } });
+    assert.equal(sourceQuarantine.status, 200);
+    assert.equal(sourceQuarantine.body.mode, 'contact-source-quarantine-plan');
+    assert.ok(sourceQuarantine.body.totals.sourcesReviewed >= 1);
+    assert.ok(sourceQuarantine.body.totals.quarantineRecommended >= 1);
+    assert.equal(sourceQuarantine.body.totals.automaticSourceMutationAllowed, 0);
+    assert.ok(sourceQuarantine.body.rows.some((row) => row.source === 'support imports' && row.quarantineRecommended === true));
+    assert.ok(sourceQuarantine.body.recommendations.length >= 1);
+    assert.equal(sourceQuarantine.body.safety.recommendationOnly, true);
+    assert.equal(sourceQuarantine.body.safety.noContactMutation, true);
+    assert.equal(sourceQuarantine.body.safety.noSegmentMutation, true);
+    assert.equal(sourceQuarantine.body.safety.automaticSourceMutationAllowed, false);
+    assert.equal(sourceQuarantine.body.realDeliveryAllowed, false);
+
     const sourceMatrix = await request('/api/contacts/source-quality-matrix?source=support%20imports&domain=example.test', { headers: { cookie } });
     assert.equal(sourceMatrix.status, 200);
     assert.equal(sourceMatrix.body.mode, 'contact-source-quality-matrix');
@@ -1638,6 +1655,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quarantine_plan_view' && event.details?.quarantineRecommended >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_matrix_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_risk_triage_queue_view' && event.details?.riskyContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_suppression_review_plan_view' && event.details?.suppressedContacts === 1));

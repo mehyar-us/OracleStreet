@@ -946,3 +946,79 @@ export const contactAudienceExclusionPreview = ({ source = '', domain = '', stal
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactSourceQuarantinePlan = ({ scoreThreshold = 70, staleAfterDays = 180, limit = 100 } = {}) => {
+  const overview = browseContacts({ staleAfterDays, limit: 500 });
+  const threshold = Math.max(0, Math.min(100, Number(scoreThreshold) || 70));
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const sources = overview.sourceQuality || [];
+  const rows = sources.map((source) => {
+    const reasons = [];
+    if (source.complained > 0) reasons.push('complaint_events');
+    if (source.bounced > 0) reasons.push('bounce_events');
+    if (source.suppressed > 0) reasons.push('suppressed_contacts');
+    if (source.stale > 0) reasons.push('stale_consent');
+    if (source.score < threshold) reasons.push('low_source_quality_score');
+    if (source.risky > 0) reasons.push('risky_contact_flags');
+    const priority = source.complained > 0 || source.score < 50 ? 'high' : (source.bounced > 0 || source.suppressed > 0 || source.score < threshold ? 'medium' : 'low');
+    return {
+      source: source.source,
+      score: source.score,
+      priority,
+      total: source.total,
+      suppressed: source.suppressed,
+      risky: source.risky,
+      stale: source.stale,
+      bounced: source.bounced,
+      complained: source.complained,
+      reasons,
+      quarantineRecommended: priority !== 'low' || reasons.includes('complaint_events'),
+      suggestedAudienceRule: priority !== 'low' ? 'exclude_source_from_campaign_segments_until_operator_review' : 'allow_dry_run_planning_with_monitoring_only',
+      operatorChecklist: [
+        'verify_source_consent_collection_method',
+        'review_suppression_and_event_samples',
+        'refresh_or_exclude_stale_contacts',
+        'document_operator_decision_before_campaign_use'
+      ],
+      realDeliveryAllowed: false
+    };
+  }).sort((a, b) => {
+    const rank = { high: 0, medium: 1, low: 2 };
+    return rank[a.priority] - rank[b.priority] || a.score - b.score || b.total - a.total;
+  }).slice(0, rowLimit);
+  const recommendations = [];
+  if (rows.some((row) => row.priority === 'high')) recommendations.push('quarantine_high_priority_sources_before_segment_snapshot_or_campaign_use');
+  if (rows.some((row) => row.reasons.includes('complaint_events'))) recommendations.push('complaint_sources_require_operator_review_and_source_quality_notes');
+  if (rows.some((row) => row.reasons.includes('stale_consent'))) recommendations.push('refresh_stale_consent_or_exclude_affected_sources');
+  if (!recommendations.length) recommendations.push(rows.length ? 'sources_clear_for_dry_run_planning_only' : 'import_contacts_with_source_metadata_before_quarantine_planning');
+  return {
+    ok: true,
+    mode: 'contact-source-quarantine-plan',
+    scoreThreshold: threshold,
+    totals: {
+      sourcesReviewed: sources.length,
+      highPrioritySources: rows.filter((row) => row.priority === 'high').length,
+      mediumPrioritySources: rows.filter((row) => row.priority === 'medium').length,
+      quarantineRecommended: rows.filter((row) => row.quarantineRecommended).length,
+      automaticSourceMutationAllowed: 0
+    },
+    rows,
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticSourceMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: overview.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
