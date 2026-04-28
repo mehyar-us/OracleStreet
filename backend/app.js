@@ -4,7 +4,7 @@ import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from '.
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
-import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarReschedulePlan } from './lib/campaignCalendar.js';
+import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarReschedulePlan, campaignCalendarWarmupBoard } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts, contactAudienceReadinessReview, contactDetailDrilldown, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
@@ -973,6 +973,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = campaignCalendarCapacityForecast(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'campaign_calendar_capacity_forecast_view', actorEmail: session.email, status: 'ok', details: { days: result.days, domains: result.totals.domains, targetCount: result.targetCount, domainsWithTargetCapacity: result.totals.domainsWithTargetCapacity, noScheduleMutation: true, noQueueMutation: true, realDelivery: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/campaigns/calendar/warmup-board' || url.pathname === '/campaigns/calendar/warmup-board') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = campaignCalendarWarmupBoard(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'campaign_calendar_warmup_board_view', actorEmail: session.email, status: 'ok', details: { windowDays: result.windowDays, calendarDays: result.totals.calendarDays, domains: result.totals.domains, openDays: result.totals.openDays, tightDays: result.totals.tightDays, overCapDays: result.totals.overCapDays, noScheduleMutation: true, noQueueMutation: true, realDelivery: false } });
       return jsonResponse(res, 200, result);
     }
 

@@ -372,3 +372,146 @@ export const campaignCalendarCapacityForecast = ({ domains = '', startDate = nul
     realDeliveryAllowed: false
   };
 };
+
+export const campaignCalendarWarmupBoard = ({ domains = '', startDate = null, days = 14, targetCount = 1 } = {}) => {
+  const allocation = campaignCalendarAllocation({ domains, startDate, days });
+  const reschedule = campaignCalendarReschedulePlan({ domains, startDate: allocation.startDate, days: allocation.days });
+  const forecast = campaignCalendarCapacityForecast({ domains, startDate: allocation.startDate, days: allocation.days, targetCount });
+  const dayRows = new Map();
+
+  for (const entry of allocation.domainAllocations || []) {
+    for (const day of entry.days || []) {
+      const row = dayRows.get(day.date) || {
+        date: day.date,
+        domains: 0,
+        scheduledRecipients: 0,
+        dailyCap: 0,
+        remainingCap: 0,
+        overCapDomains: 0,
+        tightDomains: 0,
+        openDomains: 0,
+        campaignCount: 0,
+        domainStatuses: []
+      };
+      const tightThreshold = Math.max(1, Math.ceil((day.dailyCap || 0) * 0.2));
+      const status = day.capExceeded
+        ? 'over_cap'
+        : (day.remainingCap || 0) <= 0
+          ? 'blocked'
+          : (day.remainingCap || 0) <= tightThreshold
+            ? 'tight'
+            : 'open';
+      row.domains += 1;
+      row.scheduledRecipients += day.scheduledCount || 0;
+      row.dailyCap += day.dailyCap || 0;
+      row.remainingCap += Math.max(0, day.remainingCap || 0);
+      row.campaignCount += day.campaignCount || 0;
+      if (status === 'over_cap') row.overCapDomains += 1;
+      if (status === 'tight') row.tightDomains += 1;
+      if (status === 'open') row.openDomains += 1;
+      row.domainStatuses.push({
+        domain: entry.domain,
+        status,
+        dailyCap: day.dailyCap,
+        scheduledCount: day.scheduledCount,
+        remainingCap: day.remainingCap,
+        campaignCount: day.campaignCount,
+        warmupDay: day.warmupDay,
+        realDeliveryAllowed: false
+      });
+      dayRows.set(day.date, row);
+    }
+  }
+
+  const daysOut = [...dayRows.values()].sort((a, b) => a.date.localeCompare(b.date)).map((row) => {
+    const utilization = row.dailyCap > 0 ? row.scheduledRecipients / row.dailyCap : 0;
+    const status = row.overCapDomains > 0
+      ? 'over_cap'
+      : row.openDomains === 0
+        ? 'blocked'
+        : row.tightDomains > 0
+          ? 'tight'
+          : 'open';
+    return {
+      ...row,
+      utilization,
+      status,
+      recommendation: status === 'over_cap'
+        ? 'resolve_over_cap_sender_domains_before_enqueue'
+        : status === 'blocked'
+          ? 'use_later_capacity_or_split_campaign_audience'
+          : status === 'tight'
+            ? 'reserve_tight_days_for_highest_priority_dry_runs'
+            : 'available_for_operator_reviewed_dry_run_planning',
+      realDeliveryAllowed: false
+    };
+  });
+
+  const domainRows = (allocation.domainAllocations || []).map((entry) => {
+    const forecastRow = (forecast.domainForecasts || []).find((row) => row.domain === entry.domain) || null;
+    const rescheduleRows = (reschedule.suggestions || []).filter((row) => row.domain === entry.domain);
+    return {
+      domain: entry.domain,
+      scheduledRecipients: entry.totals.scheduledRecipients,
+      calendarCap: entry.totals.calendarCap,
+      remainingCap: entry.totals.remainingCap,
+      overCapDays: entry.totals.overCapDays,
+      tightDays: entry.tightDays,
+      utilization: entry.totals.calendarCap > 0 ? entry.totals.scheduledRecipients / entry.totals.calendarCap : 0,
+      earliestSafeDate: forecastRow?.earliestSafeDate || null,
+      rescheduleSuggestions: rescheduleRows.length,
+      recommendation: entry.totals.overCapDays > 0
+        ? 'resolve_over_cap_days_before_any_queue_enqueue'
+        : entry.tightDays > 0
+          ? 'review_tight_days_before_new_campaign_schedules'
+          : forecastRow?.earliestSafeDate
+            ? 'capacity_available_for_next_dry_run_after_operator_review'
+            : 'extend_warmup_window_or_reduce_target_audience',
+      realDeliveryAllowed: false
+    };
+  }).sort((a, b) => b.overCapDays - a.overCapDays || b.tightDays - a.tightDays || b.utilization - a.utilization || a.domain.localeCompare(b.domain));
+
+  const recommendations = [];
+  if (daysOut.some((day) => day.status === 'over_cap')) recommendations.push('resolve_over_cap_calendar_days_before_enqueueing_scheduled_dry_runs');
+  if (daysOut.some((day) => day.status === 'tight')) recommendations.push('avoid_filling_tight_warmup_days_without_reputation_review');
+  if (forecast.bestNextSlot) recommendations.push('use_best_next_slot_for_operator_review_only');
+  if (!recommendations.length) recommendations.push('warmup_calendar_board_clear_for_dry_run_planning_only');
+
+  return {
+    ok: true,
+    mode: 'campaign-calendar-warmup-board',
+    startDate: allocation.startDate,
+    windowDays: allocation.days,
+    targetCount: forecast.targetCount,
+    totals: {
+      domains: allocation.totals.domains,
+      calendarDays: daysOut.length,
+      scheduledRecipients: allocation.totals.scheduledRecipients,
+      calendarCap: allocation.totals.calendarCap,
+      remainingCap: allocation.totals.remainingCap,
+      openDays: daysOut.filter((day) => day.status === 'open').length,
+      tightDays: daysOut.filter((day) => day.status === 'tight').length,
+      blockedDays: daysOut.filter((day) => day.status === 'blocked').length,
+      overCapDays: daysOut.filter((day) => day.status === 'over_cap').length,
+      rescheduleSuggestions: reschedule.totals.suggestions,
+      domainsWithTargetCapacity: forecast.totals.domainsWithTargetCapacity
+    },
+    days: daysOut,
+    domains: domainRows,
+    bestNextSlot: forecast.bestNextSlot,
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      boardOnly: true,
+      noScheduleMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};

@@ -316,6 +316,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Controlled proof packet/);
   assert.match(html, /api\/campaigns\/calendar\/capacity-forecast/);
   assert.match(html, /Capacity forecast/);
+  assert.match(html, /api\/campaigns\/calendar\/warmup-board/);
+  assert.match(html, /Warm-up calendar operator board/);
   assert.match(html, /api\/contacts\/audience-readiness/);
   assert.match(html, /Audience readiness review/);
   assert.match(html, /Save auto-pause thresholds/);
@@ -3399,6 +3401,8 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(unauthReschedule.status, 401);
     const unauthCapacityForecast = await request('/api/campaigns/calendar/capacity-forecast?domains=calendar.test');
     assert.equal(unauthCapacityForecast.status, 401);
+    const unauthWarmupBoard = await request('/api/campaigns/calendar/warmup-board?domains=calendar.test');
+    assert.equal(unauthWarmupBoard.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3507,6 +3511,20 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(capacityForecast.body.safety.noProviderMutation, true);
     assert.equal(capacityForecast.body.realDeliveryAllowed, false);
 
+    const warmupBoard = await request('/api/campaigns/calendar/warmup-board?domains=calendar.test,secondary-calendar.test&days=7&targetCount=1', { headers: { cookie } });
+    assert.equal(warmupBoard.status, 200);
+    assert.equal(warmupBoard.body.mode, 'campaign-calendar-warmup-board');
+    assert.equal(warmupBoard.body.totals.domains, 3);
+    assert.ok(warmupBoard.body.totals.calendarDays >= 7);
+    assert.ok(warmupBoard.body.days.some((day) => day.date === startDate && day.domainStatuses.some((entry) => entry.domain === 'calendar.test' && ['tight', 'blocked'].includes(entry.status) && entry.scheduledCount === 1)));
+    assert.ok(warmupBoard.body.domains.some((row) => row.domain === 'calendar.test' && row.rescheduleSuggestions >= 1));
+    assert.ok(warmupBoard.body.recommendations.includes('use_best_next_slot_for_operator_review_only') || warmupBoard.body.recommendations.includes('avoid_filling_tight_warmup_days_without_reputation_review'));
+    assert.equal(warmupBoard.body.safety.boardOnly, true);
+    assert.equal(warmupBoard.body.safety.noScheduleMutation, true);
+    assert.equal(warmupBoard.body.safety.noQueueMutation, true);
+    assert.equal(warmupBoard.body.safety.noProviderMutation, true);
+    assert.equal(warmupBoard.body.realDeliveryAllowed, false);
+
     const second = await request('/api/campaigns', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -3534,6 +3552,7 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_reschedule_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_capacity_forecast_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_warmup_board_view'));
   });
 });
 
