@@ -48,6 +48,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Users/RBAC UI can create pending invites, accept invites, plan password resets, and update existing user roles with owner/self-demotion/last-admin guardrails without email delivery or raw token/password output.
 - Successful role changes revoke target user sessions so stale permissions cannot linger; session ledgers are checked during auth when available with safe fallback for bootstrap access.
 - Admin session ledger API/UI lists active/revoked/expired sessions using hashed session prefixes only, with no raw cookie/token/password output and no user mutation.
+- Admin session revocation API/UI can revoke all sessions for a selected user while optionally preserving the current self-session; audited, token-safe, and no role/password/email/delivery mutation.
 - Raw passwords/tokens are not stored or exposed by the runtime adapter.
 
 ### Visible admin CMS workbench

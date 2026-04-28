@@ -3,7 +3,7 @@ import { listAdminUsers, permissionsForRole, ROLE_MATRIX } from './adminUsers.js
 const cleanEmail = (value) => String(value || '').trim().toLowerCase();
 
 export const RBAC_ROUTE_POLICY = [
-  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'GET /api/admin/sessions', 'GET /api/platform/rbac-effective-access', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
+  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'GET /api/admin/sessions', 'POST /api/admin/sessions/revoke-user', 'GET /api/platform/rbac-effective-access', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
   { surface: 'audit_log', permission: 'view_audit_log', routes: ['GET /api/audit-log'] },
   { surface: 'contacts', permission: 'manage_contacts', routes: ['POST /api/contacts/import', 'POST /api/contacts/import/validate'] },
   { surface: 'contact_metadata', permission: 'view_contacts_metadata', routes: ['GET /api/contacts', 'GET /api/contacts/browser', 'GET /api/contacts/detail', 'GET /api/contacts/source-quality', 'GET /api/contacts/source-hygiene-plan', 'GET /api/contacts/source-quality-matrix', 'GET /api/contacts/audience-readiness', 'GET /api/list-hygiene/plan', 'GET /api/contacts/dedupe-merge-plan'] },

@@ -673,6 +673,21 @@ export const createHandler = () => {
       return jsonResponse(res, 200, result);
     }
 
+    if (url.pathname === '/api/admin/sessions/revoke-user' || url.pathname === '/admin/sessions/revoke-user') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const targetEmail = String(body.email || '').trim().toLowerCase();
+      const keepCurrent = body.keepCurrent !== false;
+      const currentToken = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+      const result = revokeAdminSessionsForUser({ email: targetEmail, exceptToken: keepCurrent && targetEmail === session.email ? currentToken : null });
+      const response = { ...result, mode: 'admin-session-user-revoke', targetEmail, keepCurrent: keepCurrent && targetEmail === session.email, safety: { adminOnly: true, noTokenOutput: true, noPasswordOutput: true, noEmailSent: true, noDeliveryUnlock: true, realDeliveryAllowed: false }, realDeliveryAllowed: false };
+      recordAuditEvent({ action: 'admin_session_user_revoke', actorEmail: session.email, target: targetEmail || null, status: result.ok ? 'ok' : 'rejected', details: { sessionsRevoked: result.sessionsRevoked || 0, errors: result.errors || [], noTokenOutput: true, noPasswordOutput: true, realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, response);
+    }
+
     if (url.pathname === '/api/admin/users/invite-plan' || url.pathname === '/admin/users/invite-plan') {
       if (!requireMethod(req, res, 'POST')) return;
       const session = requirePermission(req, res, 'manage_users');

@@ -4359,7 +4359,7 @@ test('admin invite acceptance and password reset workflow activates users withou
     assert.equal(JSON.stringify(accepted.body).includes(inviteCode), false);
     assert.equal(JSON.stringify(accepted.body).includes(firstPassword), false);
 
-    const operatorLogin = await request('/api/auth/login', {
+    let operatorLogin = await request('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: 'operator@example.test', password: firstPassword })
@@ -4374,6 +4374,28 @@ test('admin invite acceptance and password reset workflow activates users withou
     });
     assert.equal(operatorRoleChange.status, 403);
     assert.equal(operatorRoleChange.body.requiredPermission, 'manage_users');
+
+    const revokeOperatorSessions = await request('/api/admin/sessions/revoke-user', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'operator@example.test' })
+    });
+    assert.equal(revokeOperatorSessions.status, 200);
+    assert.equal(revokeOperatorSessions.body.mode, 'admin-session-user-revoke');
+    assert.ok(revokeOperatorSessions.body.sessionsRevoked >= 1);
+    assert.equal(revokeOperatorSessions.body.safety.noTokenOutput, true);
+    assert.equal(revokeOperatorSessions.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(revokeOperatorSessions.body).includes(firstPassword), false);
+
+    const revokedOperatorDashboard = await request('/api/dashboard', { headers: { cookie: operatorLogin.headers.get('set-cookie') } });
+    assert.equal(revokedOperatorDashboard.status, 401);
+
+    operatorLogin = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'operator@example.test', password: firstPassword })
+    });
+    assert.equal(operatorLogin.status, 200);
 
     const ownerBlocked = await request('/api/admin/users/role', {
       method: 'POST',
@@ -4446,6 +4468,7 @@ test('admin invite acceptance and password reset workflow activates users withou
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_create'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_accept'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_session_user_revoke' && event.details?.sessionsRevoked >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_role_update' && event.details?.sessionsRevoked >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_plan'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_complete'));
