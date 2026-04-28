@@ -1654,3 +1654,61 @@ export const contactCampaignFitPlan = ({ source = '', domain = '', consentStatus
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactCampaignHandoffPreview = (filters = {}) => {
+  const plan = contactCampaignFitPlan({ ...filters, limit: Math.min(250, Number(filters.limit) || 100) });
+  const rows = (plan.samples || []).map((contact) => ({
+    email: contact.email,
+    source: contact.source || '',
+    domain: contact.domain || '',
+    campaignFit: contact.campaignFit,
+    reasons: (contact.reasons || []).join('|'),
+    recommendedAction: contact.recommendedAction,
+    realDeliveryAllowed: 'false'
+  }));
+  const headers = ['email', 'source', 'domain', 'campaignFit', 'reasons', 'recommendedAction', 'realDeliveryAllowed'];
+  const csvPreview = [headers.join(','), ...rows.slice(0, 25).map((row) => headers.map((header) => csvEscape(row[header])).join(','))].join('\n');
+  const readyRows = rows.filter((row) => row.campaignFit === 'ready');
+  const reviewRows = rows.filter((row) => row.campaignFit === 'review');
+  const blockedRows = rows.filter((row) => row.campaignFit === 'blocked');
+  return {
+    ok: true,
+    mode: 'contact-campaign-handoff-preview',
+    filters: plan.filters,
+    filename: `contact-campaign-handoff-preview-${new Date().toISOString().slice(0, 10)}.csv`,
+    rowCount: rows.length,
+    csvPreview,
+    totals: {
+      matchedContacts: plan.totals.matchedContacts,
+      readyContacts: readyRows.length,
+      reviewContacts: reviewRows.length,
+      blockedContacts: blockedRows.length,
+      automaticSegmentMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    previewRows: rows.slice(0, 25),
+    recommendations: [
+      ...(plan.recommendations || []),
+      'use_ready_rows_for_future_dry_run_segment_planning_only',
+      'do_not_create_segments_or_queue_messages_from_this_preview_automatically'
+    ],
+    exportMutation: false,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      previewOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noSecretOutput: true,
+      automaticSegmentMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: plan.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};

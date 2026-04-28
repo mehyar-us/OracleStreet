@@ -7,7 +7,7 @@ import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.j
 import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarReschedulePlan, campaignCalendarWarmupBoard } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
-import { browseContacts, contactAudienceExclusionPreview, contactAudienceReadinessReview, contactBrowserExportPreview, contactCampaignFitPlan, contactConsentProvenanceReview, contactDetailDrilldown, contactDomainRiskPlan, contactEngagementRecencyPlan, contactRepermissionPlan, contactRiskTriageQueue, contactSourceDetailReview, contactSourceQuarantinePlan, contactSuppressionReviewPlan, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
+import { browseContacts, contactAudienceExclusionPreview, contactAudienceReadinessReview, contactBrowserExportPreview, contactCampaignFitPlan, contactCampaignHandoffPreview, contactConsentProvenanceReview, contactDetailDrilldown, contactDomainRiskPlan, contactEngagementRecencyPlan, contactRepermissionPlan, contactRiskTriageQueue, contactSourceDetailReview, contactSourceQuarantinePlan, contactSuppressionReviewPlan, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { auditDataSourceImportSchedules, createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleTimeline, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, updateDataSourceImportScheduleStatus, validateDataSourceQuery } from './lib/dataSources.js';
@@ -865,6 +865,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = sourceQualityMatrix(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'contact_source_quality_matrix_view', actorEmail: session.email, status: 'ok', details: { filters: result.filters, contactsReviewed: result.totals.contactsReviewed, sourceDomainCells: result.totals.sourceDomainCells, reviewGates: result.totals.reviewGates, noContactMutation: true, noSuppressionMutation: true, noSegmentMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/contacts/campaign-handoff-preview' || url.pathname === '/contacts/campaign-handoff-preview') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = contactCampaignHandoffPreview(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'contact_campaign_handoff_preview_view', actorEmail: session.email, status: 'ok', details: { filters: result.filters, rowCount: result.rowCount, automaticSegmentMutationAllowed: false, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

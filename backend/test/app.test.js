@@ -235,6 +235,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Source quality/);
   assert.match(html, /api\/contacts\/detail/);
   assert.match(html, /api\/contacts\/campaign-fit-plan/);
+  assert.match(html, /api\/contacts\/campaign-handoff-preview/);
   assert.match(html, /api\/contacts\/consent-provenance-review/);
   assert.match(html, /api\/contacts\/source-detail-review/);
   assert.match(html, /api\/contacts\/domain-risk-plan/);
@@ -1444,6 +1445,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthDetail.status, 401);
     const unauthCampaignFit = await request('/api/contacts/campaign-fit-plan');
     assert.equal(unauthCampaignFit.status, 401);
+    const unauthCampaignHandoff = await request('/api/contacts/campaign-handoff-preview');
+    assert.equal(unauthCampaignHandoff.status, 401);
     const unauthConsentProvenance = await request('/api/contacts/consent-provenance-review');
     assert.equal(unauthConsentProvenance.status, 401);
     const unauthSourceDetail = await request('/api/contacts/source-detail-review');
@@ -1554,6 +1557,23 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(campaignFit.body.safety.noSegmentMutation, true);
     assert.equal(campaignFit.body.safety.automaticSegmentMutationAllowed, false);
     assert.equal(campaignFit.body.realDeliveryAllowed, false);
+
+
+    const campaignHandoff = await request('/api/contacts/campaign-handoff-preview?domain=example.test', { headers: { cookie } });
+    assert.equal(campaignHandoff.status, 200);
+    assert.equal(campaignHandoff.body.mode, 'contact-campaign-handoff-preview');
+    assert.equal(campaignHandoff.body.totals.matchedContacts, 3);
+    assert.ok(campaignHandoff.body.totals.readyContacts >= 1);
+    assert.ok(campaignHandoff.body.totals.blockedContacts >= 1);
+    assert.equal(campaignHandoff.body.totals.automaticSegmentMutationAllowed, 0);
+    assert.match(campaignHandoff.body.filename, /contact-campaign-handoff-preview/);
+    assert.match(campaignHandoff.body.csvPreview, /email,source,domain,campaignFit,reasons,recommendedAction,realDeliveryAllowed/);
+    assert.ok(campaignHandoff.body.previewRows.some((contact) => contact.email === 'support@example.test' && contact.campaignFit === 'blocked'));
+    assert.equal(campaignHandoff.body.exportMutation, false);
+    assert.equal(campaignHandoff.body.safety.previewOnly, true);
+    assert.equal(campaignHandoff.body.safety.noSegmentMutation, true);
+    assert.equal(campaignHandoff.body.safety.noSecretOutput, true);
+    assert.equal(campaignHandoff.body.realDeliveryAllowed, false);
 
 
     const consentProvenance = await request('/api/contacts/consent-provenance-review?domain=example.test', { headers: { cookie } });
@@ -1763,6 +1783,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_export_preview' && event.details?.rowCount === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_campaign_fit_plan_view' && event.details?.automaticSegmentMutationAllowed === false));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_campaign_handoff_preview_view' && event.details?.automaticSegmentMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_consent_provenance_review_view' && event.details?.automaticContactMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_detail_review_view' && event.details?.automaticContactMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_domain_risk_plan_view' && event.details?.mxProbePerformed === false));

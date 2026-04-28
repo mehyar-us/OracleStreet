@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow A campaign handoff preview: CSV preview for ready/review/blocked cohorts with no contact/suppression/segment/queue/provider mutation.
 - Flow A campaign fit plan: ready/review/blocked campaign audience cohorts with no contact/suppression/segment/queue/provider mutation.
 - Flow A source detail review: import batch/form provenance gaps by source detail with no contact/suppression/segment mutation.
 - Flow A consent provenance review: consent/source issue rows and samples with no contact/suppression/segment mutation.
