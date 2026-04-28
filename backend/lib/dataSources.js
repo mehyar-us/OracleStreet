@@ -1342,4 +1342,85 @@ export const planDataSourceImportScheduleWorker = ({ now = new Date() } = {}) =>
   };
 };
 
+
+export const planDataSourceImportScheduleRunbook = ({ scheduleId = '', now = new Date() } = {}) => {
+  const scheduleResult = listDataSourceImportSchedules();
+  const schedules = scheduleResult.schedules || [];
+  const selected = scheduleId ? schedules.find((schedule) => schedule.id === scheduleId) : schedules.find((schedule) => schedule.enabled) || schedules[0] || null;
+  if (!selected) {
+    return {
+      ok: false,
+      mode: 'data-source-import-schedule-runbook',
+      error: 'schedule_not_found',
+      scheduleId: scheduleId || null,
+      runbookMutation: false,
+      rowsPulled: 0,
+      contactsMutated: 0,
+      realSync: false,
+      automaticPulls: false,
+      realDeliveryAllowed: false
+    };
+  }
+  const nowMs = new Date(now).getTime();
+  const nextRunMs = new Date(selected.nextRunPreviewAt || 0).getTime();
+  const due = Boolean(selected.enabled && Number.isFinite(nextRunMs) && nextRunMs <= nowMs);
+  const blockers = [];
+  if (!selected.enabled) blockers.push('schedule_not_enabled');
+  if (!due) blockers.push('schedule_not_due_for_preview');
+  if (selected.validation?.blockers?.length) blockers.push(...selected.validation.blockers);
+  blockers.push('future_per_run_read_only_execution_approval_required', 'future_contact_mutation_approval_required');
+  return {
+    ok: true,
+    mode: 'data-source-import-schedule-runbook',
+    evaluatedAt: new Date(nowMs).toISOString(),
+    schedule: {
+      id: selected.id,
+      dataSourceId: selected.dataSourceId,
+      dataSourceName: selected.dataSourceName,
+      status: selected.status,
+      enabled: selected.enabled,
+      due,
+      nextRunPreviewAt: selected.nextRunPreviewAt,
+      intervalHours: selected.intervalHours,
+      queryLimit: selected.query?.limit || selected.queryLimit || null,
+      timeoutMs: selected.query?.timeoutMs || selected.timeoutMs || null,
+      projectedSql: selected.query?.projectedSql || selected.projectedSql || null,
+      mapping: selected.mapping
+    },
+    readiness: {
+      runnableNow: false,
+      blockers: [...new Set(blockers)],
+      requiredApprovalPhrases: [
+        'I_APPROVE_REMOTE_POSTGRESQL_READ_ONLY_EXECUTION',
+        'I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT'
+      ]
+    },
+    manualRunbook: [
+      'review_registered_source_and_encrypted_secret_ref_without_printing_credentials',
+      'rerun_select_only_query_validation_with_limit_timeout',
+      'execute_future_read_only_preview_only_after_exact_per_run_approval',
+      'review_contact_mapping_preview_and_zero_rejection_result',
+      'require_separate_contact_import_approval_before_any_mutation',
+      'record_sync_run_history_and_audit_all_outcomes',
+      'keep_campaign_delivery_locked'
+    ],
+    runbookMutation: false,
+    rowsPulled: 0,
+    contactsMutated: 0,
+    safety: {
+      noWorkerStarted: true,
+      noRemoteConnectionOpened: true,
+      noRowsPulled: true,
+      noContactMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: scheduleResult.persistenceMode,
+    realSync: false,
+    automaticPulls: false,
+    realDeliveryAllowed: false
+  };
+};
+
 export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;

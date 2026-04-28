@@ -277,6 +277,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Replay sync validation/);
   assert.match(html, /api\/data-source-import-schedules\/worker-plan/);
   assert.match(html, /Scheduler worker plan/);
+  assert.match(html, /api\/data-source-import-schedules\/runbook/);
+  assert.match(html, /Manual scheduler runbook/);
   assert.match(html, /reputation-screen/);
   assert.match(html, /api\/email\/warmup\/plan/);
   assert.match(html, /Plan warm-up preview/);
@@ -698,6 +700,8 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(unauth.status, 401);
     const unauthWorker = await request('/api/data-source-import-schedules/worker-plan');
     assert.equal(unauthWorker.status, 401);
+    const unauthRunbook = await request('/api/data-source-import-schedules/runbook');
+    assert.equal(unauthRunbook.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -794,10 +798,28 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.ok(worker.body.requiredBeforeAutomaticWorker.includes('per_run_read_only_execution_gate'));
     assert.equal(JSON.stringify(worker.body).includes('schedule-secret'), false);
 
+    const runbook = await request(`/api/data-source-import-schedules/runbook?scheduleId=${encodeURIComponent(planned.body.schedule.id)}`, { headers: { cookie } });
+    assert.equal(runbook.status, 200);
+    assert.equal(runbook.body.mode, 'data-source-import-schedule-runbook');
+    assert.equal(runbook.body.schedule.id, planned.body.schedule.id);
+    assert.equal(runbook.body.readiness.runnableNow, false);
+    assert.ok(runbook.body.readiness.requiredApprovalPhrases.includes('I_APPROVE_REMOTE_POSTGRESQL_READ_ONLY_EXECUTION'));
+    assert.ok(runbook.body.readiness.requiredApprovalPhrases.includes('I_APPROVE_REMOTE_POSTGRESQL_CONTACT_IMPORT'));
+    assert.ok(runbook.body.manualRunbook.includes('record_sync_run_history_and_audit_all_outcomes'));
+    assert.equal(runbook.body.safety.noWorkerStarted, true);
+    assert.equal(runbook.body.safety.noRemoteConnectionOpened, true);
+    assert.equal(runbook.body.safety.noRowsPulled, true);
+    assert.equal(runbook.body.safety.noContactMutation, true);
+    assert.equal(runbook.body.realSync, false);
+    assert.equal(runbook.body.automaticPulls, false);
+    assert.equal(runbook.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(runbook.body).includes('schedule-secret'), false);
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_plan'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_worker_plan_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_runbook_view'));
   });
 });
 
@@ -1142,6 +1164,8 @@ test('data source sync audit endpoint also works behind nginx stripped api prefi
 test('data source import schedule worker plan endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/data-source-import-schedules/worker-plan');
   assert.equal(res.status, 401);
+  const runbook = await request('/data-source-import-schedules/runbook');
+  assert.equal(runbook.status, 401);
 });
 
 test('data source registry endpoint also works behind nginx stripped api prefix', async () => {

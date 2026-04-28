@@ -10,7 +10,7 @@ import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planCon
 import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
+import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -293,6 +293,15 @@ export const createHandler = () => {
       const result = planDataSourceImportScheduleWorker();
       recordAuditEvent({ action: 'data_source_import_schedule_worker_plan_view', actorEmail: session.email, status: 'ok', details: { dueSchedules: result.counts.dueSchedules, enabledSchedules: result.counts.enabledSchedules, noWorkerStarted: true, noRemoteConnectionOpened: true, noContactMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/data-source-import-schedules/runbook' || url.pathname === '/data-source-import-schedules/runbook') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_data_sources');
+      if (!session) return;
+      const result = planDataSourceImportScheduleRunbook({ scheduleId: url.searchParams.get('scheduleId') || '' });
+      recordAuditEvent({ action: 'data_source_import_schedule_runbook_view', actorEmail: session.email, target: result.schedule?.id || url.searchParams.get('scheduleId') || null, status: result.ok ? 'ok' : 'rejected', details: { error: result.error || null, runnableNow: false, noWorkerStarted: true, noRemoteConnectionOpened: true, rowsPulled: 0, contactsMutated: 0, realDeliveryAllowed: false } });
+      return jsonResponse(res, result.ok ? 200 : 404, result);
     }
 
     if (url.pathname === '/api/data-source-sync-audit' || url.pathname === '/data-source-sync-audit') {

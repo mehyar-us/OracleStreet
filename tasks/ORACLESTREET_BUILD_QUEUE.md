@@ -117,9 +117,9 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Remote import scheduler execution remains gated/no automatic pulls until a future explicit approval slice.
-2. Campaign calendar UX polish and reporting drilldowns after warm-up cap enforcement.
-3. Reporting dashboard depth and campaign/source trend drilldowns.
+1. Campaign calendar UX polish and reporting drilldowns after warm-up cap enforcement.
+2. Reporting dashboard depth and campaign/source trend drilldowns.
+3. Remaining CRUD polish for visible admin CMS screens.
 
 Latest shipped slice:
 - Remote source persistence for source registry/encrypted secret metadata: migration `011_data_source_registry_runtime` adds `data_source_registry` and `data_source_encrypted_secrets`; `/api/data-sources` now uses local PostgreSQL runtime persistence when enabled, keeps safe in-memory fallback, stores encrypted secret ciphertext metadata only, displays registry persistence in the UI, and never returns plaintext credentials.
@@ -131,6 +131,7 @@ Latest shipped slice:
 - Flow D remote PostgreSQL import scheduler safe baseline: `/api/data-source-import-schedules` plans recurring imports from a SELECT-only query plus contact mapping profile, interval, next-run preview timestamp, and exact approval phrase when marked enabled; it audits accepted/rejected plans, stores no raw credentials, performs no immediate remote pull, starts no worker, mutates no contacts, and the Remote PostgreSQL UI exposes schedule planning/history after login.
 - Flow A contact dedupe/merge planner baseline: `/api/contacts/dedupe-merge-plan` previews exact-email and same-name-domain merge candidates, picks a candidate primary record with consent/source summary, audits plan views, and the Contacts UI surfaces merge recommendations without contact/suppression mutation or delivery unlock.
 - Flow E seed/live-proof observation planner: `/api/email/controlled-live-test/seed-observation` summarizes controlled proof audit outcomes, required manual observation fields, and latest observations while keeping inbox polling, mailbox connections, sends, provider/queue mutations, and delivery unlock disabled.
+- Flow D scheduler runbook baseline: `/api/data-source-import-schedules/runbook` selects a planned import schedule and displays the manual per-run read-only execution/contact-import approval checklist while keeping no-worker/no-connection/no-row-pull/no-contact-mutation/no-secret/no-delivery posture.
 - Flow D scheduler worker-plan baseline: `/api/data-source-import-schedules/worker-plan` reports enabled/due remote import schedules, required worker gates, and no-worker/no-connection/no-row-pull/no-contact-mutation safety posture; the Remote PostgreSQL UI surfaces the worker plan without starting automatic pulls.
 - MTA/reputation domain-rollup baseline: `/api/email/reputation/domain-rollup` aggregates delivery/bounce/complaint/deferral events by recipient domain, compares rates to recommendation-only reputation thresholds, audits rollup views, and the Reputation UI surfaces per-domain throttle/pause guidance without DNS probes, queue/provider mutation, or delivery unlock.
 - Flow C role-edit hardening baseline: `/api/admin/users/role` updates existing roles with manage-users authorization, owner-escalation guard, self-demotion guard, last-admin demotion guard, audit events, and no password/token/email/delivery output; Users/RBAC UI exposes the guarded role edit form.
