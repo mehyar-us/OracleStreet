@@ -235,6 +235,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Source quality/);
   assert.match(html, /api\/contacts\/detail/);
   assert.match(html, /Contact detail drilldown/);
+  assert.match(html, /api\/contacts\/source-quality/);
+  assert.match(html, /Source quality detail/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
   assert.match(html, /Dedupe\/merge planner/);
   assert.match(html, /segments-screen/);
@@ -1329,6 +1331,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauth.status, 401);
     const unauthDetail = await request('/api/contacts/detail?email=ada@example.test');
     assert.equal(unauthDetail.status, 401);
+    const unauthSourceQuality = await request('/api/contacts/source-quality?source=owned');
+    assert.equal(unauthSourceQuality.status, 401);
     const unauthMerge = await request('/api/contacts/dedupe-merge-plan');
     assert.equal(unauthMerge.status, 401);
 
@@ -1383,6 +1387,20 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(detail.body.safety.noQueueMutation, true);
     assert.equal(detail.body.realDeliveryAllowed, false);
 
+    const sourceQuality = await request('/api/contacts/source-quality?source=support%20imports', { headers: { cookie } });
+    assert.equal(sourceQuality.status, 200);
+    assert.equal(sourceQuality.body.mode, 'contact-source-quality-drilldown');
+    assert.equal(sourceQuality.body.source, 'support imports');
+    assert.equal(sourceQuality.body.summary.total, 1);
+    assert.equal(sourceQuality.body.summary.suppressed, 1);
+    assert.ok(sourceQuality.body.domainBreakdown.some((entry) => entry.domain === 'example.test' && entry.suppressed === 1));
+    assert.equal(sourceQuality.body.riskBreakdown.role_account, 1);
+    assert.ok(sourceQuality.body.recommendations.includes('review_suppressed_contacts_before_using_this_source_in_segments'));
+    assert.equal(sourceQuality.body.safety.noContactMutation, true);
+    assert.equal(sourceQuality.body.safety.noSuppressionMutation, true);
+    assert.equal(sourceQuality.body.safety.noProviderMutation, true);
+    assert.equal(sourceQuality.body.realDeliveryAllowed, false);
+
     const missingDetail = await request('/api/contacts/detail?email=missing@example.test', { headers: { cookie } });
     assert.equal(missingDetail.status, 404);
     assert.equal(missingDetail.body.error, 'contact_not_found');
@@ -1401,6 +1419,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
   });
 });
@@ -1458,6 +1477,8 @@ test('contact endpoints also work behind nginx stripped api prefix', async () =>
   assert.equal(hygiene.status, 401);
   const detail = await request('/contacts/detail');
   assert.equal(detail.status, 401);
+  const sourceQuality = await request('/contacts/source-quality');
+  assert.equal(sourceQuality.status, 401);
   const mergePlan = await request('/contacts/dedupe-merge-plan');
   assert.equal(mergePlan.status, 401);
 });

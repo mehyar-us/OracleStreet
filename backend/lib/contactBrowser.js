@@ -234,3 +234,96 @@ export const contactDetailDrilldown = ({ email = '', id = '', staleAfterDays = 1
     realDeliveryAllowed: false
   };
 };
+
+export const sourceQualityDrilldown = ({ source = '', limit = 50, staleAfterDays = 180 } = {}) => {
+  const overview = browseContacts({ staleAfterDays, limit: 500 });
+  const selectedSource = String(source || overview.sourceQuality[0]?.source || '').trim();
+  const rowLimit = Math.max(1, Math.min(200, Number(limit) || 50));
+  if (!selectedSource) {
+    return {
+      ok: true,
+      mode: 'contact-source-quality-drilldown',
+      source: null,
+      summary: null,
+      domainBreakdown: [],
+      riskBreakdown: {},
+      sampleContacts: [],
+      recommendations: ['import_consented_contacts_with_source_metadata_before_reviewing_source_quality'],
+      safety: {
+        adminOnly: true,
+        readOnly: true,
+        noContactMutation: true,
+        noSuppressionMutation: true,
+        noQueueMutation: true,
+        noProviderMutation: true,
+        noNetworkProbe: true,
+        realDeliveryAllowed: false
+      },
+      persistenceMode: overview.persistenceMode,
+      realDeliveryAllowed: false
+    };
+  }
+
+  const drilldown = browseContacts({ source: selectedSource, staleAfterDays, limit: 500 });
+  const contacts = drilldown.contacts || [];
+  const summary = overview.sourceQuality.find((entry) => clean(entry.source) === clean(selectedSource)) || {
+    source: selectedSource,
+    total: contacts.length,
+    suppressed: contacts.filter((contact) => contact.suppressed).length,
+    risky: contacts.filter((contact) => contact.riskFlags?.length).length,
+    stale: contacts.filter((contact) => contact.riskFlags?.includes('stale_contact')).length,
+    bounced: contacts.reduce((sum, contact) => sum + (contact.eventCounts?.bounce || 0), 0),
+    complained: contacts.reduce((sum, contact) => sum + (contact.eventCounts?.complaint || 0), 0),
+    score: sourceScore({ total: contacts.length, suppressed: 0, risky: 0, stale: 0, bounced: 0, complained: 0 })
+  };
+  const domainMap = new Map();
+  const riskBreakdown = {};
+  for (const contact of contacts) {
+    const domain = contact.domain || 'unknown_domain';
+    const row = domainMap.get(domain) || { domain, total: 0, suppressed: 0, risky: 0, bounced: 0, complained: 0 };
+    row.total += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    if (contact.riskFlags?.length) row.risky += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    domainMap.set(domain, row);
+    for (const flag of contact.riskFlags || []) riskBreakdown[flag] = (riskBreakdown[flag] || 0) + 1;
+  }
+  const recommendations = [];
+  if (summary.suppressed > 0) recommendations.push('review_suppressed_contacts_before_using_this_source_in_segments');
+  if (summary.bounced > 0 || summary.complained > 0) recommendations.push('quarantine_or_limit_this_source_until_bounce_complaint_causes_are_reviewed');
+  if (summary.stale > 0) recommendations.push('refresh_consent_for_stale_contacts_from_this_source');
+  if (summary.score < 70) recommendations.push('require_operator_review_before_campaign_audience_use');
+  if (!recommendations.length) recommendations.push('source_currently_clear_for_dry_run_planning_only');
+
+  return {
+    ok: true,
+    mode: 'contact-source-quality-drilldown',
+    source: selectedSource,
+    summary,
+    domainBreakdown: [...domainMap.values()].sort((a, b) => b.total - a.total || a.domain.localeCompare(b.domain)).slice(0, 25),
+    riskBreakdown,
+    sampleContacts: contacts.slice(0, rowLimit).map((contact) => ({
+      id: contact.id || null,
+      email: contact.email,
+      domain: contact.domain,
+      consentStatus: contact.consentStatus,
+      suppressed: contact.suppressed,
+      riskFlags: contact.riskFlags || [],
+      eventCounts: contact.eventCounts || {}
+    })),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: overview.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
