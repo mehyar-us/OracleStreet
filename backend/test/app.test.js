@@ -736,6 +736,8 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(unauthWorker.status, 401);
     const unauthRunbook = await request('/api/data-source-import-schedules/runbook');
     assert.equal(unauthRunbook.status, 401);
+    const unauthTimeline = await request('/api/data-source-import-schedules/timeline');
+    assert.equal(unauthTimeline.status, 401);
     const unauthAudit = await request('/api/data-source-import-schedules/audit');
     assert.equal(unauthAudit.status, 401);
 
@@ -856,6 +858,23 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(enable.body.safety.noWorkerStarted, true);
     assert.equal(enable.body.realDeliveryAllowed, false);
 
+    const timeline = await request('/api/data-source-import-schedules/timeline?days=7', { headers: { cookie } });
+    assert.equal(timeline.status, 200);
+    assert.equal(timeline.body.mode, 'data-source-import-scheduler-timeline');
+    assert.equal(timeline.body.horizonDays, 7);
+    assert.ok(timeline.body.totals.forecastedRuns >= 1);
+    assert.equal(timeline.body.upcomingRuns[0].rowsPulled, 0);
+    assert.equal(timeline.body.upcomingRuns[0].contactsMutated, 0);
+    assert.equal(timeline.body.safety.noWorkerStarted, true);
+    assert.equal(timeline.body.safety.noRemoteConnectionOpened, true);
+    assert.equal(timeline.body.safety.noRowsPulled, true);
+    assert.equal(timeline.body.safety.noContactMutation, true);
+    assert.equal(timeline.body.safety.noSecretOutput, true);
+    assert.equal(timeline.body.realSync, false);
+    assert.equal(timeline.body.automaticPulls, false);
+    assert.equal(timeline.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(timeline.body).includes('schedule-secret'), false);
+
     const worker = await request('/api/data-source-import-schedules/worker-plan', { headers: { cookie } });
     assert.equal(worker.status, 200);
     assert.equal(worker.body.mode, 'data-source-import-scheduler-worker-plan');
@@ -913,6 +932,7 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_audit_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_worker_plan_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_timeline_view' && event.details?.forecastedRuns >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_runbook_view'));
   });
 });

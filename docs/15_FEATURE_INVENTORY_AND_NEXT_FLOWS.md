@@ -202,6 +202,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Remote import scheduler worker-plan surface that counts enabled/due schedules and lists required gates without starting a worker, opening remote connections, pulling rows, or mutating contacts.
 - Remote import schedule manual runbook surface that selects a planned schedule and lists per-run read-only execution/contact-import approval gates without starting workers, connecting remotely, pulling rows, mutating contacts, outputting secrets, or unlocking delivery.
 - Remote import schedule pause/re-enable API/UI with approval phrase required for re-enable; status changes never start workers, open remote connections, pull rows, mutate contacts, output secrets, or unlock delivery.
+- Remote import scheduler timeline API/UI forecasts upcoming manual-run windows over a bounded horizon with blocked/manual-gate status, without starting workers, opening remote connections, pulling rows, mutating contacts, exposing secrets, or unlocking delivery.
 - Remote import scheduler safety audit showing enabled/due/blocked/stale schedules, source/mapping blockers, recommendations, and no worker/connection/row/contact/secret/delivery mutation.
 - PostgreSQL runtime adapter for remote import schedules.
 - Sync-run/schedule history for preview/execution/planned recurrence.

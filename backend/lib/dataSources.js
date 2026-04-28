@@ -1429,6 +1429,97 @@ export const planDataSourceImportScheduleWorker = ({ now = new Date() } = {}) =>
 };
 
 
+
+export const planDataSourceImportScheduleTimeline = ({ days = 7, now = new Date() } = {}) => {
+  const scheduleResult = listDataSourceImportSchedules();
+  const nowMs = new Date(now).getTime();
+  const safeDays = Math.max(1, Math.min(30, Number.parseInt(days, 10) || 7));
+  const horizonMs = nowMs + safeDays * 24 * 60 * 60 * 1000;
+  const schedules = scheduleResult.schedules || [];
+  const upcomingRuns = [];
+  const reviews = schedules.map((schedule) => {
+    const blockers = [];
+    if (!schedule.enabled) blockers.push('schedule_disabled');
+    if (schedule.validation?.blockers?.length) blockers.push(...schedule.validation.blockers);
+    if (!schedule.query?.projectedSql) blockers.push('select_query_plan_missing');
+    if (!schedule.mapping?.emailColumn) blockers.push('email_mapping_column_required');
+    const intervalMs = Number(schedule.intervalHours || 0) * 60 * 60 * 1000;
+    let cursor = new Date(schedule.nextRunPreviewAt || 0).getTime();
+    if (!Number.isFinite(cursor) || cursor <= 0) blockers.push('next_run_preview_missing');
+    let runCount = 0;
+    if (schedule.enabled && intervalMs > 0 && Number.isFinite(cursor) && cursor <= horizonMs) {
+      while (cursor < nowMs && runCount < 100) {
+        cursor += intervalMs;
+        runCount += 1;
+      }
+      runCount = 0;
+      while (cursor <= horizonMs && runCount < 20) {
+        upcomingRuns.push({
+          scheduleId: schedule.id,
+          dataSourceId: schedule.dataSourceId,
+          dataSourceName: schedule.dataSourceName,
+          plannedAt: new Date(cursor).toISOString(),
+          intervalHours: schedule.intervalHours,
+          status: schedule.status,
+          blocked: blockers.length > 0,
+          blockers: [...new Set(blockers)],
+          requiredManualGate: 'per_run_read_only_execution_and_contact_import_approval_required',
+          rowsPulled: 0,
+          contactsMutated: 0,
+          realDeliveryAllowed: false
+        });
+        cursor += intervalMs;
+        runCount += 1;
+      }
+    }
+    return {
+      id: schedule.id,
+      dataSourceName: schedule.dataSourceName,
+      enabled: schedule.enabled,
+      intervalHours: schedule.intervalHours,
+      nextRunPreviewAt: schedule.nextRunPreviewAt,
+      blockers: [...new Set(blockers)],
+      forecastedRuns: upcomingRuns.filter((run) => run.scheduleId === schedule.id).length,
+      recommendation: blockers.length ? 'resolve_schedule_blockers_before_manual_run' : 'review_each_forecasted_run_with_manual_approval_gates'
+    };
+  });
+  upcomingRuns.sort((left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime());
+  return {
+    ok: true,
+    mode: 'data-source-import-scheduler-timeline',
+    evaluatedAt: new Date(nowMs).toISOString(),
+    horizonDays: safeDays,
+    totals: {
+      schedules: schedules.length,
+      enabledSchedules: schedules.filter((schedule) => schedule.enabled).length,
+      forecastedRuns: upcomingRuns.length,
+      blockedForecastedRuns: upcomingRuns.filter((run) => run.blocked).length
+    },
+    upcomingRuns: upcomingRuns.slice(0, 100),
+    reviews,
+    recommendations: [
+      upcomingRuns.length ? 'use_timeline_to_pick_next_manual_runbook_review' : 'no_enabled_schedule_runs_inside_horizon',
+      'manual_approval_required_before_any_remote_read_or_contact_import',
+      'keep_automatic_worker_disabled_until_supervision_and_failure_policy_are_built'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noWorkerStarted: true,
+      noRemoteConnectionOpened: true,
+      noRowsPulled: true,
+      noContactMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: scheduleResult.persistenceMode,
+    realSync: false,
+    automaticPulls: false,
+    realDeliveryAllowed: false
+  };
+};
+
 export const planDataSourceImportScheduleRunbook = ({ scheduleId = '', now = new Date() } = {}) => {
   const scheduleResult = listDataSourceImportSchedules();
   const schedules = scheduleResult.schedules || [];
