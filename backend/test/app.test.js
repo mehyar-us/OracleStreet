@@ -291,6 +291,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Scheduler worker plan/);
   assert.match(html, /api\/data-source-import-schedules\/runbook/);
   assert.match(html, /Manual scheduler runbook/);
+  assert.match(html, /api\/data-source-import-schedules\/audit/);
+  assert.match(html, /Scheduler safety audit/);
   assert.match(html, /reputation-screen/);
   assert.match(html, /api\/email\/warmup\/plan/);
   assert.match(html, /Plan warm-up preview/);
@@ -722,6 +724,8 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(unauthWorker.status, 401);
     const unauthRunbook = await request('/api/data-source-import-schedules/runbook');
     assert.equal(unauthRunbook.status, 401);
+    const unauthAudit = await request('/api/data-source-import-schedules/audit');
+    assert.equal(unauthAudit.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -835,9 +839,28 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(runbook.body.realDeliveryAllowed, false);
     assert.equal(JSON.stringify(runbook.body).includes('schedule-secret'), false);
 
+    const schedulerAudit = await request('/api/data-source-import-schedules/audit', { headers: { cookie } });
+    assert.equal(schedulerAudit.status, 200);
+    assert.equal(schedulerAudit.body.mode, 'data-source-import-scheduler-audit');
+    assert.equal(schedulerAudit.body.totals.schedules, 1);
+    assert.equal(schedulerAudit.body.totals.enabledSchedules, 1);
+    assert.equal(schedulerAudit.body.reviews[0].dataSourceName, 'Schedule warehouse');
+    assert.equal(schedulerAudit.body.reviews[0].rowsPulled, 0);
+    assert.equal(schedulerAudit.body.reviews[0].contactsMutated, 0);
+    assert.equal(schedulerAudit.body.safety.noWorkerStarted, true);
+    assert.equal(schedulerAudit.body.safety.noRemoteConnectionOpened, true);
+    assert.equal(schedulerAudit.body.safety.noRowsPulled, true);
+    assert.equal(schedulerAudit.body.safety.noContactMutation, true);
+    assert.equal(schedulerAudit.body.safety.noSecretOutput, true);
+    assert.equal(schedulerAudit.body.realSync, false);
+    assert.equal(schedulerAudit.body.automaticPulls, false);
+    assert.equal(schedulerAudit.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(schedulerAudit.body).includes('schedule-secret'), false);
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_plan'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_audit_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_worker_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_runbook_view'));
   });

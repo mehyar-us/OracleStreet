@@ -1423,4 +1423,84 @@ export const planDataSourceImportScheduleRunbook = ({ scheduleId = '', now = new
   };
 };
 
+export const auditDataSourceImportSchedules = ({ now = new Date() } = {}) => {
+  const scheduleResult = listDataSourceImportSchedules();
+  const sourceResult = listDataSources();
+  const nowMs = new Date(now).getTime();
+  const schedules = scheduleResult.schedules || [];
+  const sourceIds = new Set((sourceResult.sources || []).map((source) => source.id));
+  const reviews = schedules.map((schedule) => {
+    const nextRunMs = new Date(schedule.nextRunPreviewAt || 0).getTime();
+    const due = Boolean(schedule.enabled && Number.isFinite(nextRunMs) && nextRunMs <= nowMs);
+    const staleHours = Number.isFinite(nextRunMs) && nextRunMs < nowMs ? Math.round((nowMs - nextRunMs) / 36_000) / 100 : 0;
+    const blockers = [];
+    if (!sourceIds.has(schedule.dataSourceId)) blockers.push('registered_source_missing');
+    if (!schedule.enabled) blockers.push('schedule_disabled');
+    if (schedule.validation?.blockers?.length) blockers.push(...schedule.validation.blockers);
+    if (!schedule.mapping?.defaults?.consentStatus && !schedule.mapping?.columns?.consentStatus) blockers.push('consent_mapping_review_required');
+    if (!schedule.mapping?.defaults?.source && !schedule.mapping?.columns?.source) blockers.push('source_mapping_review_required');
+    return {
+      id: schedule.id,
+      dataSourceId: schedule.dataSourceId,
+      dataSourceName: schedule.dataSourceName,
+      status: schedule.status,
+      enabled: schedule.enabled,
+      due,
+      nextRunPreviewAt: schedule.nextRunPreviewAt,
+      intervalHours: schedule.intervalHours,
+      staleHours,
+      queryLimit: schedule.query?.limit || 0,
+      timeoutMs: schedule.query?.timeoutMs || 0,
+      hasConsentMapping: !blockers.includes('consent_mapping_review_required'),
+      hasSourceMapping: !blockers.includes('source_mapping_review_required'),
+      blockers: [...new Set(blockers)],
+      recommendation: blockers.length
+        ? 'fix_schedule_blockers_before_any_manual_runbook_step'
+        : due
+          ? 'review_manual_runbook_for_due_schedule_no_worker_started'
+          : 'schedule_ready_for_future_manual_review_window',
+      rowsPulled: 0,
+      contactsMutated: 0,
+      realDeliveryAllowed: false
+    };
+  });
+  const dueReviews = reviews.filter((review) => review.due);
+  const blockedReviews = reviews.filter((review) => review.blockers.length > 0);
+  return {
+    ok: true,
+    mode: 'data-source-import-scheduler-audit',
+    evaluatedAt: new Date(nowMs).toISOString(),
+    totals: {
+      sources: sourceResult.count || (sourceResult.sources || []).length,
+      schedules: reviews.length,
+      enabledSchedules: reviews.filter((review) => review.enabled).length,
+      dueSchedules: dueReviews.length,
+      blockedSchedules: blockedReviews.length,
+      schedulesMissingRegisteredSource: reviews.filter((review) => review.blockers.includes('registered_source_missing')).length,
+      staleDueSchedules: dueReviews.filter((review) => review.staleHours >= 24).length
+    },
+    reviews,
+    recommendations: [
+      dueReviews.length ? 'open_manual_runbook_for_due_schedules_before_any_future_worker' : 'no_due_schedule_manual_runbooks_needed',
+      blockedReviews.length ? 'resolve_scheduler_audit_blockers_before_enabling_automation' : 'scheduler_plans_have_required_safe_metadata',
+      'keep_automatic_worker_disabled_until_per_run_read_only_and_contact_import_approvals_exist'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noWorkerStarted: true,
+      noRemoteConnectionOpened: true,
+      noRowsPulled: true,
+      noContactMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: scheduleResult.persistenceMode,
+    realSync: false,
+    automaticPulls: false,
+    realDeliveryAllowed: false
+  };
+};
+
 export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;

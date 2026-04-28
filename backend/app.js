@@ -10,7 +10,7 @@ import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planCon
 import { browseContacts, contactDetailDrilldown, sourceHygieneActionPlan, sourceQualityDrilldown } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
+import { auditDataSourceImportSchedules, createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -303,6 +303,15 @@ export const createHandler = () => {
       const result = planDataSourceImportScheduleRunbook({ scheduleId: url.searchParams.get('scheduleId') || '' });
       recordAuditEvent({ action: 'data_source_import_schedule_runbook_view', actorEmail: session.email, target: result.schedule?.id || url.searchParams.get('scheduleId') || null, status: result.ok ? 'ok' : 'rejected', details: { error: result.error || null, runnableNow: false, noWorkerStarted: true, noRemoteConnectionOpened: true, rowsPulled: 0, contactsMutated: 0, realDeliveryAllowed: false } });
       return jsonResponse(res, result.ok ? 200 : 404, result);
+    }
+
+    if (url.pathname === '/api/data-source-import-schedules/audit' || url.pathname === '/data-source-import-schedules/audit') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_data_sources');
+      if (!session) return;
+      const result = auditDataSourceImportSchedules();
+      recordAuditEvent({ action: 'data_source_import_schedule_audit_view', actorEmail: session.email, status: 'ok', details: { schedules: result.totals.schedules, dueSchedules: result.totals.dueSchedules, blockedSchedules: result.totals.blockedSchedules, noWorkerStarted: true, noRemoteConnectionOpened: true, rowsPulled: 0, contactsMutated: 0, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/data-source-sync-audit' || url.pathname === '/data-source-sync-audit') {
