@@ -10,7 +10,7 @@ import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planCon
 import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
+import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -284,6 +284,15 @@ export const createHandler = () => {
         return jsonResponse(res, result.ok ? 200 : 400, result);
       }
       return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/data-source-import-schedules/worker-plan' || url.pathname === '/data-source-import-schedules/worker-plan') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_data_sources');
+      if (!session) return;
+      const result = planDataSourceImportScheduleWorker();
+      recordAuditEvent({ action: 'data_source_import_schedule_worker_plan_view', actorEmail: session.email, status: 'ok', details: { dueSchedules: result.counts.dueSchedules, enabledSchedules: result.counts.enabledSchedules, noWorkerStarted: true, noRemoteConnectionOpened: true, noContactMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/data-source-sync-audit' || url.pathname === '/data-source-sync-audit') {

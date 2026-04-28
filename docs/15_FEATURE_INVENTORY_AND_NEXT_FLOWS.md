@@ -185,6 +185,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Remote PostgreSQL contact import preview with field mapping.
 - Approved remote contact import execution with exact approval phrase.
 - Remote import schedule planner with SELECT-only query, mapping profile, interval, approval phrase, and no automatic pulls.
+- Remote import scheduler worker-plan surface that counts enabled/due schedules and lists required gates without starting a worker, opening remote connections, pulling rows, or mutating contacts.
 - PostgreSQL runtime adapter for remote import schedules.
 - Sync-run/schedule history for preview/execution/planned recurrence.
 - PostgreSQL-backed sync-run history with operator replay of prior dry-run validations.

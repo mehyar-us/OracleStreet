@@ -1280,4 +1280,66 @@ export const listDataSourceImportSchedules = () => {
   };
 };
 
+export const planDataSourceImportScheduleWorker = ({ now = new Date() } = {}) => {
+  const scheduleResult = listDataSourceImportSchedules();
+  const nowMs = new Date(now).getTime();
+  const schedules = scheduleResult.schedules || [];
+  const enabled = schedules.filter((schedule) => schedule.enabled);
+  const due = enabled.filter((schedule) => {
+    const nextRunMs = new Date(schedule.nextRunPreviewAt || 0).getTime();
+    return Number.isFinite(nextRunMs) && nextRunMs <= nowMs;
+  });
+  return {
+    ok: true,
+    mode: 'data-source-import-scheduler-worker-plan',
+    scheduler: {
+      designed: true,
+      automaticWorkerEnabled: false,
+      executionMode: 'operator_gated_manual_run_design_only',
+      evaluatedAt: new Date(nowMs).toISOString(),
+      intervalRecommendationMinutes: 15
+    },
+    counts: {
+      totalSchedules: schedules.length,
+      enabledSchedules: enabled.length,
+      dueSchedules: due.length,
+      disabledSchedules: schedules.length - enabled.length
+    },
+    dueSchedules: due.slice(0, 20).map((schedule) => ({
+      id: schedule.id,
+      dataSourceId: schedule.dataSourceId,
+      dataSourceName: schedule.dataSourceName,
+      status: schedule.status,
+      nextRunPreviewAt: schedule.nextRunPreviewAt,
+      intervalHours: schedule.intervalHours,
+      requiredManualGate: 'future_per_run_read_only_execution_approval_required',
+      rowsPulled: 0,
+      contactsMutated: 0
+    })),
+    requiredBeforeAutomaticWorker: [
+      'separate_worker_process_supervision',
+      'per_run_read_only_execution_gate',
+      'encrypted_secret_ref_required',
+      'strict_row_limit_timeout_enforcement',
+      'contact_import_preview_before_mutation',
+      'operator_or_final_human_approval_for_contact_mutation',
+      'backoff_and_failure_audit_policy',
+      'no_campaign_delivery_unlock'
+    ],
+    safety: {
+      noWorkerStarted: true,
+      noRemoteConnectionOpened: true,
+      noRowsPulled: true,
+      noContactMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: scheduleResult.persistenceMode,
+    realSync: false,
+    automaticPulls: false,
+    realDeliveryAllowed: false
+  };
+};
+
 export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;

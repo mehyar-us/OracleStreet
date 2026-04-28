@@ -273,6 +273,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Validate SELECT query/);
   assert.match(html, /api\/data-source-sync-runs\/replay/);
   assert.match(html, /Replay sync validation/);
+  assert.match(html, /api\/data-source-import-schedules\/worker-plan/);
+  assert.match(html, /Scheduler worker plan/);
   assert.match(html, /reputation-screen/);
   assert.match(html, /api\/email\/warmup\/plan/);
   assert.match(html, /Plan warm-up preview/);
@@ -690,6 +692,8 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
   }, async () => {
     const unauth = await request('/api/data-source-import-schedules', { method: 'POST', body: JSON.stringify({ dataSourceId: 'ds_missing' }) });
     assert.equal(unauth.status, 401);
+    const unauthWorker = await request('/api/data-source-import-schedules/worker-plan');
+    assert.equal(unauthWorker.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -770,9 +774,26 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(list.body.realSync, false);
     assert.equal(list.body.automaticPulls, false);
 
+    const worker = await request('/api/data-source-import-schedules/worker-plan', { headers: { cookie } });
+    assert.equal(worker.status, 200);
+    assert.equal(worker.body.mode, 'data-source-import-scheduler-worker-plan');
+    assert.equal(worker.body.scheduler.automaticWorkerEnabled, false);
+    assert.equal(worker.body.counts.totalSchedules, 1);
+    assert.equal(worker.body.counts.enabledSchedules, 1);
+    assert.equal(worker.body.safety.noWorkerStarted, true);
+    assert.equal(worker.body.safety.noRemoteConnectionOpened, true);
+    assert.equal(worker.body.safety.noRowsPulled, true);
+    assert.equal(worker.body.safety.noContactMutation, true);
+    assert.equal(worker.body.realSync, false);
+    assert.equal(worker.body.automaticPulls, false);
+    assert.equal(worker.body.realDeliveryAllowed, false);
+    assert.ok(worker.body.requiredBeforeAutomaticWorker.includes('per_run_read_only_execution_gate'));
+    assert.equal(JSON.stringify(worker.body).includes('schedule-secret'), false);
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_plan'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_worker_plan_view'));
   });
 });
 
@@ -1111,6 +1132,11 @@ test('data source sync run endpoint also works behind nginx stripped api prefix'
 
 test('data source sync audit endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/data-source-sync-audit');
+  assert.equal(res.status, 401);
+});
+
+test('data source import schedule worker plan endpoint also works behind nginx stripped api prefix', async () => {
+  const res = await request('/data-source-import-schedules/worker-plan');
   assert.equal(res.status, 401);
 });
 
