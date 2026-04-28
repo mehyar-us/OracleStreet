@@ -70,6 +70,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Reputation auto-pause threshold controls.
 - Controlled live-test runbook gate UI.
 - Controlled live-test operator action plan with readiness blockers, proof gaps, manual runbook, and no-send/no-probe/no-delivery safety flags.
+- Controlled live-test final approval packet with pass/block rows, evidence checklist, max-one-message boundary, and no-send/no-mutation guarantees.
 - MTA/reputation operations dashboard with provider, queue, event, suppression, blocker, and recommendation rollups.
 - Provider readiness drilldown with safe provider rows, dispatch modes, and gate checklist.
 - Reporting dashboard with campaign/source/domain/trend rollups plus export panel.

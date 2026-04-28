@@ -329,9 +329,11 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/controlled-live-test\/seed-observation/);
   assert.match(html, /Seed observations/);
   assert.match(html, /api\/email\/controlled-live-test\/proof-packet/);
+  assert.match(html, /api\/email\/controlled-live-test\/final-approval-packet/);
   assert.match(html, /api\/email\/controlled-live-test\/operator-actions/);
   assert.match(html, /Controlled live-test operator actions/);
   assert.match(html, /Controlled proof packet/);
+  assert.match(html, /Controlled final approval packet/);
   assert.match(html, /api\/campaigns\/calendar\/capacity-forecast/);
   assert.match(html, /Capacity forecast/);
   assert.match(html, /api\/campaigns\/calendar\/warmup-board/);
@@ -4287,6 +4289,8 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.equal(unauthSeed.status, 401);
     const unauthPacket = await request('/api/email/controlled-live-test/proof-packet');
     assert.equal(unauthPacket.status, 401);
+    const unauthFinalPacket = await request('/api/email/controlled-live-test/final-approval-packet');
+    assert.equal(unauthFinalPacket.status, 401);
     const unauthActions = await request('/api/email/controlled-live-test/operator-actions');
     assert.equal(unauthActions.status, 401);
 
@@ -4337,6 +4341,31 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.equal(seedObservation.body.realDeliveryAllowed, false);
     assert.equal(JSON.stringify(seedObservation.body).includes('pmta-secret'), false);
 
+
+    const finalPacket = await request('/api/email/controlled-live-test/final-approval-packet', { headers: { cookie } });
+    assert.equal(finalPacket.status, 200);
+    assert.equal(finalPacket.body.mode, 'controlled-live-test-final-approval-packet');
+    assert.ok(['ready_for_final_human_review_not_execution', 'blocked_before_final_human_review'].includes(finalPacket.body.packetStatus));
+    assert.ok(finalPacket.body.totals.approvalRows >= 6);
+    assert.equal(finalPacket.body.totals.sendMutationAllowed, 0);
+    assert.equal(finalPacket.body.totals.queueMutationAllowed, 0);
+    assert.equal(finalPacket.body.totals.providerMutationAllowed, 0);
+    assert.equal(finalPacket.body.totals.suppressionMutationAllowed, 0);
+    assert.ok(finalPacket.body.approvalRows.some((row) => row.gate === 'dry_run_or_local_capture_proof_attached' && row.passed));
+    assert.ok(finalPacket.body.approvalRows.some((row) => row.gate === 'campaign_scale_delivery_locked' && row.passed));
+    assert.ok(finalPacket.body.finalHumanReviewChecklist.includes('confirm_max_one_message_only_if_later_separately_approved'));
+    assert.equal(finalPacket.body.safety.finalApprovalPacketOnly, true);
+    assert.equal(finalPacket.body.safety.noSend, true);
+    assert.equal(finalPacket.body.safety.noNetworkProbe, true);
+    assert.equal(finalPacket.body.safety.noMailboxConnection, true);
+    assert.equal(finalPacket.body.safety.noQueueMutation, true);
+    assert.equal(finalPacket.body.safety.noProviderMutation, true);
+    assert.equal(finalPacket.body.safety.noSuppressionMutation, true);
+    assert.equal(finalPacket.body.safety.noSecretOutput, true);
+    assert.equal(finalPacket.body.safety.maxMessagesIfLaterApproved, 1);
+    assert.equal(finalPacket.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(finalPacket.body).includes('pmta-secret'), false);
+
     const operatorActions = await request('/api/email/controlled-live-test/operator-actions', { headers: { cookie } });
     assert.equal(operatorActions.status, 200);
     assert.equal(operatorActions.body.mode, 'controlled-live-test-operator-actions');
@@ -4373,6 +4402,7 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_seed_inbox_observation_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_packet_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_final_approval_packet_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_operator_actions_view'));
   });
 });

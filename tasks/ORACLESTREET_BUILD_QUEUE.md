@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow E controlled final approval packet: pass/block evidence rows and max-one-message review checklist without send/probe/queue/provider/suppression mutation.
 - Flow D remote PostgreSQL scheduler operations board: due/blocked/forecast rows and manual-runbook actions without worker/remote-read/contact mutation.
 - Flow C RBAC operations review: read-only user/session posture, route coverage, and pending invite/reset follow-up board.
 - Flow B campaign calendar warm-up cap review: read-only cap rows, campaign readiness, gates, and operator actions.

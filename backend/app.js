@@ -6,7 +6,7 @@ import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarLaunchReadiness, campaignCalendarOperatorActions, campaignCalendarReschedulePlan, campaignCalendarWarmupBoard, campaignCalendarWarmupCapReview } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
-import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestOperatorActions, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
+import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestFinalApprovalPacket, planControlledLiveTestOperatorActions, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts, contactAudienceExclusionPreview, contactAudienceReadinessReview, contactBrowserExportPreview, contactCampaignFitPlan, contactCampaignHandoffPreview, contactConsentProvenanceReview, contactDetailDrilldown, contactDomainRiskPlan, contactEngagementRecencyPlan, contactRepermissionPlan, contactRiskTriageQueue, contactSourceDetailReview, contactSourceQualityRemediationBoard, contactSourceQuarantinePlan, contactSuppressionReviewPlan, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
@@ -609,6 +609,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = planControlledLiveTestProofPacket();
       recordAuditEvent({ action: 'email_controlled_live_test_proof_packet_view', actorEmail: session.email, target: 'controlled-live-test', status: result.proofGaps.length ? 'incomplete' : 'ok', details: { proofGaps: result.proofGaps, proofAuditCount: result.evidence.proofAuditCount, noSend: true, noNetworkProbe: true, noQueueMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/email/controlled-live-test/final-approval-packet' || url.pathname === '/email/controlled-live-test/final-approval-packet') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'review_sending_readiness');
+      if (!session) return;
+      const result = planControlledLiveTestFinalApprovalPacket();
+      recordAuditEvent({ action: 'email_controlled_live_test_final_approval_packet_view', actorEmail: session.email, target: 'controlled-live-test', status: result.totals.blockingRows ? 'blocked' : 'ok', details: { approvalRows: result.totals.approvalRows, blockingRows: result.totals.blockingRows, proofGaps: result.totals.proofGaps, noSend: true, noNetworkProbe: true, noQueueMutation: true, noProviderMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

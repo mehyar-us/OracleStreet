@@ -450,6 +450,113 @@ export const planControlledLiveTestOperatorActions = (env = process.env) => {
   };
 };
 
+
+export const planControlledLiveTestFinalApprovalPacket = (env = process.env) => {
+  const readiness = controlledLiveTestReadiness(env);
+  const proofPacket = planControlledLiveTestProofPacket(env);
+  const operatorActions = planControlledLiveTestOperatorActions(env);
+  const seedObservation = planSeedInboxObservation(env);
+  const approvalRows = [
+    {
+      gate: 'live_provider_configured_and_valid',
+      passed: !readiness.blockers.includes('live_provider_required_for_controlled_test') && !readiness.blockers.includes('provider_config_invalid'),
+      evidence: readiness.provider.provider,
+      blocker: readiness.blockers.includes('provider_config_invalid') ? 'provider_config_invalid' : readiness.blockers.includes('live_provider_required_for_controlled_test') ? 'live_provider_required_for_controlled_test' : null
+    },
+    {
+      gate: 'owned_controlled_recipient_configured',
+      passed: readiness.recipient.configured && readiness.recipient.owned,
+      evidence: readiness.recipient.email || 'not_configured',
+      blocker: !readiness.recipient.configured ? 'controlled_test_recipient_email_required' : !readiness.recipient.owned ? 'controlled_test_recipient_must_be_owned' : null
+    },
+    {
+      gate: 'single_message_rate_limit_locked',
+      passed: readiness.rateLimits.globalPerWindow <= 1 && readiness.rateLimits.perDomainPerWindow <= 1,
+      evidence: `global:${readiness.rateLimits.globalPerWindow};domain:${readiness.rateLimits.perDomainPerWindow}`,
+      blocker: readiness.blockers.includes('single_message_rate_limit_required') ? 'single_message_rate_limit_required' : null
+    },
+    {
+      gate: 'dry_run_or_local_capture_proof_attached',
+      passed: Boolean(proofPacket.evidence.latestDryRunProofId),
+      evidence: proofPacket.evidence.latestDryRunProofId || 'missing',
+      blocker: proofPacket.proofGaps.includes('dry_run_or_local_capture_proof_not_recorded') ? 'dry_run_or_local_capture_proof_not_recorded' : null
+    },
+    {
+      gate: 'manual_provider_message_trace_if_sent',
+      passed: !proofPacket.proofGaps.includes('manual_send_provider_message_id_missing'),
+      evidence: proofPacket.evidence.latestManualProviderMessageId || 'not_sent_or_not_required',
+      blocker: proofPacket.proofGaps.includes('manual_send_provider_message_id_missing') ? 'manual_send_provider_message_id_missing' : null
+    },
+    {
+      gate: 'seed_observation_recorded_if_manual_test_happened',
+      passed: seedObservation.counts.observedOutcomes > 0 || !proofPacket.evidence.latestManualProviderMessageId,
+      evidence: `observed:${seedObservation.counts.observedOutcomes}`,
+      blocker: seedObservation.counts.observedOutcomes > 0 || !proofPacket.evidence.latestManualProviderMessageId ? null : 'manual_seed_observation_not_recorded'
+    },
+    {
+      gate: 'campaign_scale_delivery_locked',
+      passed: true,
+      evidence: 'realDeliveryAllowed:false; maxMessagesIfLaterApproved:1',
+      blocker: null
+    }
+  ].map((row) => ({ ...row, noSend: true, noQueueMutation: true, noProviderMutation: true, realDeliveryAllowed: false }));
+  const blockingRows = approvalRows.filter((row) => !row.passed);
+  return {
+    ok: true,
+    mode: 'controlled-live-test-final-approval-packet',
+    packetStatus: blockingRows.length === 0 ? 'ready_for_final_human_review_not_execution' : 'blocked_before_final_human_review',
+    approvalRows,
+    totals: {
+      approvalRows: approvalRows.length,
+      passedRows: approvalRows.filter((row) => row.passed).length,
+      blockingRows: blockingRows.length,
+      operatorActionRows: operatorActions.totals.actionRows,
+      proofGaps: proofPacket.proofGaps.length,
+      readinessBlockers: readiness.blockers.length,
+      observedOutcomes: seedObservation.counts.observedOutcomes,
+      maxMessagesIfLaterApproved: 1,
+      sendMutationAllowed: 0,
+      queueMutationAllowed: 0,
+      providerMutationAllowed: 0,
+      suppressionMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    blockingRows,
+    evidence: proofPacket.evidence,
+    proofGaps: proofPacket.proofGaps,
+    operatorActions: operatorActions.actionRows,
+    finalHumanReviewChecklist: [
+      'review_all_approval_rows_and_blocking_rows',
+      'confirm_owned_recipient_expectation_out_of_band',
+      'confirm_max_one_message_only_if_later_separately_approved',
+      'confirm_no_campaign_scale_queue_or_provider_path_is_unlocked',
+      'record_manual_result_in_proof_audit_after_any_out_of_band_action'
+    ],
+    recommendations: blockingRows.length
+      ? ['resolve_blocking_rows_before_final_human_review', 'do_not_attempt_manual_one_message_test']
+      : ['packet_ready_for_final_human_review_only', 'execution_remains_external_manual_and_separately_approved'],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      finalApprovalPacketOnly: true,
+      noSend: true,
+      noNetworkProbe: true,
+      noMailboxConnection: true,
+      noInboxPolling: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSuppressionMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      maxMessagesIfLaterApproved: 1,
+      requiresSeparateManualExecution: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: proofPacket.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
+
 export const resetControlledLiveTestProofAuditsForTests = () => {
   proofAuditRecords.length = 0;
   proofAuditSequence = 0;
