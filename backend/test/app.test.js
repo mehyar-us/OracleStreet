@@ -243,6 +243,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/contacts\/browser\/export-preview/);
   assert.match(html, /api\/contacts\/suppression-review/);
   assert.match(html, /api\/contacts\/risk-triage/);
+  assert.match(html, /api\/contacts\/audience-exclusion-preview/);
   assert.match(html, /Source × domain quality matrix/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
   assert.match(html, /Dedupe\/merge planner/);
@@ -1442,6 +1443,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthSourceMatrix.status, 401);
     const unauthRiskTriage = await request('/api/contacts/risk-triage');
     assert.equal(unauthRiskTriage.status, 401);
+    const unauthExclusionPreview = await request('/api/contacts/audience-exclusion-preview');
+    assert.equal(unauthExclusionPreview.status, 401);
     const unauthSuppressionReview = await request('/api/contacts/suppression-review');
     assert.equal(unauthSuppressionReview.status, 401);
     const unauthAudienceReadiness = await request('/api/contacts/audience-readiness');
@@ -1581,6 +1584,21 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(suppressionReview.body.safety.automaticUnsuppressionAllowed, false);
     assert.equal(suppressionReview.body.realDeliveryAllowed, false);
 
+    const exclusionPreview = await request('/api/contacts/audience-exclusion-preview?domain=example.test', { headers: { cookie } });
+    assert.equal(exclusionPreview.status, 200);
+    assert.equal(exclusionPreview.body.mode, 'contact-audience-exclusion-preview');
+    assert.equal(exclusionPreview.body.totals.matchedContacts, 3);
+    assert.equal(exclusionPreview.body.totals.excludedContacts, 1);
+    assert.equal(exclusionPreview.body.totals.retainedContacts, 2);
+    assert.equal(exclusionPreview.body.totals.automaticSegmentMutationAllowed, 0);
+    assert.ok(exclusionPreview.body.exclusionRows.some((row) => row.reason === 'suppressed_contact' && row.reviewGate === true));
+    assert.ok(exclusionPreview.body.excludedSamples.some((contact) => contact.email === 'support@example.test' && contact.reasons.includes('suppressed_contact')));
+    assert.ok(exclusionPreview.body.retainedSamples.some((contact) => contact.email === 'ada@example.test'));
+    assert.equal(exclusionPreview.body.safety.previewOnly, true);
+    assert.equal(exclusionPreview.body.safety.noSegmentMutation, true);
+    assert.equal(exclusionPreview.body.safety.automaticSegmentMutationAllowed, false);
+    assert.equal(exclusionPreview.body.realDeliveryAllowed, false);
+
     const audienceReadiness = await request('/api/contacts/audience-readiness?domain=example.test', { headers: { cookie } });
     assert.equal(audienceReadiness.status, 200);
     assert.equal(audienceReadiness.body.mode, 'contact-audience-readiness-review');
@@ -1623,6 +1641,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_matrix_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_risk_triage_queue_view' && event.details?.riskyContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_suppression_review_plan_view' && event.details?.suppressedContacts === 1));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_audience_exclusion_preview_view' && event.details?.excludedContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_audience_readiness_review_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
   });

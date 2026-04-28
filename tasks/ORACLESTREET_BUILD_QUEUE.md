@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow A audience exclusion preview: retained/excluded contact counts, exclusion reasons, and samples before segment snapshot/campaign use with no segment/contact/suppression mutation.
 - Flow A contact risk triage queue: risk/source/domain operator review queues with samples, recommended actions, and no audience/contact/suppression mutation.
 - Flow A suppression review plan: reason/source/domain suppression review rows and samples with explicit no-auto-unsuppression guardrails and no contact/suppression mutation.
 - Flow A contact browser export preview: filtered CSV preview for contacts/source/consent/suppression/risk metadata without file writes or audience/contact mutation.

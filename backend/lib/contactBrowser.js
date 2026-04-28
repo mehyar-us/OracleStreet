@@ -829,3 +829,120 @@ export const contactRiskTriageQueue = ({ source = '', domain = '', risk = '', st
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactAudienceExclusionPreview = ({ source = '', domain = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, staleAfterDays, limit: 500 });
+  const previewLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const contacts = browser.contacts || [];
+  const exclusionRows = new Map();
+  const retained = [];
+  const excluded = [];
+  const addExclusion = (reason, contact) => {
+    const row = exclusionRows.get(reason) || { reason, contacts: 0, suppressed: 0, stale: 0, roleAccounts: 0, missingConsent: 0, missingSource: 0, bounced: 0, complained: 0, sources: new Set(), domains: new Set() };
+    row.contacts += 1;
+    const flags = contact.riskFlags || [];
+    if (contact.suppressed) row.suppressed += 1;
+    if (flags.includes('stale_contact')) row.stale += 1;
+    if (flags.includes('role_account')) row.roleAccounts += 1;
+    if (flags.includes('missing_explicit_consent')) row.missingConsent += 1;
+    if (flags.includes('missing_source')) row.missingSource += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    row.sources.add(contact.source || 'unknown_source');
+    row.domains.add(contact.domain || domainOf(contact.email) || 'unknown_domain');
+    exclusionRows.set(reason, row);
+  };
+  for (const contact of contacts) {
+    const reasons = [];
+    const flags = contact.riskFlags || [];
+    if (contact.suppressed) reasons.push('suppressed_contact');
+    if (!['opt_in', 'double_opt_in'].includes(contact.consentStatus)) reasons.push('missing_or_non_explicit_consent');
+    if (!contact.source) reasons.push('missing_source_metadata');
+    if (flags.includes('stale_contact')) reasons.push('stale_consent');
+    if (flags.includes('role_account')) reasons.push('role_account_review');
+    if ((contact.eventCounts?.bounce || 0) > 0) reasons.push('bounce_history_review');
+    if ((contact.eventCounts?.complaint || 0) > 0) reasons.push('complaint_history_hard_stop');
+    if (reasons.length) {
+      excluded.push({ contact, reasons });
+      for (const reason of reasons) addExclusion(reason, contact);
+    } else {
+      retained.push(contact);
+    }
+  }
+  const rows = [...exclusionRows.values()].map((row) => ({
+    ...row,
+    sources: row.sources.size,
+    domains: row.domains.size,
+    reviewGate: true,
+    recommendation: row.reason === 'complaint_history_hard_stop'
+      ? 'exclude_and_review_complaint_source_before_any_campaign_use'
+      : row.reason === 'suppressed_contact'
+        ? 'exclude_from_all_segment_snapshots_and_campaigns'
+        : row.reason === 'missing_or_non_explicit_consent'
+          ? 'repair_explicit_consent_or_exclude_from_audience'
+          : row.reason === 'stale_consent'
+            ? 'refresh_consent_or_exclude_before_warmup_scheduling'
+            : 'operator_review_before_campaign_audience_use',
+    realDeliveryAllowed: false
+  })).sort((a, b) => b.contacts - a.contacts || a.reason.localeCompare(b.reason)).slice(0, previewLimit);
+  const recommendations = [];
+  if (rows.some((row) => row.reason === 'suppressed_contact')) recommendations.push('apply_suppression_exclusion_to_all_saved_segments_and_snapshots');
+  if (rows.some((row) => row.reason === 'complaint_history_hard_stop')) recommendations.push('quarantine_complaint_history_contacts_and_review_sources');
+  if (rows.some((row) => row.reason === 'missing_or_non_explicit_consent')) recommendations.push('repair_or_exclude_contacts_without_explicit_consent');
+  if (rows.some((row) => row.reason === 'stale_consent')) recommendations.push('refresh_or_exclude_stale_consent_before_campaign_scheduling');
+  if (!recommendations.length) recommendations.push(contacts.length ? 'current_filters_have_no_exclusion_recommendations_for_dry_run_planning' : 'import_consented_contacts_before_exclusion_preview');
+
+  return {
+    ok: true,
+    mode: 'contact-audience-exclusion-preview',
+    filters: { ...browser.filters, limit: previewLimit },
+    totals: {
+      matchedContacts: contacts.length,
+      retainedContacts: retained.length,
+      excludedContacts: excluded.length,
+      exclusionReasons: rows.length,
+      suppressionExclusions: excluded.filter((item) => item.reasons.includes('suppressed_contact')).length,
+      staleExclusions: excluded.filter((item) => item.reasons.includes('stale_consent')).length,
+      roleAccountReviews: excluded.filter((item) => item.reasons.includes('role_account_review')).length,
+      complaintHardStops: excluded.filter((item) => item.reasons.includes('complaint_history_hard_stop')).length,
+      automaticSegmentMutationAllowed: 0
+    },
+    exclusionRows: rows,
+    excludedSamples: excluded.slice(0, previewLimit).map(({ contact, reasons }) => ({
+      id: contact.id || null,
+      email: contact.email,
+      source: contact.source || null,
+      domain: contact.domain || null,
+      consentStatus: contact.consentStatus || null,
+      suppressed: Boolean(contact.suppressed),
+      reasons,
+      recommendation: reasons.includes('suppressed_contact') ? 'exclude_from_segment_snapshot' : 'operator_review_or_metadata_repair_before_segment_use',
+      realDeliveryAllowed: false
+    })),
+    retainedSamples: retained.slice(0, previewLimit).map((contact) => ({
+      id: contact.id || null,
+      email: contact.email,
+      source: contact.source || null,
+      domain: contact.domain || null,
+      consentStatus: contact.consentStatus || null,
+      realDeliveryAllowed: false
+    })),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      previewOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticSegmentMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
