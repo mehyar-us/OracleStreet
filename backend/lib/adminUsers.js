@@ -106,7 +106,7 @@ export const validateAdminSession = ({ token, email } = {}) => {
   if (isPgRepositoryEnabled('admin_sessions')) {
     try {
       const rows = runLocalPgRows(`
-        SELECT revoked_at IS NULL AND expires_at > now()
+        SELECT (revoked_at IS NULL AND expires_at > now())::text, id
         FROM admin_sessions
         WHERE id = ${sqlLiteral(id)} AND email = ${sqlLiteral(cleanEmail)}
         LIMIT 1;
@@ -135,7 +135,7 @@ export const revokeAdminSessionsForUser = ({ email, exceptToken = null } = {}) =
         WHERE email = ${sqlLiteral(cleanEmail)}
           AND revoked_at IS NULL
           AND (${sqlLiteral(exceptId)} IS NULL OR id <> ${sqlLiteral(exceptId)})
-        RETURNING id;
+        RETURNING id, email;
       `);
       return { ok: true, mode: 'postgresql-admin-session-user-revoke', sessionsRevoked: rows.length, persistenceMode: 'postgresql-local-psql-repository', realDeliveryAllowed: false };
     } catch (error) {
