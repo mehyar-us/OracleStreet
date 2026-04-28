@@ -352,6 +352,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/reporting\/drilldown/);
   assert.match(html, /Reporting drilldown/);
   assert.match(html, /api\/email\/reporting\/deliverability-audit/);
+  assert.match(html, /api\/email\/reporting\/operations-digest/);
   assert.match(html, /Deliverability audit/);
   assert.match(html, /api\/email\/reporting\/export/);
   assert.match(html, /Build CSV export/);
@@ -3515,6 +3516,8 @@ test('reporting dashboard depth requires admin and aggregates campaign source do
     assert.equal(unauthDrilldown.status, 401);
     const unauthDeliverabilityAudit = await request('/api/email/reporting/deliverability-audit');
     assert.equal(unauthDeliverabilityAudit.status, 401);
+    const unauthOperationsDigest = await request('/api/email/reporting/operations-digest');
+    assert.equal(unauthOperationsDigest.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3588,6 +3591,24 @@ test('reporting dashboard depth requires admin and aggregates campaign source do
     assert.equal(domainDrilldown.body.counts.bounces, 1);
     assert.ok(domainDrilldown.body.recommendations.includes('review_suppressions_and_source_quality_before_future_schedules'));
 
+
+    const operationsDigest = await request('/api/email/reporting/operations-digest', { headers: { cookie } });
+    assert.equal(operationsDigest.status, 200);
+    assert.equal(operationsDigest.body.mode, 'reporting-operations-digest-safe-summary');
+    assert.equal(operationsDigest.body.executiveCards.realDeliveryAllowed, false);
+    assert.ok(operationsDigest.body.executiveCards.contacts >= 1);
+    assert.ok(Array.isArray(operationsDigest.body.priorityRows));
+    assert.ok(Array.isArray(operationsDigest.body.nextBestActions));
+    assert.ok(operationsDigest.body.nextBestActions.includes('keep_reporting_digest_read_only_no_queue_provider_or_suppression_mutation'));
+    assert.equal(operationsDigest.body.safety.readOnly, true);
+    assert.equal(operationsDigest.body.safety.aggregateOnly, true);
+    assert.equal(operationsDigest.body.safety.noSecretsIncluded, true);
+    assert.equal(operationsDigest.body.safety.noNetworkProbe, true);
+    assert.equal(operationsDigest.body.safety.noQueueMutation, true);
+    assert.equal(operationsDigest.body.safety.noProviderMutation, true);
+    assert.equal(operationsDigest.body.safety.noSuppressionMutation, true);
+    assert.equal(operationsDigest.body.realDeliveryAllowed, false);
+
     const deliverabilityAudit = await request('/api/email/reporting/deliverability-audit', { headers: { cookie } });
     assert.equal(deliverabilityAudit.status, 200);
     assert.equal(deliverabilityAudit.body.mode, 'reporting-deliverability-audit');
@@ -3608,6 +3629,7 @@ test('reporting dashboard depth requires admin and aggregates campaign source do
     assert.ok(audit.body.events.some((event) => event.action === 'reporting_dashboard_depth_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'reporting_dashboard_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'reporting_deliverability_audit_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'reporting_operations_digest_view'));
   });
 });
 

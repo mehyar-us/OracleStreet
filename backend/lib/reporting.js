@@ -643,3 +643,81 @@ export const reportingExportPreview = ({ dataset = 'campaigns', actorEmail = nul
     realDeliveryAllowed: false
   };
 };
+
+
+export const reportingOperationsDigest = () => {
+  const dashboard = reportingDashboardDepth();
+  const deliverability = reportingDeliverabilityAudit();
+  const readiness = sendingReadinessSummary();
+  const priorityRows = [
+    ...((deliverability.sourceAudit || []).filter((row) => row.riskLevel === 'high' || row.riskScore >= 40).map((row) => ({
+      type: 'source_risk',
+      priority: 'high',
+      key: row.key,
+      metric: row.riskScore,
+      operatorAction: row.recommendation || 'review_source_quality_before_future_schedules',
+      blockers: row.blockers || [],
+      realDeliveryAllowed: false
+    }))),
+    ...((deliverability.domainAudit || []).filter((row) => row.riskLevel === 'high' || row.riskScore >= 40).map((row) => ({
+      type: 'domain_risk',
+      priority: 'high',
+      key: row.key,
+      metric: row.riskScore,
+      operatorAction: row.recommendation || 'review_domain_reputation_before_warmup_increase',
+      blockers: row.blockers || [],
+      realDeliveryAllowed: false
+    }))),
+    ...((deliverability.campaignAudit || []).filter((row) => (row.blockers || []).length > 0).map((row) => ({
+      type: 'campaign_risk',
+      priority: 'medium',
+      key: row.name || row.campaignId,
+      metric: row.riskScore || 0,
+      operatorAction: row.recommendation || 'review_campaign_reporting_before_next_send_window',
+      blockers: row.blockers || [],
+      realDeliveryAllowed: false
+    })))
+  ].sort((left, right) => ({ high: 0, medium: 1, low: 2 }[left.priority] - { high: 0, medium: 1, low: 2 }[right.priority]) || right.metric - left.metric).slice(0, 20);
+  const executiveCards = {
+    contacts: dashboard.cards.contacts,
+    campaigns: dashboard.cards.campaigns,
+    events: dashboard.cards.events,
+    suppressions: dashboard.cards.suppressions,
+    highRiskSources: deliverability.totals.highRiskSources,
+    highRiskDomains: deliverability.totals.highRiskDomains,
+    highRiskCampaigns: deliverability.totals.highRiskCampaigns,
+    providerTraceCoverage: deliverability.totals.providerTraceCoverage,
+    readinessBlockers: readiness.blockers.length,
+    realDeliveryAllowed: false
+  };
+  return {
+    ok: true,
+    mode: 'reporting-operations-digest-safe-summary',
+    generatedAt: dashboard.generatedAt,
+    executiveCards,
+    priorityRows,
+    nextBestActions: [
+      priorityRows.length ? 'work_high_priority_source_domain_campaign_risks_before_send_window' : 'no_high_priority_reporting_risks_currently_visible',
+      readiness.blockers.length ? 'resolve_sending_readiness_blockers_before_any_controlled_live_review' : 'maintain_manual_final_approval_before_any_one_message_test',
+      'keep_reporting_digest_read_only_no_queue_provider_or_suppression_mutation'
+    ],
+    trendSnapshot: (dashboard.trends || []).slice(-7),
+    topSources: (dashboard.sourcePerformance || []).slice(0, 5),
+    topDomains: (dashboard.domainPerformance || []).slice(0, 5),
+    providerTrace: deliverability.providerTrace,
+    safety: {
+      adminSessionRequired: true,
+      readOnly: true,
+      aggregateOnly: true,
+      noSecretsIncluded: true,
+      noExternalDelivery: true,
+      noNetworkProbe: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSuppressionMutation: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};

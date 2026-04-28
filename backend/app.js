@@ -27,7 +27,7 @@ import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, evaluateDomainReputationRollup, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { evaluateWarmupScheduleCap, listWarmupPolicies, saveWarmupPolicy } from './lib/warmupPolicies.js';
-import { campaignReportingSummary, emailReportingSummary, reportingDashboardDepth, reportingDashboardDrilldown, reportingDeliverabilityAudit, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
+import { campaignReportingSummary, emailReportingSummary, reportingDashboardDepth, reportingDashboardDrilldown, reportingDeliverabilityAudit, reportingExportPreview, reportingOperationsDigest, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, createSegmentSnapshot, estimateSegmentAudience, listSegmentSnapshots, listSegments } from './lib/segments.js';
 import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
@@ -508,6 +508,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = reportingDashboardDrilldown(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'reporting_dashboard_drilldown_view', actorEmail: session.email, target: `${result.dimension}:${result.key || 'none'}`, status: 'ok', details: { dimension: result.dimension, key: result.key, events: result.counts.events, contacts: result.counts.contacts, aggregateOnly: true, noQueueMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/email/reporting/operations-digest' || url.pathname === '/email/reporting/operations-digest') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = reportingOperationsDigest();
+      recordAuditEvent({ action: 'reporting_operations_digest_view', actorEmail: session.email, status: 'ok', details: { priorityRows: result.priorityRows.length, highRiskSources: result.executiveCards.highRiskSources, highRiskDomains: result.executiveCards.highRiskDomains, aggregateOnly: true, noQueueMutation: true, noProviderMutation: true, noSuppressionMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 
