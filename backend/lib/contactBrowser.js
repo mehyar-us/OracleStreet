@@ -327,3 +327,71 @@ export const sourceQualityDrilldown = ({ source = '', limit = 50, staleAfterDays
     realDeliveryAllowed: false
   };
 };
+
+export const sourceHygieneActionPlan = ({ scoreThreshold = 70, staleAfterDays = 180, limit = 25 } = {}) => {
+  const overview = browseContacts({ staleAfterDays, limit: 500 });
+  const threshold = Math.max(0, Math.min(100, Number(scoreThreshold) || 70));
+  const rowLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  const plans = (overview.sourceQuality || []).map((source) => {
+    const actions = [];
+    if (source.score < threshold) actions.push('require_operator_review_before_segment_use');
+    if (source.suppressed > 0) actions.push('exclude_or_review_suppressed_contacts');
+    if (source.bounced > 0 || source.complained > 0) actions.push('quarantine_source_until_bounce_complaint_review');
+    if (source.stale > 0) actions.push('refresh_stale_consent_before_campaigns');
+    if (source.risky > 0) actions.push('sample_risky_contacts_before_campaign_audience_use');
+    if (!actions.length) actions.push('safe_for_dry_run_segment_planning_only');
+    const priority = source.complained > 0 || source.score < 50
+      ? 'high'
+      : source.bounced > 0 || source.suppressed > 0 || source.score < threshold
+        ? 'medium'
+        : 'low';
+    return {
+      source: source.source,
+      score: source.score,
+      priority,
+      total: source.total,
+      suppressed: source.suppressed,
+      risky: source.risky,
+      stale: source.stale,
+      bounced: source.bounced,
+      complained: source.complained,
+      actions,
+      reviewGate: priority !== 'low',
+      deliveryAllowed: false
+    };
+  }).sort((a, b) => {
+    const rank = { high: 0, medium: 1, low: 2 };
+    return rank[a.priority] - rank[b.priority] || a.score - b.score || b.total - a.total;
+  }).slice(0, rowLimit);
+
+  return {
+    ok: true,
+    mode: 'contact-source-hygiene-action-plan',
+    scoreThreshold: threshold,
+    totals: {
+      sourcesReviewed: overview.sourceQuality?.length || 0,
+      highPrioritySources: plans.filter((plan) => plan.priority === 'high').length,
+      mediumPrioritySources: plans.filter((plan) => plan.priority === 'medium').length,
+      lowPrioritySources: plans.filter((plan) => plan.priority === 'low').length,
+      reviewGates: plans.filter((plan) => plan.reviewGate).length
+    },
+    plans,
+    recommendations: plans.length
+      ? plans.filter((plan) => plan.reviewGate).map((plan) => `review_${plan.source}_before_campaign_audience_use`).slice(0, 10)
+      : ['import_consented_contacts_with_source_metadata_before_source_hygiene_planning'],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: overview.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
