@@ -1,9 +1,9 @@
-import { ROLE_MATRIX } from './adminUsers.js';
+import { listAdminUsers, permissionsForRole, ROLE_MATRIX } from './adminUsers.js';
 
 const cleanEmail = (value) => String(value || '').trim().toLowerCase();
 
 export const RBAC_ROUTE_POLICY = [
-  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
+  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'GET /api/platform/rbac-effective-access', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
   { surface: 'audit_log', permission: 'view_audit_log', routes: ['GET /api/audit-log'] },
   { surface: 'contacts', permission: 'manage_contacts', routes: ['POST /api/contacts/import', 'POST /api/contacts/import/validate'] },
   { surface: 'contact_metadata', permission: 'view_contacts_metadata', routes: ['GET /api/contacts', 'GET /api/contacts/browser', 'GET /api/contacts/detail', 'GET /api/contacts/source-quality', 'GET /api/contacts/source-hygiene-plan', 'GET /api/list-hygiene/plan', 'GET /api/contacts/dedupe-merge-plan'] },
@@ -14,6 +14,87 @@ export const RBAC_ROUTE_POLICY = [
   { surface: 'reporting', permission: 'view_reporting', routes: ['GET /api/email/reporting', 'GET /api/email/reporting/dashboard', 'GET /api/email/reporting/drilldown', 'GET /api/email/reporting/export', 'GET /api/campaigns/reporting'] },
   { surface: 'sending_readiness', permission: 'review_sending_readiness', routes: ['GET /api/email/sending-readiness', 'GET /api/email/mta-operations', 'GET /api/email/provider/readiness-drilldown', 'GET /api/email/controlled-live-test/readiness', 'POST /api/email/controlled-live-test/plan', 'GET /api/email/controlled-live-test/seed-observation', 'GET /api/send-queue/readiness'] }
 ];
+
+export const rbacEffectiveAccess = ({ currentEmail = null, currentRole = 'admin' } = {}) => {
+  const directory = listAdminUsers();
+  const routePermissions = [...new Set(RBAC_ROUTE_POLICY.map((policy) => policy.permission))];
+  const users = (directory.users || []).map((user) => {
+    const permissions = permissionsForRole(user.role);
+    const allowedSurfaces = RBAC_ROUTE_POLICY
+      .filter((policy) => permissions.includes(policy.permission))
+      .map((policy) => ({ surface: policy.surface, permission: policy.permission, routeCount: policy.routes.length }));
+    const blockedSurfaces = RBAC_ROUTE_POLICY
+      .filter((policy) => !permissions.includes(policy.permission))
+      .map((policy) => ({ surface: policy.surface, requiredPermission: policy.permission }));
+    return {
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      permissionCount: permissions.length,
+      permissions,
+      allowedSurfaceCount: allowedSurfaces.length,
+      blockedSurfaceCount: blockedSurfaces.length,
+      allowedSurfaces,
+      blockedSurfaces,
+      passwordConfigured: Boolean(user.hasPassword),
+      invitePending: Boolean(user.invitePending),
+      resetPending: Boolean(user.resetPending)
+    };
+  });
+  const roleCoverage = ROLE_MATRIX.map((role) => {
+    const permissions = permissionsForRole(role.role);
+    const coveredSurfaces = RBAC_ROUTE_POLICY.filter((policy) => permissions.includes(policy.permission));
+    const missingPermissions = routePermissions.filter((permission) => !permissions.includes(permission));
+    return {
+      role: role.role,
+      permissions,
+      routeSurfacesAllowed: coveredSurfaces.length,
+      routesAllowed: coveredSurfaces.reduce((total, policy) => total + policy.routes.length, 0),
+      missingPermissions,
+      leastPrivilege: role.role !== 'owner' && role.role !== 'admin'
+    };
+  });
+  const currentPermissions = permissionsForRole(currentRole);
+  return {
+    ok: true,
+    mode: 'rbac-effective-access-review',
+    currentUser: {
+      email: String(currentEmail || '').trim().toLowerCase(),
+      role: currentRole,
+      permissions: currentPermissions,
+      allowedSurfaces: RBAC_ROUTE_POLICY.filter((policy) => currentPermissions.includes(policy.permission)).map((policy) => policy.surface)
+    },
+    totals: {
+      usersReviewed: users.length,
+      rolesReviewed: ROLE_MATRIX.length,
+      routeSurfaces: RBAC_ROUTE_POLICY.length,
+      uniqueRoutePermissions: routePermissions.length,
+      usersWithPendingInvites: users.filter((user) => user.invitePending).length,
+      usersWithPendingResets: users.filter((user) => user.resetPending).length
+    },
+    users,
+    roleCoverage,
+    routePolicy: RBAC_ROUTE_POLICY,
+    recommendations: [
+      users.some((user) => user.role === 'owner') ? 'owner_role_present_for_owner_only_escalations' : 'create_owner_role_before_multi_user_unlock',
+      users.filter((user) => ['owner', 'admin'].includes(user.role)).length >= 2 ? 'manage_users_redundancy_present' : 'add_second_manage_users_admin_before_disabling_bootstrap_access',
+      users.some((user) => user.invitePending) ? 'clear_or_accept_pending_invites_before_access_audit_signoff' : 'no_pending_invite_cleanup_needed'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noUserMutation: true,
+      noRoleMutation: true,
+      noPasswordOutput: true,
+      noTokenOutput: true,
+      noEmailSent: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: directory.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
 
 export const rbacReadiness = (env = process.env) => {
   const adminEmail = cleanEmail(env.ORACLESTREET_ADMIN_EMAIL || 'admin@oraclestreet.local');

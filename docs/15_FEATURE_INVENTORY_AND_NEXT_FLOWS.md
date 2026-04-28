@@ -39,6 +39,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Audit log baseline and visible audit panel.
 - RBAC readiness endpoint and planned owner/admin/operator/analyst/read-only roles.
 - RBAC route permission policy endpoint showing hardened surfaces and required permissions.
+- RBAC effective-access review endpoint/UI showing current user permissions, per-user allowed/blocked route surfaces, role coverage, and pending invite/reset counts without mutating users or exposing secrets.
 - Route-level permission enforcement for admin-user management, invite plans, audit log access, contact imports, data-source writes/import schedules, and other hardened write surfaces.
 - Permission-denial audit events with no user mutation, role mutation, secret output, or delivery unlock.
 - Admin user directory endpoint over the users repository/bootstrap admin fallback.

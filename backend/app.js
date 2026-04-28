@@ -22,7 +22,7 @@ import { mtaOperationsDashboard, providerReadinessDrilldown } from './lib/mtaOpe
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
-import { RBAC_ROUTE_POLICY, rbacReadiness } from './lib/rbacReadiness.js';
+import { RBAC_ROUTE_POLICY, rbacEffectiveAccess, rbacReadiness } from './lib/rbacReadiness.js';
 import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, evaluateDomainReputationRollup, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
@@ -613,6 +613,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = { ok: true, mode: 'rbac-route-permission-policy', currentUser: { email: session.email, role: session.role }, routePolicy: RBAC_ROUTE_POLICY, safety: { noUserMutation: true, noRoleMutation: true, noSecretOutput: true, realDeliveryAllowed: false }, realDeliveryAllowed: false };
       recordAuditEvent({ action: 'rbac_policy_view', actorEmail: session.email, target: session.role, status: 'ok', details: { routePolicies: RBAC_ROUTE_POLICY.length, noUserMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/platform/rbac-effective-access' || url.pathname === '/platform/rbac-effective-access') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const result = rbacEffectiveAccess({ currentEmail: session.email, currentRole: session.role });
+      recordAuditEvent({ action: 'rbac_effective_access_review', actorEmail: session.email, target: session.role, status: 'ok', details: { usersReviewed: result.totals.usersReviewed, rolesReviewed: result.totals.rolesReviewed, routeSurfaces: result.totals.routeSurfaces, noUserMutation: true, noRoleMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 
