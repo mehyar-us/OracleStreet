@@ -613,3 +613,124 @@ export const campaignCalendarLaunchReadiness = ({ domains = '', startDate = null
     realDeliveryAllowed: false
   };
 };
+
+
+export const campaignCalendarOperatorActions = ({ domains = '', startDate = null, days = 14, targetCount = 1 } = {}) => {
+  const readiness = campaignCalendarLaunchReadiness({ domains, startDate, days, targetCount });
+  const reschedule = campaignCalendarReschedulePlan({ domains, startDate: readiness.startDate, days: readiness.windowDays });
+  const forecast = campaignCalendarCapacityForecast({ domains, startDate: readiness.startDate, days: Math.max(readiness.windowDays, 30), targetCount });
+  const actionRows = [];
+  for (const row of readiness.campaignRows || []) {
+    if (row.readiness === 'blocked') {
+      const move = (reschedule.suggestions || []).find((item) => item.candidateCampaign?.id === row.id) || null;
+      actionRows.push({
+        type: 'campaign_blocker',
+        priority: 'high',
+        campaignId: row.id,
+        campaignName: row.name,
+        domain: row.senderDomain,
+        date: row.scheduledDate,
+        reason: row.blockers.join('|') || 'blocked_campaign_calendar_state',
+        operatorAction: move?.suggestedDate ? 'review_reschedule_candidate_before_manual_schedule_change' : 'fix_campaign_approval_schedule_or_reduce_audience_before_enqueue',
+        suggestedDate: move?.suggestedDate || null,
+        scheduleMutation: false,
+        queueMutation: false,
+        realDeliveryAllowed: false
+      });
+    } else if (row.readiness === 'review') {
+      actionRows.push({
+        type: 'campaign_review',
+        priority: 'medium',
+        campaignId: row.id,
+        campaignName: row.name,
+        domain: row.senderDomain,
+        date: row.scheduledDate,
+        reason: row.warnings.join('|') || 'operator_review_required',
+        operatorAction: 'confirm_warmup_capacity_and_queue_state_before_manual_enqueue',
+        suggestedDate: null,
+        scheduleMutation: false,
+        queueMutation: false,
+        realDeliveryAllowed: false
+      });
+    }
+  }
+  for (const gate of readiness.gateRows || []) {
+    if (gate.status === 'ready') continue;
+    actionRows.push({
+      type: 'gate_review',
+      priority: gate.status === 'blocked' ? 'high' : 'medium',
+      campaignId: null,
+      campaignName: null,
+      domain: null,
+      date: null,
+      reason: gate.key,
+      operatorAction: gate.recommendation,
+      suggestedDate: null,
+      scheduleMutation: false,
+      queueMutation: false,
+      realDeliveryAllowed: false
+    });
+  }
+  if (forecast.bestNextSlot) {
+    actionRows.push({
+      type: 'next_capacity_slot',
+      priority: 'low',
+      campaignId: null,
+      campaignName: null,
+      domain: forecast.bestNextSlot.domain,
+      date: forecast.bestNextSlot.date,
+      reason: 'best_next_capacity_slot_for_target_count',
+      operatorAction: 'use_for_operator_review_only_before_manual_schedule_change',
+      suggestedDate: forecast.bestNextSlot.date,
+      scheduleMutation: false,
+      queueMutation: false,
+      realDeliveryAllowed: false
+    });
+  }
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+  actionRows.sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || String(a.date || '').localeCompare(String(b.date || '')) || String(a.domain || '').localeCompare(String(b.domain || '')));
+  const manualRunbook = [
+    'review_high_priority_campaign_blockers_before_any_enqueue_action',
+    'use_suggested_dates_only_as_operator_guidance_not_automatic_reschedule',
+    'recheck_launch_readiness_after_manual_campaign_or_warmup_policy_changes',
+    'keep_real_delivery_locked_until_final_human_approval_gate_exists'
+  ];
+  return {
+    ok: true,
+    mode: 'campaign-calendar-operator-actions',
+    startDate: readiness.startDate,
+    windowDays: readiness.windowDays,
+    targetCount: readiness.targetCount,
+    totals: {
+      actions: actionRows.length,
+      highPriority: actionRows.filter((row) => row.priority === 'high').length,
+      mediumPriority: actionRows.filter((row) => row.priority === 'medium').length,
+      lowPriority: actionRows.filter((row) => row.priority === 'low').length,
+      blockedCampaigns: readiness.totals.blockedCampaigns,
+      reviewCampaigns: readiness.totals.reviewCampaigns,
+      automaticScheduleMutationAllowed: 0,
+      automaticQueueMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    actionRows,
+    manualRunbook,
+    recommendations: actionRows.length
+      ? ['work_high_priority_rows_first', 'do_not_enqueue_until_launch_readiness_is_clear_or_operator_accepts_review_state']
+      : ['no_operator_calendar_actions_needed_for_current_window'],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      actionPlanOnly: true,
+      noScheduleMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noDeliveryUnlock: true,
+      automaticScheduleMutationAllowed: false,
+      automaticQueueMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};

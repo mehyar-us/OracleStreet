@@ -311,7 +311,7 @@ Acceptance:
 
 ### Flow B — Campaign calendar over warm-up caps
 
-Status: shipped baseline. The Campaigns workbench now calls `/api/campaigns/calendar` to show scheduled dry-run campaigns against warm-up policy caps, including per-day planned count, daily cap, remaining capacity, and over-cap state. Scheduling now accounts for already scheduled dry-run campaigns on the same sender-domain/day before allowing another campaign.
+Status: shipped deeper operator baseline. The Campaigns workbench now calls `/api/campaigns/calendar`, `/api/campaigns/calendar/launch-readiness`, and `/api/campaigns/calendar/operator-actions` to show scheduled dry-run campaigns against warm-up policy caps, approval/schedule/delivery-lock gates, and prioritized manual action rows. Scheduling accounts for already scheduled dry-run campaigns on the same sender-domain/day before allowing another campaign.
 
 Shipped:
 - calendar/list of scheduled dry-run campaigns
@@ -319,6 +319,8 @@ Shipped:
 - over-cap warning/blocking before schedule
 - campaign schedule-cap API linked to warm-up policy
 - dashboard widget for remaining capacity
+- launch-readiness gate rows for dry-run approval, calendar schedule, warm-up caps, and delivery lock
+- operator action plan/runbook for manual reschedule/enqueue review with no automatic mutation
 
 Acceptance:
 - visible campaign calendar UI
