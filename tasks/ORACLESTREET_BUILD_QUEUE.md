@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow C RBAC hardening: successful admin role updates now revoke target user sessions and auth checks validate the session ledger when available; route policy coverage also includes recent contact matrix and warm-up board routes.
 - Flow B warm-up calendar operator board: `/api/campaigns/calendar/warmup-board` now combines multi-domain allocation, reschedule suggestions, and capacity forecast into visible open/tight/blocked/over-cap day rows plus per-domain utilization/best-next-slot guidance without schedule, queue, provider, network, or delivery mutation.
 - Flow A source × domain quality matrix: `/api/contacts/source-quality-matrix` now gives a protected read-only source/domain matrix with ready/blocked counts, suppressed/stale/role/bounce/complaint risk signals, review gates, aggregate risk rows, and visible Contacts UI coverage without contact/suppression/segment/queue/provider mutation or delivery unlock.
 - Remote source persistence for source registry/encrypted secret metadata: migration `011_data_source_registry_runtime` adds `data_source_registry` and `data_source_encrypted_secrets`; `/api/data-sources` now uses local PostgreSQL runtime persistence when enabled, keeps safe in-memory fallback, stores encrypted secret ciphertext metadata only, displays registry persistence in the UI, and never returns plaintext credentials.

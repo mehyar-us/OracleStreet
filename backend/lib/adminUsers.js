@@ -99,6 +99,58 @@ export const recordAdminSession = ({ token, email, expiresAt } = {}) => {
   return { ok: true, mode: 'in-memory-admin-session', sessionId: id.slice(0, 12), persistenceMode: isPgRepositoryEnabled('admin_sessions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled' };
 };
 
+export const validateAdminSession = ({ token, email } = {}) => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!token || !cleanEmail) return { ok: false, reason: 'session_token_email_required' };
+  const id = hashToken(token);
+  if (isPgRepositoryEnabled('admin_sessions')) {
+    try {
+      const rows = runLocalPgRows(`
+        SELECT revoked_at IS NULL AND expires_at > now()
+        FROM admin_sessions
+        WHERE id = ${sqlLiteral(id)} AND email = ${sqlLiteral(cleanEmail)}
+        LIMIT 1;
+      `);
+      const active = rows[0]?.[0] === 't' || rows[0]?.[0] === true;
+      return { ok: active, reason: active ? null : 'session_revoked_or_not_found', persistenceMode: 'postgresql-local-psql-repository' };
+    } catch (error) {
+      // fall through to signed-cookie-only validation so repository outages do not lock out bootstrap admins
+    }
+  }
+  const existing = sessions.get(id);
+  if (!existing) return { ok: !isPgRepositoryEnabled('admin_sessions'), reason: isPgRepositoryEnabled('admin_sessions') ? 'session_ledger_unavailable' : null, persistenceMode: isPgRepositoryEnabled('admin_sessions') ? 'postgresql-error-fallback-signed-cookie' : 'signed-cookie-only-until-postgresql-sessions-enabled' };
+  const active = existing.email === cleanEmail && !existing.revokedAt && new Date(existing.expiresAt).getTime() > Date.now();
+  return { ok: active, reason: active ? null : 'session_revoked_or_expired', persistenceMode: isPgRepositoryEnabled('admin_sessions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled' };
+};
+
+export const revokeAdminSessionsForUser = ({ email, exceptToken = null } = {}) => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return { ok: false, errors: ['email_required'], sessionsRevoked: 0 };
+  const exceptId = exceptToken ? hashToken(exceptToken) : null;
+  if (isPgRepositoryEnabled('admin_sessions')) {
+    try {
+      const rows = runLocalPgRows(`
+        UPDATE admin_sessions
+        SET revoked_at = now()
+        WHERE email = ${sqlLiteral(cleanEmail)}
+          AND revoked_at IS NULL
+          AND (${sqlLiteral(exceptId)} IS NULL OR id <> ${sqlLiteral(exceptId)})
+        RETURNING id;
+      `);
+      return { ok: true, mode: 'postgresql-admin-session-user-revoke', sessionsRevoked: rows.length, persistenceMode: 'postgresql-local-psql-repository', realDeliveryAllowed: false };
+    } catch (error) {
+      // fall through to memory revocation
+    }
+  }
+  let sessionsRevoked = 0;
+  for (const [id, session] of sessions.entries()) {
+    if (session.email !== cleanEmail || session.revokedAt || (exceptId && id === exceptId)) continue;
+    sessions.set(id, { ...session, revokedAt: new Date().toISOString() });
+    sessionsRevoked += 1;
+  }
+  return { ok: true, mode: 'in-memory-admin-session-user-revoke', sessionsRevoked, persistenceMode: isPgRepositoryEnabled('admin_sessions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled', realDeliveryAllowed: false };
+};
+
 const pgRowToUser = ([id, email, role, hasPassword, status, invitePending, resetPending, createdAt, updatedAt]) => ({
   id,
   email,

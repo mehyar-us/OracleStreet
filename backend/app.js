@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { acceptAdminUserInvite, completePasswordReset, createAdminUserInvite, createPasswordResetPlan, getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, roleHasPermission, updateAdminUserRole, upsertAdminUser, verifyAdminUserPassword } from './lib/adminUsers.js';
+import { acceptAdminUserInvite, completePasswordReset, createAdminUserInvite, createPasswordResetPlan, getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, revokeAdminSessionsForUser, roleHasPermission, updateAdminUserRole, upsertAdminUser, validateAdminSession, verifyAdminUserPassword } from './lib/adminUsers.js';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
@@ -99,7 +99,10 @@ const getSession = (req) => {
   try {
     const session = JSON.parse(unbase64url(payload));
     if (!session.email || !session.exp || session.exp < Math.floor(Date.now() / 1000)) return null;
-    return { email: session.email, expiresAt: new Date(session.exp * 1000).toISOString() };
+    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    const ledger = validateAdminSession({ token, email: session.email });
+    if (!ledger.ok) return null;
+    return { email: session.email, expiresAt: new Date(session.exp * 1000).toISOString(), sessionPersistenceMode: ledger.persistenceMode || null };
   } catch {
     return null;
   }
@@ -690,7 +693,12 @@ export const createHandler = () => {
       const body = await readJsonBody(req);
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = updateAdminUserRole({ email: body.email, role: body.role, requestedBy: session.email });
-      recordAuditEvent({ action: 'admin_user_role_update', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { requestedRole: body.role || null, savedRole: result.user?.role || null, errors: result.errors || [], noEmailSent: true, noPasswordOutput: true, noTokenOutput: true, realDelivery: false } });
+      if (result.ok) {
+        const currentToken = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+        const sessionRevocation = revokeAdminSessionsForUser({ email: body.email, exceptToken: String(body.email || '').trim().toLowerCase() === session.email ? currentToken : null });
+        result.sessionRevocation = { sessionsRevoked: sessionRevocation.sessionsRevoked || 0, persistenceMode: sessionRevocation.persistenceMode, reason: 'role_change_requires_fresh_login_for_target_user', realDeliveryAllowed: false };
+      }
+      recordAuditEvent({ action: 'admin_user_role_update', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { requestedRole: body.role || null, savedRole: result.user?.role || null, sessionsRevoked: result.sessionRevocation?.sessionsRevoked || 0, errors: result.errors || [], noEmailSent: true, noPasswordOutput: true, noTokenOutput: true, realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

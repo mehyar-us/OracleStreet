@@ -4387,8 +4387,13 @@ test('admin invite acceptance and password reset workflow activates users withou
     assert.equal(roleUpdate.body.mode, 'admin-user-role-update');
     assert.equal(roleUpdate.body.user.role, 'analyst');
     assert.equal(roleUpdate.body.safety.noPasswordOutput, true);
+    assert.equal(roleUpdate.body.sessionRevocation.reason, 'role_change_requires_fresh_login_for_target_user');
+    assert.ok(roleUpdate.body.sessionRevocation.sessionsRevoked >= 1);
     assert.equal(roleUpdate.body.realDeliveryAllowed, false);
     assert.equal(JSON.stringify(roleUpdate.body).includes(firstPassword), false);
+
+    const staleOperatorSession = await request('/api/dashboard', { headers: { cookie: operatorLogin.headers.get('set-cookie') } });
+    assert.equal(staleOperatorSession.status, 401);
 
     const usersAfterRole = await request('/api/admin/users', { headers: { cookie } });
     assert.ok(usersAfterRole.body.users.some((user) => user.email === 'operator@example.test' && user.role === 'analyst'));
@@ -4428,7 +4433,7 @@ test('admin invite acceptance and password reset workflow activates users withou
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_create'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_accept'));
-    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_role_update'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_role_update' && event.details?.sessionsRevoked >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_plan'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_complete'));
   });
