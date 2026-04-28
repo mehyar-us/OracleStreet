@@ -4236,6 +4236,8 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
   }, async () => {
     const unauthList = await request('/api/admin/users');
     assert.equal(unauthList.status, 401);
+    const unauthSessions = await request('/api/admin/sessions');
+    assert.equal(unauthSessions.status, 401);
     const unauthInvite = await request('/api/admin/users/invite-plan', { method: 'POST' });
     assert.equal(unauthInvite.status, 401);
 
@@ -4249,6 +4251,16 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
     assert.ok(users.body.roleMatrix.some((role) => role.role === 'operator'));
     assert.equal(users.body.realDeliveryAllowed, false);
     assert.ok(!JSON.stringify(users.body).includes('correct-horse-battery-staple'));
+
+    const adminSessions = await request('/api/admin/sessions', { headers: { cookie } });
+    assert.equal(adminSessions.status, 200);
+    assert.equal(adminSessions.body.mode, 'admin-session-directory');
+    assert.ok(adminSessions.body.sessions.some((session) => session.email === 'admin@example.test' && session.status === 'active'));
+    assert.equal(adminSessions.body.safety.noTokenOutput, true);
+    assert.equal(adminSessions.body.safety.noUserMutation, true);
+    assert.equal(adminSessions.body.realDeliveryAllowed, false);
+    assert.ok(!JSON.stringify(adminSessions.body).includes(cookie.split('=')[1].split(';')[0]));
+    assert.ok(!JSON.stringify(adminSessions.body).includes('correct-horse-battery-staple'));
 
     const effective = await request('/api/platform/rbac-effective-access', { headers: { cookie } });
     assert.equal(effective.status, 200);
@@ -4288,6 +4300,7 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
     assert.equal(after.body.count, users.body.count);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_directory_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_session_directory_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'rbac_effective_access_review'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_plan'));
   });

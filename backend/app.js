@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { acceptAdminUserInvite, completePasswordReset, createAdminUserInvite, createPasswordResetPlan, getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, revokeAdminSessionsForUser, roleHasPermission, updateAdminUserRole, upsertAdminUser, validateAdminSession, verifyAdminUserPassword } from './lib/adminUsers.js';
+import { acceptAdminUserInvite, completePasswordReset, createAdminUserInvite, createPasswordResetPlan, getAdminUserRole, listAdminSessions, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, revokeAdminSessionsForUser, roleHasPermission, updateAdminUserRole, upsertAdminUser, validateAdminSession, verifyAdminUserPassword } from './lib/adminUsers.js';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
@@ -661,6 +661,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = listAdminUsers();
       recordAuditEvent({ action: 'admin_user_directory_view', actorEmail: session.email, status: 'ok', details: { count: result.count, role: session.role, noSecretOutput: true, realDelivery: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/admin/sessions' || url.pathname === '/admin/sessions') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const result = listAdminSessions({ limit: url.searchParams.get('limit') || 100 });
+      recordAuditEvent({ action: 'admin_session_directory_view', actorEmail: session.email, status: 'ok', details: { count: result.count, noTokenOutput: true, noUserMutation: true, realDelivery: false } });
       return jsonResponse(res, 200, result);
     }
 

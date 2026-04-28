@@ -151,6 +151,43 @@ export const revokeAdminSessionsForUser = ({ email, exceptToken = null } = {}) =
   return { ok: true, mode: 'in-memory-admin-session-user-revoke', sessionsRevoked, persistenceMode: isPgRepositoryEnabled('admin_sessions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled', realDeliveryAllowed: false };
 };
 
+export const listAdminSessions = ({ limit = 100 } = {}) => {
+  const safeLimit = Math.max(1, Math.min(200, Number.parseInt(limit, 10) || 100));
+  if (isPgRepositoryEnabled('admin_sessions')) {
+    try {
+      const sessions = runLocalPgRows(`
+        SELECT left(id, 12), email, created_at::text, expires_at::text, revoked_at::text,
+          CASE WHEN revoked_at IS NOT NULL THEN 'revoked' WHEN expires_at <= now() THEN 'expired' ELSE 'active' END
+        FROM admin_sessions
+        ORDER BY created_at DESC
+        LIMIT ${safeLimit};
+      `).map(([sessionId, email, createdAt, expiresAt, revokedAt, status]) => ({
+        sessionId,
+        email,
+        createdAt,
+        expiresAt,
+        revokedAt: revokedAt || null,
+        status
+      }));
+      return { ok: true, mode: 'admin-session-directory', count: sessions.length, sessions, safety: { adminOnly: true, readOnly: true, noTokenOutput: true, noPasswordOutput: true, noUserMutation: true, noDeliveryUnlock: true, realDeliveryAllowed: false }, persistenceMode: 'postgresql-local-psql-repository', realDeliveryAllowed: false };
+    } catch (error) {
+      // fall through to in-memory session directory
+    }
+  }
+  const sessionsList = [...sessions.entries()]
+    .slice(-safeLimit)
+    .reverse()
+    .map(([id, session]) => ({
+      sessionId: id.slice(0, 12),
+      email: session.email,
+      createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
+      revokedAt: session.revokedAt || null,
+      status: session.revokedAt ? 'revoked' : (new Date(session.expiresAt).getTime() <= Date.now() ? 'expired' : 'active')
+    }));
+  return { ok: true, mode: 'admin-session-directory', count: sessionsList.length, sessions: sessionsList, safety: { adminOnly: true, readOnly: true, noTokenOutput: true, noPasswordOutput: true, noUserMutation: true, noDeliveryUnlock: true, realDeliveryAllowed: false }, persistenceMode: isPgRepositoryEnabled('admin_sessions') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-sessions-enabled', realDeliveryAllowed: false };
+};
+
 const pgRowToUser = ([id, email, role, hasPassword, status, invitePending, resetPending, createdAt, updatedAt]) => ({
   id,
   email,
