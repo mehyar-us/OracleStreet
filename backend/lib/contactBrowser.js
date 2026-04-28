@@ -1216,3 +1216,113 @@ export const contactDomainRiskPlan = ({ source = '', domain = '', staleAfterDays
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactEngagementRecencyPlan = ({ source = '', domain = '', staleAfterDays = 180, engagementWindowDays = 90, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, staleAfterDays, limit: 500 });
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const windowDays = Math.max(1, Math.min(730, Number(engagementWindowDays) || 90));
+  const cutoff = nowMs() - windowDays * 24 * 60 * 60 * 1000;
+  const rowsByStatus = new Map();
+  const rowsBySource = new Map();
+  const add = (map, key, contact, status, lastEngagementAt) => {
+    const row = map.get(key) || { key, contacts: 0, recentlyEngaged: 0, dormant: 0, noPositiveEngagement: 0, blocked: 0, suppressed: 0, bounced: 0, complained: 0, sources: new Set(), domains: new Set() };
+    row.contacts += 1;
+    if (status === 'recently_engaged') row.recentlyEngaged += 1;
+    if (status === 'dormant') row.dormant += 1;
+    if (status === 'no_positive_engagement') row.noPositiveEngagement += 1;
+    if (contact.suppressed || (contact.eventCounts?.bounce || 0) > 0 || (contact.eventCounts?.complaint || 0) > 0) row.blocked += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    row.sources.add(contact.source || 'unknown_source');
+    row.domains.add(contact.domain || domainOf(contact.email) || 'unknown_domain');
+    if (lastEngagementAt && (!row.latestEngagementAt || Date.parse(lastEngagementAt) > Date.parse(row.latestEngagementAt))) row.latestEngagementAt = lastEngagementAt;
+    map.set(key, row);
+  };
+  const samples = [];
+  for (const contact of browser.contacts || []) {
+    const positiveEvents = (contact.timeline || []).filter((entry) => ['event:open', 'event:click'].includes(entry.type));
+    const lastPositive = positiveEvents.map((entry) => entry.at).filter(Boolean).sort().at(-1) || null;
+    const lastPositiveMs = Date.parse(lastPositive || '');
+    const status = Number.isFinite(lastPositiveMs) && lastPositiveMs >= cutoff
+      ? 'recently_engaged'
+      : lastPositive
+        ? 'dormant'
+        : 'no_positive_engagement';
+    add(rowsByStatus, status, contact, status, lastPositive);
+    add(rowsBySource, contact.source || 'unknown_source', contact, status, lastPositive);
+    samples.push({
+      email: contact.email,
+      source: contact.source || null,
+      domain: contact.domain || null,
+      engagementStatus: status,
+      lastPositiveEngagementAt: lastPositive,
+      suppressed: Boolean(contact.suppressed),
+      blockedByBounceOrComplaint: Boolean((contact.eventCounts?.bounce || 0) || (contact.eventCounts?.complaint || 0)),
+      recommendedAction: contact.suppressed || (contact.eventCounts?.complaint || 0) || (contact.eventCounts?.bounce || 0)
+        ? 'exclude_from_engagement_ramp_and_campaign_use'
+        : status === 'recently_engaged'
+          ? 'eligible_for_dry_run_segment_planning_with_warmup_caps'
+          : status === 'dormant'
+            ? 'review_before_low_volume_reactivation_planning'
+            : 'do_not_prioritize_until_positive_engagement_or_permission_refresh',
+      realDeliveryAllowed: false
+    });
+  }
+  const finish = (row) => ({
+    ...row,
+    sources: row.sources.size,
+    domains: row.domains.size,
+    reviewGate: row.blocked > 0 || row.dormant > 0 || row.noPositiveEngagement > 0,
+    recommendation: row.blocked > 0
+      ? 'exclude_blocked_contacts_before_engagement_or_campaign_planning'
+      : row.noPositiveEngagement > 0
+        ? 'prioritize_permission_refresh_or_owned_engagement_before_campaign_use'
+        : row.dormant > 0
+          ? 'limit_reactivation_to_operator_reviewed_low_volume_plan'
+          : 'eligible_for_dry_run_campaign_planning_with_caps',
+    queueMutationAllowed: false,
+    realDeliveryAllowed: false
+  });
+  const statusRows = [...rowsByStatus.values()].map(finish).sort((a, b) => b.blocked - a.blocked || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const sourceRows = [...rowsBySource.values()].map(finish).sort((a, b) => b.blocked - a.blocked || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const recommendations = [];
+  if (statusRows.some((row) => row.blocked > 0)) recommendations.push('exclude_bounced_complained_or_suppressed_contacts_from_engagement_ramps');
+  if (statusRows.some((row) => row.noPositiveEngagement > 0)) recommendations.push('treat_no_positive_engagement_as_operator_review_before_campaign_or_reactivation_use');
+  if (statusRows.some((row) => row.dormant > 0)) recommendations.push('cap_dormant_contact_reactivation_to_future_human_approved_low_volume_tests');
+  if (!recommendations.length) recommendations.push(statusRows.length ? 'engagement_rows_clear_for_dry_run_planning_only' : 'import_contacts_before_engagement_recency_planning');
+  return {
+    ok: true,
+    mode: 'contact-engagement-recency-plan',
+    filters: { ...browser.filters, engagementWindowDays: windowDays, limit: rowLimit },
+    totals: {
+      matchedContacts: (browser.contacts || []).length,
+      recentlyEngagedContacts: samples.filter((row) => row.engagementStatus === 'recently_engaged').length,
+      dormantContacts: samples.filter((row) => row.engagementStatus === 'dormant').length,
+      noPositiveEngagementContacts: samples.filter((row) => row.engagementStatus === 'no_positive_engagement').length,
+      blockedContacts: samples.filter((row) => row.suppressed || row.blockedByBounceOrComplaint).length,
+      automaticQueueMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    statusRows,
+    sourceRows,
+    samples: samples.slice(0, rowLimit),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticQueueMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};

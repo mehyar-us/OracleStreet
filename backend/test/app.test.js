@@ -235,6 +235,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Source quality/);
   assert.match(html, /api\/contacts\/detail/);
   assert.match(html, /api\/contacts\/domain-risk-plan/);
+  assert.match(html, /api\/contacts\/engagement-recency-plan/);
   assert.match(html, /Contact detail drilldown/);
   assert.match(html, /api\/contacts\/source-quality/);
   assert.match(html, /Source quality detail/);
@@ -1440,6 +1441,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthDetail.status, 401);
     const unauthDomainRisk = await request('/api/contacts/domain-risk-plan');
     assert.equal(unauthDomainRisk.status, 401);
+    const unauthEngagementRecency = await request('/api/contacts/engagement-recency-plan');
+    assert.equal(unauthEngagementRecency.status, 401);
     const unauthSourceQuality = await request('/api/contacts/source-quality?source=owned');
     assert.equal(unauthSourceQuality.status, 401);
     const unauthSourceHygiene = await request('/api/contacts/source-hygiene-plan');
@@ -1481,7 +1484,11 @@ test('contact browser search filters and source-quality drilldowns require admin
     await request('/api/email/events/ingest', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ events: [{ type: 'bounce', email: 'support@example.test', source: 'manual detail smoke', providerMessageId: 'detail-bounce-1' }] })
+      body: JSON.stringify({ events: [
+        { type: 'bounce', email: 'support@example.test', source: 'manual detail smoke', providerMessageId: 'detail-bounce-1' },
+        { type: 'open', email: 'ada@example.test', source: 'engagement smoke', providerMessageId: 'detail-open-1' },
+        { type: 'click', email: 'ada@example.test', source: 'engagement smoke', providerMessageId: 'detail-click-1' }
+      ] })
     });
 
     const search = await request('/api/contacts/browser?search=ada@example.test&domain=example.test&suppression=not_suppressed', { headers: { cookie } });
@@ -1536,6 +1543,22 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(domainRisk.body.safety.noNetworkProbe, true);
     assert.equal(domainRisk.body.safety.automaticDomainMutationAllowed, false);
     assert.equal(domainRisk.body.realDeliveryAllowed, false);
+
+
+    const engagementRecency = await request('/api/contacts/engagement-recency-plan?domain=example.test&engagementWindowDays=90', { headers: { cookie } });
+    assert.equal(engagementRecency.status, 200);
+    assert.equal(engagementRecency.body.mode, 'contact-engagement-recency-plan');
+    assert.equal(engagementRecency.body.totals.matchedContacts, 3);
+    assert.ok(engagementRecency.body.totals.noPositiveEngagementContacts >= 1);
+    assert.ok(engagementRecency.body.totals.blockedContacts >= 1);
+    assert.equal(engagementRecency.body.totals.automaticQueueMutationAllowed, 0);
+    assert.ok(engagementRecency.body.statusRows.some((row) => row.key === 'no_positive_engagement'));
+    assert.ok(engagementRecency.body.samples.some((contact) => contact.email === 'ada@example.test' && contact.engagementStatus === 'no_positive_engagement'));
+    assert.ok(engagementRecency.body.samples.some((contact) => contact.email === 'support@example.test' && contact.recommendedAction === 'exclude_from_engagement_ramp_and_campaign_use'));
+    assert.equal(engagementRecency.body.safety.recommendationOnly, true);
+    assert.equal(engagementRecency.body.safety.noQueueMutation, true);
+    assert.equal(engagementRecency.body.safety.automaticQueueMutationAllowed, false);
+    assert.equal(engagementRecency.body.realDeliveryAllowed, false);
 
     const sourceQuality = await request('/api/contacts/source-quality?source=support%20imports', { headers: { cookie } });
     assert.equal(sourceQuality.status, 200);
@@ -1685,6 +1708,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_export_preview' && event.details?.rowCount === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_domain_risk_plan_view' && event.details?.mxProbePerformed === false));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_engagement_recency_plan_view' && event.details?.automaticQueueMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
