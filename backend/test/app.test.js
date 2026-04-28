@@ -250,6 +250,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/campaigns\/approve-dry-run/);
   assert.match(html, /api\/campaigns\/schedule-dry-run/);
   assert.match(html, /api\/campaigns\/enqueue-dry-run/);
+  assert.match(html, /api\/campaigns\/calendar\/drilldown/);
+  assert.match(html, /Calendar day drilldown/);
   assert.match(html, /api\/campaigns\/affiliate-summary/);
   assert.match(html, /api\/campaigns\/audit-timeline/);
   assert.match(html, /Affiliate metadata rollup/);
@@ -1863,6 +1865,8 @@ test('campaign endpoints also work behind nginx stripped api prefix', async () =
   assert.equal(affiliate.status, 401);
   const timeline = await request('/campaigns/audit-timeline');
   assert.equal(timeline.status, 401);
+  const calendarDrilldown = await request('/campaigns/calendar/drilldown');
+  assert.equal(calendarDrilldown.status, 401);
 });
 
 
@@ -3183,6 +3187,8 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
   await withAdminEnv(async () => {
     const unauth = await request('/api/campaigns/calendar?days=7');
     assert.equal(unauth.status, 401);
+    const unauthDrilldown = await request('/api/campaigns/calendar/drilldown?domain=calendar.test');
+    assert.equal(unauthDrilldown.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3234,6 +3240,19 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(calendar.body.totals.scheduledCampaigns, 1);
     assert.ok(calendar.body.calendar.some((day) => day.scheduledCount === 1 && day.dailyCap >= 1 && day.campaigns.some((entry) => entry.name === 'Calendar dry-run')));
 
+    const drilldown = await request(`/api/campaigns/calendar/drilldown?domain=calendar.test&date=${startDate}`, { headers: { cookie } });
+    assert.equal(drilldown.status, 200);
+    assert.equal(drilldown.body.mode, 'campaign-calendar-warmup-drilldown');
+    assert.equal(drilldown.body.capacity.planned, 1);
+    assert.equal(drilldown.body.capacity.remaining, 0);
+    assert.equal(drilldown.body.capacity.usageRate, 1);
+    assert.equal(drilldown.body.campaignBreakdown[0].name, 'Calendar dry-run');
+    assert.ok(drilldown.body.recommendations.includes('use_next_available_warmup_day'));
+    assert.equal(drilldown.body.safety.noQueueMutation, true);
+    assert.equal(drilldown.body.safety.noScheduleMutation, true);
+    assert.equal(drilldown.body.safety.noProviderMutation, true);
+    assert.equal(drilldown.body.realDeliveryAllowed, false);
+
     const second = await request('/api/campaigns', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -3257,6 +3276,7 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(queue.body.count, 0);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_drilldown_view'));
   });
 });
 

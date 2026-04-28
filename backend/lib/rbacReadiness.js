@@ -7,7 +7,7 @@ export const RBAC_ROUTE_POLICY = [
   { surface: 'audit_log', permission: 'view_audit_log', routes: ['GET /api/audit-log'] },
   { surface: 'contacts', permission: 'manage_contacts', routes: ['POST /api/contacts/import', 'POST /api/contacts/import/validate'] },
   { surface: 'contact_metadata', permission: 'view_contacts_metadata', routes: ['GET /api/contacts', 'GET /api/contacts/browser', 'GET /api/list-hygiene/plan', 'GET /api/contacts/dedupe-merge-plan'] },
-  { surface: 'campaigns', permission: 'manage_campaigns', routes: ['POST /api/campaigns', 'POST /api/campaigns/approve-dry-run', 'POST /api/campaigns/schedule-dry-run', 'POST /api/campaigns/enqueue-dry-run'] },
+  { surface: 'campaigns', permission: 'manage_campaigns', routes: ['POST /api/campaigns', 'POST /api/campaigns/approve-dry-run', 'POST /api/campaigns/schedule-dry-run', 'POST /api/campaigns/enqueue-dry-run', 'GET /api/campaigns/calendar/drilldown'] },
   { surface: 'templates', permission: 'manage_templates', routes: ['POST /api/templates', 'POST /api/templates/preview'] },
   { surface: 'suppressions', permission: 'manage_suppressions', routes: ['GET /api/suppressions', 'POST /api/suppressions'] },
   { surface: 'data_sources', permission: 'manage_data_sources', routes: ['POST /api/data-sources', 'POST /api/data-source-query/execute', 'POST /api/data-source-schema/discover', 'POST /api/data-source-import/execute', 'POST /api/data-source-import-schedules', 'GET /api/data-source-import-schedules/worker-plan', 'GET /api/data-source-import-schedules/runbook'] },

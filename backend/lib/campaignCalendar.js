@@ -93,3 +93,55 @@ export const campaignCalendar = ({ domain = 'stuffprettygood.com', startDate = n
     realDeliveryAllowed: false
   };
 };
+
+export const campaignCalendarDrilldown = ({ domain = 'stuffprettygood.com', date = null } = {}) => {
+  const cleanDomain = normalizeDomain(domain);
+  const day = dateOnly(date) || new Date().toISOString().slice(0, 10);
+  const base = campaignCalendar({ domain: cleanDomain, startDate: day, days: 1 });
+  const calendarDay = base.calendar[0] || { campaigns: [], dailyCap: 0, scheduledCount: 0, remainingCap: 0, capExceeded: false };
+  const campaigns = calendarDay.campaigns || [];
+  const usageRate = calendarDay.dailyCap > 0 ? calendarDay.scheduledCount / calendarDay.dailyCap : 0;
+  const recommendations = [];
+  if (calendarDay.capExceeded) recommendations.push('move_or_split_campaigns_before_queue_enqueue');
+  if (usageRate >= 0.8 && !calendarDay.capExceeded) recommendations.push('avoid_adding_more_campaigns_to_this_day');
+  if (campaigns.length === 0) recommendations.push('day_has_capacity_for_future_dry_run_schedule');
+  if (calendarDay.remainingCap <= 0) recommendations.push('use_next_available_warmup_day');
+
+  return {
+    ok: true,
+    mode: 'campaign-calendar-warmup-drilldown',
+    domain: cleanDomain,
+    date: day,
+    day: calendarDay,
+    capacity: {
+      dailyCap: calendarDay.dailyCap,
+      planned: calendarDay.scheduledCount,
+      remaining: calendarDay.remainingCap,
+      usageRate,
+      capExceeded: calendarDay.capExceeded,
+      warmupDay: calendarDay.warmupDay
+    },
+    campaignBreakdown: campaigns.map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name,
+      plannedCount: campaign.plannedCount,
+      scheduledAt: campaign.scheduledAt,
+      senderDomain: campaign.senderDomain,
+      status: campaign.status,
+      realDeliveryAllowed: false
+    })),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noScheduleMutation: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: base.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
