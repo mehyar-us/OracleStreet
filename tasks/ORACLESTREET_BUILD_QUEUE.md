@@ -117,9 +117,9 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Saved segment filters/snapshots for reproducible campaign audiences.
-2. Data-source sync-run persistence/operator replay controls.
-3. Data-source sync-run persistence and operator replay controls.
+1. Data-source sync-run persistence/operator replay controls.
+2. Owner/admin role-edit hardening for multi-user operations.
+3. Continued MTA/reputation operational depth.
 
 Latest shipped slice:
 - Remote source persistence for source registry/encrypted secret metadata: migration `011_data_source_registry_runtime` adds `data_source_registry` and `data_source_encrypted_secrets`; `/api/data-sources` now uses local PostgreSQL runtime persistence when enabled, keeps safe in-memory fallback, stores encrypted secret ciphertext metadata only, displays registry persistence in the UI, and never returns plaintext credentials.
@@ -129,6 +129,7 @@ Latest shipped slice:
 - Flow F reporting dashboard depth safe baseline: `/api/email/reporting/dashboard` provides protected aggregate campaign leaderboard, source performance, domain performance, event trend, queue-status, and export-link metadata; the Reporting UI exposes the cards/lists after login, audits dashboard views, includes no secrets, probes no networks, sends no email, and keeps real delivery locked.
 - Flow E controlled one-recipient MTA proof path safe baseline: `/api/email/controlled-live-test/proof-audit` records manual/out-of-band proof outcomes, dry-run/local-capture proof IDs, optional provider message IDs, masked recipient metadata, and notes; it audits accepted/rejected records, sends no email, probes no network, mutates no queues/providers/suppressions, exposes no secrets, and the Reputation/readiness UI exposes proof audit history and controls after login.
 - Flow D remote PostgreSQL import scheduler safe baseline: `/api/data-source-import-schedules` plans recurring imports from a SELECT-only query plus contact mapping profile, interval, next-run preview timestamp, and exact approval phrase when marked enabled; it audits accepted/rejected plans, stores no raw credentials, performs no immediate remote pull, starts no worker, mutates no contacts, and the Remote PostgreSQL UI exposes schedule planning/history after login.
+- Flow A saved segment snapshot baseline: `/api/segments` now persists reusable consent/source/domain filters through PostgreSQL when enabled; `/api/segments/snapshots` captures suppression-aware audience snapshots with sample contact metadata, no contact mutation, no delivery, and a visible Segments workbench for reproducible campaign audiences.
 - Flow C Users/RBAC activation baseline: `/api/admin/users` lists admin users from PostgreSQL where enabled or bootstrap fallback otherwise; `/api/admin/users/invite-plan` validates no-mutation invite plans; `/api/admin/users/invite` creates PostgreSQL-backed pending invites with hashed manual codes; `/api/admin/users/accept-invite` activates users with password hashing; `/api/admin/users/password-reset-plan` and `/api/auth/password-reset/complete` support manual-code password resets. The Users/RBAC UI exposes directory status, role matrix, invite creation, invite acceptance, and reset planning without email delivery or raw token/password output.
 - Flow B campaign calendar over warm-up caps: `/api/campaigns/calendar` shows scheduled dry-run campaigns by sender-domain/day, daily cap, planned count, remaining capacity, and over-cap state; scheduling now counts existing scheduled campaigns on the same day/domain before allowing another dry-run schedule, and the Campaigns UI exposes the calendar after login.
 - Flow A contact browser/search drilldowns: `/api/contacts/browser` provides protected email/name/source/domain/status search, consent/source/domain/suppression/risk filters, source-quality scores, domain concentration, and contact timeline stubs from imports/events/jobs; the Contacts UI exposes the controls after login and remains read-only/no-delivery.

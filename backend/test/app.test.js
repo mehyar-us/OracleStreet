@@ -233,6 +233,10 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/list-hygiene\/plan/);
   assert.match(html, /Cleanup planner/);
   assert.match(html, /Source quality/);
+  assert.match(html, /segments-screen/);
+  assert.match(html, /api\/segments\/snapshots/);
+  assert.match(html, /Saved segments \+ snapshots/);
+  assert.match(html, /Capture audience snapshot/);
   assert.match(html, /templates-screen/);
   assert.match(html, /template-create-screen/);
   assert.match(html, /api\/templates/);
@@ -350,6 +354,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(userInvitePasswordMigration);
     assert.match(userInvitePasswordMigration.description, /invite acceptance and password reset metadata/);
     assert.ok(userInvitePasswordMigration.statements >= 4);
+    const segmentSnapshotsMigration = res.body.migrations.find((migration) => migration.id === '013_segment_snapshots_runtime');
+    assert.ok(segmentSnapshotsMigration);
+    assert.match(segmentSnapshotsMigration.description, /segment snapshot metadata/);
+    assert.ok(segmentSnapshotsMigration.statements >= 5);
   });
 });
 
@@ -386,7 +394,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,campaigns,send_queue,email_events,users,user_invite_password_workflow,admin_sessions,audit_log,warmup_policies,reputation_policies,data_sources,data_source_encrypted_secrets,data_source_import_schedules,controlled_live_test_proof_audits',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,segments,campaigns,send_queue,email_events,users,user_invite_password_workflow,admin_sessions,audit_log,warmup_policies,reputation_policies,data_sources,data_source_encrypted_secrets,data_source_import_schedules,controlled_live_test_proof_audits',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -394,11 +402,12 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 16);
+    assert.equal(res.body.summary.liveRepositoryModules, 17);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'templates' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'segments' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'campaigns' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'send_queue' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'email_events' && module.liveRepositoryEnabled));
@@ -1369,11 +1378,32 @@ test('segments estimate safe audiences and exclude suppressed contacts', async (
     assert.equal(list.status, 200);
     assert.equal(list.body.count, 1);
 
+    const unauthSnapshots = await request('/api/segments/snapshots');
+    assert.equal(unauthSnapshots.status, 401);
+
+    const snapshot = await request('/api/segments/snapshots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ segmentId: created.body.segment.id })
+    });
+    assert.equal(snapshot.status, 200);
+    assert.equal(snapshot.body.snapshot.segmentId, created.body.segment.id);
+    assert.equal(snapshot.body.snapshot.audienceCount, 1);
+    assert.equal(snapshot.body.snapshot.sampleContacts[0].email, 'b@example.test');
+    assert.equal(snapshot.body.snapshot.safety.noContactMutation, true);
+    assert.equal(snapshot.body.realDeliveryAllowed, false);
+
+    const snapshots = await request('/api/segments/snapshots', { headers: { cookie } });
+    assert.equal(snapshots.status, 200);
+    assert.equal(snapshots.body.count, 1);
+    assert.equal(snapshots.body.snapshots[0].audienceCount, 1);
+
     const dashboard = await request('/api/dashboard', { headers: { cookie } });
     assert.equal(dashboard.body.summary.segments, 1);
 
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'segment_create'));
+    assert.ok(audit.body.events.some((event) => event.action === 'segment_snapshot_create'));
   });
 });
 

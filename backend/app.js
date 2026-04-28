@@ -27,7 +27,7 @@ import { evaluateAutoPause, getReputationPolicy, saveReputationPolicy } from './
 import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { evaluateWarmupScheduleCap, listWarmupPolicies, saveWarmupPolicy } from './lib/warmupPolicies.js';
 import { campaignReportingSummary, emailReportingSummary, reportingDashboardDepth, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
-import { createSegment, estimateSegmentAudience, listSegments } from './lib/segments.js';
+import { createSegment, createSegmentSnapshot, estimateSegmentAudience, listSegmentSnapshots, listSegments } from './lib/segments.js';
 import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
 import { addSuppression, listSuppressions, recordUnsubscribe } from './lib/suppressions.js';
@@ -710,6 +710,22 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = estimateSegmentAudience(body.criteria || {});
       recordAuditEvent({ action: 'segment_estimate', actorEmail: session.email, status: result.ok ? 'ok' : 'rejected', details: { estimatedAudience: result.estimatedAudience, errors: result.errors || [] } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/segments/snapshots' || url.pathname === '/segments/snapshots') {
+      const session = requireSession(req, res);
+      if (!session) return;
+      if (req.method === 'GET') {
+        const result = listSegmentSnapshots({ segmentId: url.searchParams.get('segmentId') });
+        recordAuditEvent({ action: 'segment_snapshot_list', actorEmail: session.email, status: 'ok', details: { segmentId: url.searchParams.get('segmentId') || null, count: result.count, noContactMutation: true, realDeliveryAllowed: false } });
+        return jsonResponse(res, 200, result);
+      }
+      if (req.method !== 'POST') return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = createSegmentSnapshot({ segmentId: body.segmentId, actorEmail: session.email });
+      recordAuditEvent({ action: 'segment_snapshot_create', actorEmail: session.email, target: body.segmentId || null, status: result.ok ? 'ok' : 'rejected', details: { audienceCount: result.snapshot?.audienceCount, errors: result.errors || [], noContactMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

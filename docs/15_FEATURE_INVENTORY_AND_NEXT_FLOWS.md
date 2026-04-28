@@ -88,6 +88,11 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
   - source-quality drilldowns
   - domain concentration drilldowns
   - contact timeline stubs from imports, events, and dry-run jobs
+- Saved segment filter and audience snapshot workflow:
+  - reusable consent/source/domain filters
+  - suppression-aware estimates
+  - PostgreSQL-backed segment metadata and snapshot records
+  - snapshot sample-contact metadata for reproducible campaign audiences without delivery
 - Safe in-memory fallback for local tests/adapter failures.
 
 ### Suppression and compliance
@@ -218,6 +223,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Runtime persistence migration `010_campaign_affiliate_metadata` for campaign affiliate/planning metadata.
 - Runtime persistence migration `011_data_source_registry_runtime` for remote source registry and encrypted secret metadata.
 - Runtime persistence migration `012_user_invite_password_runtime` for invite acceptance and password reset metadata.
+- Runtime persistence migration `013_segment_snapshots_runtime` for saved segment filters and reproducible audience snapshots.
 - Tests for every shipped slice.
 
 ## Current safety posture
@@ -245,9 +251,9 @@ Allowed now:
 
 The loop should keep shipping one of these per run, with tests, docs, commit, push, deploy, and smokes.
 
-### Flow A — Contact browser and source-quality drilldowns
+### Flow A — Contact browser, source-quality drilldowns, and saved audience snapshots
 
-Status: shipped baseline. The Contacts workbench now calls `/api/contacts/browser` for protected search/filter plus source/domain drilldowns. It remains read-only, admin-only, PostgreSQL-backed through the existing repositories where enabled, and real delivery stays locked.
+Status: expanded baseline. The Contacts workbench calls `/api/contacts/browser` for protected search/filter plus source/domain drilldowns. The Segments workbench now calls `/api/segments` and `/api/segments/snapshots` for reusable filters and reproducible audience snapshots. It remains admin-only, PostgreSQL-backed where enabled, read/dry-run safe, and real delivery stays locked.
 
 Shipped:
 - contact browser search by email/name/source/domain/status
@@ -255,13 +261,17 @@ Shipped:
 - source-quality drilldown panel
 - domain concentration drilldown
 - contact timeline stub from imports, events, and campaign jobs
+- saved consent/source/domain segment filters
+- suppression-aware audience estimates
+- reproducible segment snapshots with sample contact metadata
 
 Acceptance:
 - visible UI controls after login
-- protected API query endpoint
+- protected API query and snapshot endpoints
 - PostgreSQL-backed where enabled
-- tests for search/filter and safety
+- tests for search/filter, saved filters, snapshots, and safety
 - no private data exposure outside admin session
+- no contact mutation, queue mutation, or delivery unlock
 
 ### Flow B — Campaign calendar over warm-up caps
 
