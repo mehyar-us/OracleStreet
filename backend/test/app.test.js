@@ -351,6 +351,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Route permission enforcement/);
   assert.match(html, /api\/platform\/rbac-effective-access/);
   assert.match(html, /Effective access review/);
+  assert.match(html, /api\/platform\/rbac-role-change-preview/);
+  assert.match(html, /Role change impact preview/);
   assert.match(html, /api\/admin\/users\/role/);
   assert.match(html, /Role edit hardening/);
   assert.match(html, /loadWorkbench/);
@@ -4521,6 +4523,8 @@ test('RBAC policy endpoint reports route permissions and denies insufficient rol
     assert.equal(unauth.status, 401);
     const unauthEffective = await request('/api/platform/rbac-effective-access');
     assert.equal(unauthEffective.status, 401);
+    const unauthRolePreview = await request('/api/platform/rbac-role-change-preview');
+    assert.equal(unauthRolePreview.status, 401);
 
     const login = await request('/api/auth/login', {
       method: 'POST',
@@ -4546,6 +4550,10 @@ test('RBAC policy endpoint reports route permissions and denies insufficient rol
     const forbiddenEffective = await request('/api/platform/rbac-effective-access', { headers: { cookie } });
     assert.equal(forbiddenEffective.status, 403);
     assert.equal(forbiddenEffective.body.requiredPermission, 'manage_users');
+
+    const forbiddenRolePreview = await request('/api/platform/rbac-role-change-preview', { headers: { cookie } });
+    assert.equal(forbiddenRolePreview.status, 403);
+    assert.equal(forbiddenRolePreview.body.requiredPermission, 'manage_users');
 
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.equal(audit.status, 200);
@@ -4601,6 +4609,25 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
     assert.equal(effective.body.safety.noTokenOutput, true);
     assert.equal(effective.body.realDeliveryAllowed, false);
 
+
+    const rolePreview = await request('/api/platform/rbac-role-change-preview?email=admin@example.test&targetRole=admin', { headers: { cookie } });
+    assert.equal(rolePreview.status, 200);
+    assert.equal(rolePreview.body.mode, 'rbac-role-change-impact-preview');
+    assert.equal(rolePreview.body.targetUser.email, 'admin@example.test');
+    assert.equal(rolePreview.body.targetUser.currentRole, 'admin');
+    assert.equal(rolePreview.body.targetUser.targetRole, 'admin');
+    assert.equal(rolePreview.body.impact.wouldMutateRole, false);
+    assert.equal(rolePreview.body.impact.requiresSessionRevocation, false);
+    assert.equal(rolePreview.body.safety.noUserMutation, true);
+    assert.equal(rolePreview.body.safety.noRoleMutation, true);
+    assert.equal(rolePreview.body.safety.noSessionMutation, true);
+    assert.equal(rolePreview.body.realDeliveryAllowed, false);
+
+    const blockedPreview = await request('/api/platform/rbac-role-change-preview?email=admin@example.test&targetRole=read_only', { headers: { cookie } });
+    assert.equal(blockedPreview.status, 400);
+    assert.ok(blockedPreview.body.errors.includes('self_demotion_would_remove_manage_users'));
+    assert.equal(blockedPreview.body.safety.previewOnly, true);
+
     const rejected = await request('/api/admin/users/invite-plan', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -4630,6 +4657,7 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_directory_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_session_directory_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'rbac_effective_access_review'));
+    assert.ok(audit.body.events.some((event) => event.action === 'rbac_role_change_impact_preview'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_plan'));
   });
 });

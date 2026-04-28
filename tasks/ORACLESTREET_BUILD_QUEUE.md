@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow C RBAC role-change impact preview: read-only permission/surface/session-revocation preview before applying role updates.
 - Flow B campaign calendar operator actions: prioritized manual action rows/runbook for warm-up cap and launch-readiness reviews with no schedule/queue/provider mutation.
 - Flow B campaign calendar launch readiness: approval/schedule/warm-up gate rows for manual dry-run enqueue decisions with no schedule/queue/provider mutation.
 - Flow A campaign handoff preview: CSV preview for ready/review/blocked cohorts with no contact/suppression/segment/queue/provider mutation.

@@ -3,7 +3,7 @@ import { listAdminUsers, permissionsForRole, ROLE_MATRIX } from './adminUsers.js
 const cleanEmail = (value) => String(value || '').trim().toLowerCase();
 
 export const RBAC_ROUTE_POLICY = [
-  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'GET /api/admin/sessions', 'POST /api/admin/sessions/revoke-user', 'GET /api/platform/rbac-effective-access', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
+  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'GET /api/admin/sessions', 'POST /api/admin/sessions/revoke-user', 'GET /api/platform/rbac-effective-access', 'GET /api/platform/rbac-role-change-preview', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
   { surface: 'audit_log', permission: 'view_audit_log', routes: ['GET /api/audit-log'] },
   { surface: 'contacts', permission: 'manage_contacts', routes: ['POST /api/contacts/import', 'POST /api/contacts/import/validate'] },
   { surface: 'contact_metadata', permission: 'view_contacts_metadata', routes: ['GET /api/contacts', 'GET /api/contacts/browser', 'GET /api/contacts/browser/export-preview', 'GET /api/contacts/campaign-fit-plan', 'GET /api/contacts/campaign-handoff-preview', 'GET /api/contacts/consent-provenance-review', 'GET /api/contacts/detail', 'GET /api/contacts/domain-risk-plan', 'GET /api/contacts/engagement-recency-plan', 'GET /api/contacts/source-detail-review', 'GET /api/contacts/source-quality', 'GET /api/contacts/source-hygiene-plan', 'GET /api/contacts/source-quarantine-plan', 'GET /api/contacts/source-quality-matrix', 'GET /api/contacts/risk-triage', 'GET /api/contacts/repermission-plan', 'GET /api/contacts/suppression-review', 'GET /api/contacts/audience-exclusion-preview', 'GET /api/contacts/audience-readiness', 'GET /api/list-hygiene/plan', 'GET /api/contacts/dedupe-merge-plan'] },
@@ -148,6 +148,79 @@ export const rbacReadiness = (env = process.env) => {
       'least-privilege defaults for non-owner users'
     ],
     errors,
+    realDeliveryAllowed: false
+  };
+};
+
+
+export const rbacRoleChangeImpactPreview = ({ email = '', targetRole = '', requestedBy = null, requesterRole = 'admin' } = {}) => {
+  const cleanTargetEmail = cleanEmail(email);
+  const cleanTargetRole = String(targetRole || '').trim().toLowerCase();
+  const requesterEmail = cleanEmail(requestedBy);
+  const directory = listAdminUsers();
+  const target = (directory.users || []).find((user) => cleanEmail(user.email) === cleanTargetEmail) || null;
+  const allowedRoles = new Set(ROLE_MATRIX.map((entry) => entry.role));
+  const errors = [];
+  if (!cleanTargetEmail || !cleanTargetEmail.includes('@')) errors.push('valid_user_email_required');
+  if (!allowedRoles.has(cleanTargetRole)) errors.push('valid_role_required');
+  if (!target && cleanTargetEmail) errors.push('user_not_found');
+  if (cleanTargetRole === 'owner' && requesterRole !== 'owner') errors.push('owner_role_requires_owner_requester');
+  if (target?.role === 'owner' && cleanTargetRole !== 'owner' && requesterRole !== 'owner') errors.push('owner_demotion_requires_owner_requester');
+  const currentPermissions = permissionsForRole(target?.role);
+  const targetPermissions = permissionsForRole(cleanTargetRole);
+  if (requesterEmail && cleanTargetEmail === requesterEmail && currentPermissions.includes('manage_users') && !targetPermissions.includes('manage_users')) errors.push('self_demotion_would_remove_manage_users');
+  const currentPrivileged = (directory.users || []).filter((user) => permissionsForRole(user.role).includes('manage_users') && user.status !== 'disabled');
+  if (target && currentPermissions.includes('manage_users') && !targetPermissions.includes('manage_users') && currentPrivileged.length <= 1) errors.push('last_manage_users_admin_cannot_be_demoted');
+  const currentSurfaces = RBAC_ROUTE_POLICY.filter((policy) => currentPermissions.includes(policy.permission)).map((policy) => policy.surface);
+  const targetSurfaces = RBAC_ROUTE_POLICY.filter((policy) => targetPermissions.includes(policy.permission)).map((policy) => policy.surface);
+  const addedPermissions = targetPermissions.filter((permission) => !currentPermissions.includes(permission));
+  const removedPermissions = currentPermissions.filter((permission) => !targetPermissions.includes(permission));
+  const addedSurfaces = targetSurfaces.filter((surface) => !currentSurfaces.includes(surface));
+  const removedSurfaces = currentSurfaces.filter((surface) => !targetSurfaces.includes(surface));
+  const requiresSessionRevocation = Boolean(target && target.role !== cleanTargetRole);
+  return {
+    ok: errors.length === 0,
+    mode: 'rbac-role-change-impact-preview',
+    targetUser: target ? { email: target.email, currentRole: target.role, status: target.status, targetRole: cleanTargetRole } : { email: cleanTargetEmail, currentRole: null, status: null, targetRole: cleanTargetRole },
+    impact: {
+      addedPermissions,
+      removedPermissions,
+      addedSurfaces,
+      removedSurfaces,
+      currentAllowedSurfaceCount: currentSurfaces.length,
+      targetAllowedSurfaceCount: targetSurfaces.length,
+      requiresSessionRevocation,
+      wouldMutateRole: false,
+      wouldRevokeSessionsIfApplied: requiresSessionRevocation
+    },
+    guardrails: [
+      { key: 'target_user_exists', passed: Boolean(target) },
+      { key: 'target_role_valid', passed: allowedRoles.has(cleanTargetRole) },
+      { key: 'owner_escalation_guard', passed: !(cleanTargetRole === 'owner' && requesterRole !== 'owner') },
+      { key: 'self_demotion_guard', passed: !errors.includes('self_demotion_would_remove_manage_users') },
+      { key: 'last_manage_users_admin_guard', passed: !errors.includes('last_manage_users_admin_cannot_be_demoted') },
+      { key: 'session_revocation_after_apply', passed: true, note: requiresSessionRevocation ? 'target_sessions_would_be_revoked_after_successful_role_update' : 'no_role_change_no_session_revocation_needed' }
+    ],
+    recommendations: errors.length
+      ? ['fix_role_change_guardrail_errors_before_applying_role_update']
+      : requiresSessionRevocation
+        ? ['apply_only_after_operator_review_then_require_target_user_fresh_login']
+        : ['no_effective_role_change_detected'],
+    errors,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      previewOnly: true,
+      noUserMutation: true,
+      noRoleMutation: true,
+      noSessionMutation: true,
+      noPasswordOutput: true,
+      noTokenOutput: true,
+      noEmailSent: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: directory.persistenceMode,
     realDeliveryAllowed: false
   };
 };

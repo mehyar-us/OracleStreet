@@ -22,7 +22,7 @@ import { mtaOperationsDashboard, providerReadinessDrilldown } from './lib/mtaOpe
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
-import { RBAC_ROUTE_POLICY, rbacEffectiveAccess, rbacReadiness } from './lib/rbacReadiness.js';
+import { RBAC_ROUTE_POLICY, rbacEffectiveAccess, rbacReadiness, rbacRoleChangeImpactPreview } from './lib/rbacReadiness.js';
 import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, evaluateDomainReputationRollup, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
@@ -673,6 +673,15 @@ export const createHandler = () => {
       const result = rbacEffectiveAccess({ currentEmail: session.email, currentRole: session.role });
       recordAuditEvent({ action: 'rbac_effective_access_review', actorEmail: session.email, target: session.role, status: 'ok', details: { usersReviewed: result.totals.usersReviewed, rolesReviewed: result.totals.rolesReviewed, routeSurfaces: result.totals.routeSurfaces, noUserMutation: true, noRoleMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/platform/rbac-role-change-preview' || url.pathname === '/platform/rbac-role-change-preview') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const result = rbacRoleChangeImpactPreview({ email: url.searchParams.get('email') || session.email, targetRole: url.searchParams.get('targetRole') || 'read_only', requestedBy: session.email, requesterRole: session.role });
+      recordAuditEvent({ action: 'rbac_role_change_impact_preview', actorEmail: session.email, target: result.targetUser.email || null, status: result.ok ? 'ok' : 'rejected', details: { targetRole: result.targetUser.targetRole, addedPermissions: result.impact.addedPermissions.length, removedPermissions: result.impact.removedPermissions.length, errors: result.errors, noUserMutation: true, noRoleMutation: true, noSessionMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/admin/users' || url.pathname === '/admin/users') {
