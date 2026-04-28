@@ -18,6 +18,7 @@ import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCaptur
 import { buildContactDedupeMergePlan, buildListHygienePlan } from './lib/listHygiene.js';
 import { listMigrations } from './lib/migrations.js';
 import { monitoringReadiness } from './lib/monitoringReadiness.js';
+import { mtaOperationsDashboard } from './lib/mtaOperations.js';
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
@@ -476,6 +477,15 @@ export const createHandler = () => {
       const readiness = sendingReadinessSummary();
       recordAuditEvent({ action: 'email_sending_readiness_view', actorEmail: session.email, target: readiness.provider.provider, details: { readyForRealDelivery: readiness.readyForRealDelivery, blockers: readiness.blockers } });
       return jsonResponse(res, 200, readiness);
+    }
+
+    if (url.pathname === '/api/email/mta-operations' || url.pathname === '/email/mta-operations') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const dashboard = mtaOperationsDashboard();
+      recordAuditEvent({ action: 'mta_operations_dashboard_view', actorEmail: session.email, target: 'mta-reputation', status: 'ok', details: { provider: dashboard.provider.name, queuedDryRuns: dashboard.queue.queuedDryRuns, operationalBlockers: dashboard.readiness.operationalBlockers, noQueueMutation: true, noProviderMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, dashboard);
     }
 
     if (url.pathname === '/api/email/controlled-live-test/readiness' || url.pathname === '/email/controlled-live-test/readiness') {

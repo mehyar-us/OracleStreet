@@ -317,6 +317,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Role edit hardening/);
   assert.match(html, /loadWorkbench/);
   assert.match(html, /api\/email\/sending-readiness/);
+  assert.match(html, /api\/email\/mta-operations/);
+  assert.match(html, /MTA operations dashboard/);
 });
 
 test('migration manifest is protected and lists initial PostgreSQL schema plus email engine alignment and provider traceability', async () => {
@@ -3489,6 +3491,41 @@ test('sending readiness endpoint requires admin session and keeps real delivery 
   });
 });
 
+test('MTA operations dashboard requires admin and summarizes reputation safely', async () => {
+  resetAuditLogForTests();
+  resetEmailEventsForTests();
+  resetSuppressionsForTests();
+  await withAdminEnv(async () => {
+    const unauth = await request('/api/email/mta-operations');
+    assert.equal(unauth.status, 401);
+
+    const login = await loginAsAdmin();
+    const cookie = login.headers.get('set-cookie');
+    await request('/api/email/events/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ events: [{ type: 'bounce', email: 'risk@example.test', source: 'mta operations test' }] })
+    });
+
+    const dashboard = await request('/api/email/mta-operations', { headers: { cookie } });
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.body.mode, 'mta-reputation-operations-dashboard');
+    assert.equal(dashboard.body.provider.realDeliveryAllowed, false);
+    assert.equal(dashboard.body.events.counts.bounce, 1);
+    assert.equal(dashboard.body.suppressions.reasons.bounce, 1);
+    assert.ok(dashboard.body.readiness.operationalBlockers.includes('real_email_flag_disabled'));
+    assert.ok(dashboard.body.recommendations.includes('review_bounce_complaint_sources_and_suppression_coverage'));
+    assert.equal(dashboard.body.safety.noQueueMutation, true);
+    assert.equal(dashboard.body.safety.noProviderMutation, true);
+    assert.equal(dashboard.body.safety.noMailboxConnection, true);
+    assert.equal(dashboard.body.safety.noNetworkProbe, true);
+    assert.equal(dashboard.body.realDeliveryAllowed, false);
+
+    const audit = await request('/api/audit-log', { headers: { cookie } });
+    assert.ok(audit.body.events.some((event) => event.action === 'mta_operations_dashboard_view'));
+  });
+});
+
 test('controlled live test readiness requires all gates and never sends', async () => {
   resetAuditLogForTests();
   await withEnv({
@@ -4167,6 +4204,8 @@ test('sending readiness reports provider blockers without exposing secrets', asy
 test('sending readiness endpoint also works behind nginx stripped api prefix', async () => {
   const res = await request('/email/sending-readiness');
   assert.equal(res.status, 401);
+  const mtaOperations = await request('/email/mta-operations');
+  assert.equal(mtaOperations.status, 401);
   const controlledLiveTest = await request('/email/controlled-live-test/readiness');
   assert.equal(controlledLiveTest.status, 401);
   const domain = await request('/email/domain-readiness');
