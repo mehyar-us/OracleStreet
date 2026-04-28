@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow E controlled live-test operator actions: prioritized blocker/proof-gap action plan and manual runbook with no automatic sending.
 - Flow D remote import scheduler preflight: read-only prioritized due/blocker review rows and guardrails before any future remote read worker.
 - Flow C RBAC role-change impact preview: read-only permission/surface/session-revocation preview before applying role updates.
 - Flow B campaign calendar operator actions: prioritized manual action rows/runbook for warm-up cap and launch-readiness reviews with no schedule/queue/provider mutation.

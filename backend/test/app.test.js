@@ -327,6 +327,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/controlled-live-test\/seed-observation/);
   assert.match(html, /Seed observations/);
   assert.match(html, /api\/email\/controlled-live-test\/proof-packet/);
+  assert.match(html, /api\/email\/controlled-live-test\/operator-actions/);
+  assert.match(html, /Controlled live-test operator actions/);
   assert.match(html, /Controlled proof packet/);
   assert.match(html, /api\/campaigns\/calendar\/capacity-forecast/);
   assert.match(html, /Capacity forecast/);
@@ -4209,6 +4211,8 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.equal(unauthSeed.status, 401);
     const unauthPacket = await request('/api/email/controlled-live-test/proof-packet');
     assert.equal(unauthPacket.status, 401);
+    const unauthActions = await request('/api/email/controlled-live-test/operator-actions');
+    assert.equal(unauthActions.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -4257,6 +4261,19 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.equal(seedObservation.body.realDeliveryAllowed, false);
     assert.equal(JSON.stringify(seedObservation.body).includes('pmta-secret'), false);
 
+    const operatorActions = await request('/api/email/controlled-live-test/operator-actions', { headers: { cookie } });
+    assert.equal(operatorActions.status, 200);
+    assert.equal(operatorActions.body.mode, 'controlled-live-test-operator-actions');
+    assert.ok(operatorActions.body.totals.actionRows >= 1);
+    assert.equal(operatorActions.body.totals.maxMessagesIfLaterApproved, 1);
+    assert.equal(operatorActions.body.safety.operatorActionPlanOnly, true);
+    assert.equal(operatorActions.body.safety.noSend, true);
+    assert.equal(operatorActions.body.safety.noNetworkProbe, true);
+    assert.equal(operatorActions.body.safety.noMailboxConnection, true);
+    assert.equal(operatorActions.body.safety.noQueueMutation, true);
+    assert.equal(operatorActions.body.safety.noProviderMutation, true);
+    assert.equal(operatorActions.body.realDeliveryAllowed, false);
+
     const proofPacket = await request('/api/email/controlled-live-test/proof-packet', { headers: { cookie } });
     assert.equal(proofPacket.status, 200);
     assert.equal(proofPacket.body.mode, 'controlled-live-test-proof-packet');
@@ -4280,6 +4297,7 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_seed_inbox_observation_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_packet_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_operator_actions_view'));
   });
 });
 

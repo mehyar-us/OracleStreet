@@ -352,6 +352,104 @@ export const recordControlledLiveTestProofAudit = ({ recipientEmail, dryRunProof
   return { ok: true, mode: 'controlled-live-test-proof-audit-log', record: cloneProofAuditRecord(savedRecord), recordMutation: true, sendMutation: false, persistenceMode, realDeliveryAllowed: false };
 };
 
+
+export const planControlledLiveTestOperatorActions = (env = process.env) => {
+  const readiness = controlledLiveTestReadiness(env);
+  const proofPacket = planControlledLiveTestProofPacket(env);
+  const seedObservation = planSeedInboxObservation(env);
+  const actionRows = [];
+  for (const blocker of readiness.blockers) {
+    actionRows.push({
+      type: 'readiness_blocker',
+      priority: 'high',
+      key: blocker,
+      operatorAction: 'resolve_controlled_live_readiness_blocker_before_any_manual_one_message_test',
+      noSend: true,
+      realDeliveryAllowed: false
+    });
+  }
+  for (const gap of proofPacket.proofGaps) {
+    actionRows.push({
+      type: 'proof_gap',
+      priority: gap === 'dry_run_or_local_capture_proof_not_recorded' ? 'high' : 'medium',
+      key: gap,
+      operatorAction: 'complete_proof_packet_evidence_before_human_review',
+      noSend: true,
+      realDeliveryAllowed: false
+    });
+  }
+  if (!actionRows.length) {
+    actionRows.push({
+      type: 'human_review',
+      priority: 'medium',
+      key: 'proof_packet_ready_for_human_review_only',
+      operatorAction: 'human_review_packet_and_keep_execution_manual_out_of_band',
+      noSend: true,
+      realDeliveryAllowed: false
+    });
+  }
+  actionRows.push({
+    type: 'observation',
+    priority: seedObservation.counts.observedOutcomes ? 'low' : 'medium',
+    key: seedObservation.counts.observedOutcomes ? 'seed_observations_recorded' : 'manual_seed_observation_not_recorded',
+    operatorAction: seedObservation.counts.observedOutcomes ? 'review_observed_outcomes_before_any_next_step' : 'record_manual_seed_observation_after_any_out_of_band_test',
+    noMailboxConnection: true,
+    noSend: true,
+    realDeliveryAllowed: false
+  });
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+  actionRows.sort((left, right) => priorityRank[left.priority] - priorityRank[right.priority] || left.type.localeCompare(right.type));
+  return {
+    ok: true,
+    mode: 'controlled-live-test-operator-actions',
+    packetStatus: proofPacket.packetStatus,
+    totals: {
+      actionRows: actionRows.length,
+      highPriority: actionRows.filter((row) => row.priority === 'high').length,
+      mediumPriority: actionRows.filter((row) => row.priority === 'medium').length,
+      lowPriority: actionRows.filter((row) => row.priority === 'low').length,
+      readinessBlockers: readiness.blockers.length,
+      proofGaps: proofPacket.proofGaps.length,
+      observedOutcomes: seedObservation.counts.observedOutcomes,
+      maxMessagesIfLaterApproved: 1,
+      realDeliveryAllowed: false
+    },
+    actionRows,
+    manualRunbook: [
+      'do_not_send_from_oraclestreet_automatic_paths',
+      'complete_readiness_blockers_and_proof_packet_gaps',
+      'obtain_separate_out_of_band_human_approval_for_one_owned_recipient_only',
+      'if_a_manual_one_message_test_occurs_record_provider_message_id_in_proof_audit',
+      'record_manual_seed_observation_result_without_mailbox_polling',
+      'keep_campaign_scale_delivery_locked'
+    ],
+    recommendations: [
+      readiness.blockers.length ? 'resolve_readiness_blockers_before_human_review' : 'readiness_has_no_current_blockers_but_execution_remains_manual',
+      proofPacket.proofGaps.length ? 'complete_proof_packet_gaps_before_any_out_of_band_test' : 'proof_packet_ready_for_human_review_not_execution',
+      'never_enable_automatic_or_campaign_scale_sending_from_this_operator_action_view'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      operatorActionPlanOnly: true,
+      noSend: true,
+      noNetworkProbe: true,
+      noMailboxConnection: true,
+      noInboxPolling: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSuppressionMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      requiresSeparateManualExecution: true,
+      maxMessagesIfLaterApproved: 1,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: proofPacket.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
+
 export const resetControlledLiveTestProofAuditsForTests = () => {
   proofAuditRecords.length = 0;
   proofAuditSequence = 0;
