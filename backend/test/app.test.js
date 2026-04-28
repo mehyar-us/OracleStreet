@@ -295,6 +295,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /audit-screen/);
   assert.match(html, /api\/platform\/rbac-policy/);
   assert.match(html, /Route permission enforcement/);
+  assert.match(html, /api\/admin\/users\/role/);
+  assert.match(html, /Role edit hardening/);
   assert.match(html, /loadWorkbench/);
   assert.match(html, /api\/email\/sending-readiness/);
 });
@@ -3853,6 +3855,45 @@ test('admin invite acceptance and password reset workflow activates users withou
     assert.equal(operatorLogin.status, 200);
     assert.equal(operatorLogin.body.user.email, 'operator@example.test');
 
+    const operatorRoleChange = await request('/api/admin/users/role', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: operatorLogin.headers.get('set-cookie') },
+      body: JSON.stringify({ email: 'operator@example.test', role: 'admin' })
+    });
+    assert.equal(operatorRoleChange.status, 403);
+    assert.equal(operatorRoleChange.body.requiredPermission, 'manage_users');
+
+    const ownerBlocked = await request('/api/admin/users/role', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'operator@example.test', role: 'owner' })
+    });
+    assert.equal(ownerBlocked.status, 400);
+    assert.ok(ownerBlocked.body.errors.includes('owner_role_requires_owner_requester'));
+
+    const selfDemotion = await request('/api/admin/users/role', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'admin@example.test', role: 'read_only' })
+    });
+    assert.equal(selfDemotion.status, 400);
+    assert.ok(selfDemotion.body.errors.includes('self_demotion_would_remove_manage_users'));
+
+    const roleUpdate = await request('/api/admin/users/role', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ email: 'operator@example.test', role: 'analyst' })
+    });
+    assert.equal(roleUpdate.status, 200);
+    assert.equal(roleUpdate.body.mode, 'admin-user-role-update');
+    assert.equal(roleUpdate.body.user.role, 'analyst');
+    assert.equal(roleUpdate.body.safety.noPasswordOutput, true);
+    assert.equal(roleUpdate.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(roleUpdate.body).includes(firstPassword), false);
+
+    const usersAfterRole = await request('/api/admin/users', { headers: { cookie } });
+    assert.ok(usersAfterRole.body.users.some((user) => user.email === 'operator@example.test' && user.role === 'analyst'));
+
     const resetPlan = await request('/api/admin/users/password-reset-plan', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -3888,6 +3929,7 @@ test('admin invite acceptance and password reset workflow activates users withou
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_create'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_accept'));
+    assert.ok(audit.body.events.some((event) => event.action === 'admin_user_role_update'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_plan'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_password_reset_complete'));
   });

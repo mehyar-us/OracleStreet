@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { acceptAdminUserInvite, completePasswordReset, createAdminUserInvite, createPasswordResetPlan, getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, roleHasPermission, upsertAdminUser, verifyAdminUserPassword } from './lib/adminUsers.js';
+import { acceptAdminUserInvite, completePasswordReset, createAdminUserInvite, createPasswordResetPlan, getAdminUserRole, listAdminUsers, planAdminUserInvite, recordAdminSession, revokeAdminSession, roleHasPermission, updateAdminUserRole, upsertAdminUser, verifyAdminUserPassword } from './lib/adminUsers.js';
 import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from './lib/auditLog.js';
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
@@ -589,6 +589,17 @@ export const createHandler = () => {
       if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
       const result = createAdminUserInvite({ email: body.email, role: body.role, inviteCode: body.inviteCode, expiresInHours: body.expiresInHours, requestedBy: session.email });
       recordAuditEvent({ action: 'admin_user_invite_create', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { role: body.role || null, errors: result.errors || [], noEmailSent: true, noTokenOutput: true, noPasswordOutput: true, realDelivery: false } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
+    }
+
+    if (url.pathname === '/api/admin/users/role' || url.pathname === '/admin/users/role') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = updateAdminUserRole({ email: body.email, role: body.role, requestedBy: session.email });
+      recordAuditEvent({ action: 'admin_user_role_update', actorEmail: session.email, target: body.email || null, status: result.ok ? 'ok' : 'rejected', details: { requestedRole: body.role || null, savedRole: result.user?.role || null, errors: result.errors || [], noEmailSent: true, noPasswordOutput: true, noTokenOutput: true, realDelivery: false } });
       return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 

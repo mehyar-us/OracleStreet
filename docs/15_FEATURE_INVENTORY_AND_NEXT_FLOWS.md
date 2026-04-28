@@ -44,7 +44,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Admin user directory endpoint over the users repository/bootstrap admin fallback.
 - Safe admin invite-plan endpoint that validates role/email, audits the plan, sends no email, creates no password/token, and mutates no users.
 - PostgreSQL-backed manual-code invite creation, invite acceptance, password hashing, password-reset planning, and reset completion endpoints for multi-user activation.
-- Users/RBAC UI can create pending invites, accept invites, and plan password resets without email delivery or raw token/password output.
+- Users/RBAC UI can create pending invites, accept invites, plan password resets, and update existing user roles with owner/self-demotion/last-admin guardrails without email delivery or raw token/password output.
 - Raw passwords/tokens are not stored or exposed by the runtime adapter.
 
 ### Visible admin CMS workbench
@@ -303,6 +303,7 @@ Shipped:
 - role permission matrix UI
 - audit events for role/user invite/reset actions
 - password/token-safe invite and reset surfaces without emailing secrets
+- role edit surface guarded against non-admin use, owner escalation, self-demotion out of manage_users, and last-admin demotion
 
 Acceptance:
 - protected routes for admin invite/reset planning

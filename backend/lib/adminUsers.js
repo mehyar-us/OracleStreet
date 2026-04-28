@@ -170,6 +170,59 @@ export const listAdminUsers = (env = process.env) => {
   };
 };
 
+const canManageUsersRole = (role) => roleHasPermission(role, 'manage_users');
+
+export const updateAdminUserRole = ({ email, role, requestedBy = null } = {}, env = process.env) => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanRole = String(role || '').trim().toLowerCase();
+  const requester = String(requestedBy || '').trim().toLowerCase();
+  const requesterRole = getAdminUserRole(requester, env);
+  const errors = [];
+  if (!EMAIL_RE.test(cleanEmail)) errors.push('valid_user_email_required');
+  if (!ALLOWED_ROLES.has(cleanRole)) errors.push('valid_role_required');
+  if (!requester) errors.push('requesting_admin_required');
+  if (!canManageUsersRole(requesterRole)) errors.push('requester_manage_users_required');
+  if (cleanRole === 'owner' && requesterRole !== 'owner') errors.push('owner_role_requires_owner_requester');
+  if (errors.length > 0) return { ok: false, mode: 'admin-user-role-update', errors, userMutation: false, realDeliveryAllowed: false };
+
+  const directory = listAdminUsers(env);
+  const target = directory.users.find((user) => user.email === cleanEmail);
+  if (!target) return { ok: false, mode: 'admin-user-role-update', errors: ['user_not_found'], userMutation: false, realDeliveryAllowed: false };
+  if (target.role === 'owner' && cleanRole !== 'owner' && requesterRole !== 'owner') {
+    return { ok: false, mode: 'admin-user-role-update', errors: ['owner_demotion_requires_owner_requester'], userMutation: false, realDeliveryAllowed: false };
+  }
+  if (cleanEmail === requester && !canManageUsersRole(cleanRole)) {
+    return { ok: false, mode: 'admin-user-role-update', errors: ['self_demotion_would_remove_manage_users'], userMutation: false, realDeliveryAllowed: false };
+  }
+  const currentPrivileged = directory.users.filter((user) => canManageUsersRole(user.role) && user.status !== 'disabled');
+  if (canManageUsersRole(target.role) && !canManageUsersRole(cleanRole) && currentPrivileged.length <= 1) {
+    return { ok: false, mode: 'admin-user-role-update', errors: ['last_manage_users_admin_cannot_be_demoted'], userMutation: false, realDeliveryAllowed: false };
+  }
+
+  if (!isPgRepositoryEnabled('users')) {
+    const user = memoryUsers.get(cleanEmail);
+    if (!user) return { ok: false, mode: 'admin-user-role-update', errors: ['bootstrap_env_admin_role_not_mutable_without_postgresql'], userMutation: false, realDeliveryAllowed: false };
+    const updatedAt = new Date().toISOString();
+    const saved = { ...user, role: cleanRole, updatedAt };
+    memoryUsers.set(cleanEmail, saved);
+    return { ok: true, mode: 'admin-user-role-update', user: { id: saved.id, email: saved.email, role: saved.role, status: saved.status, updatedAt }, safety: { noEmailSent: true, noPasswordOutput: true, noTokenOutput: true, noDeliveryUnlock: true, realDeliveryAllowed: false }, persistenceMode: 'in-memory-until-postgresql-users-enabled', realDeliveryAllowed: false };
+  }
+
+  try {
+    const rows = runLocalPgRows(`
+      UPDATE users
+      SET role = ${sqlLiteral(cleanRole)}, updated_at = now()
+      WHERE email = ${sqlLiteral(cleanEmail)}
+      RETURNING id::text, email, role, status, updated_at::text;
+    `);
+    if (!rows[0]) return { ok: false, mode: 'admin-user-role-update', errors: ['user_not_found'], userMutation: false, realDeliveryAllowed: false };
+    const [id, savedEmail, savedRole, status, updatedAt] = rows[0];
+    return { ok: true, mode: 'admin-user-role-update', user: { id, email: savedEmail, role: savedRole, status, updatedAt }, safety: { noEmailSent: true, noPasswordOutput: true, noTokenOutput: true, noDeliveryUnlock: true, realDeliveryAllowed: false }, persistenceMode: 'postgresql-local-psql-repository', realDeliveryAllowed: false };
+  } catch (error) {
+    return { ok: false, mode: 'admin-user-role-update', errors: ['postgresql_user_role_update_failed'], userMutation: false, realDeliveryAllowed: false };
+  }
+};
+
 export const planAdminUserInvite = ({ email, role = 'operator', requestedBy = null } = {}, env = process.env) => {
   const cleanEmail = String(email || '').trim().toLowerCase();
   const cleanRole = String(role || '').trim().toLowerCase();
