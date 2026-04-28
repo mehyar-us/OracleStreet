@@ -219,6 +219,73 @@ export const planSeedInboxObservation = (env = process.env) => {
   };
 };
 
+export const planControlledLiveTestProofPacket = (env = process.env) => {
+  const readiness = controlledLiveTestReadiness(env);
+  const proofAudits = listControlledLiveTestProofAudits();
+  const seedObservation = planSeedInboxObservation(env);
+  const records = proofAudits.records || [];
+  const latestManualSend = records.find((record) => record.outcome === 'manual_one_message_sent') || null;
+  const latestDryProof = records.find((record) => record.dryRunProofId) || null;
+  const proofGaps = [];
+  if (!latestDryProof) proofGaps.push('dry_run_or_local_capture_proof_not_recorded');
+  if (!readiness.recipient.configured) proofGaps.push('controlled_recipient_not_configured');
+  if (!readiness.recipient.owned) proofGaps.push('controlled_recipient_not_marked_owned');
+  if (readiness.blockers.length) proofGaps.push('readiness_blockers_present');
+  if (latestManualSend && !latestManualSend.providerMessageId) proofGaps.push('manual_send_provider_message_id_missing');
+  return {
+    ok: true,
+    mode: 'controlled-live-test-proof-packet',
+    packetStatus: proofGaps.length === 0 ? 'ready_for_human_review_not_execution' : 'incomplete_manual_proof_packet',
+    readiness: {
+      provider: readiness.provider,
+      recipient: readiness.recipient,
+      blockers: readiness.blockers,
+      readyForControlledLiveTest: false
+    },
+    evidence: {
+      proofAuditCount: proofAudits.count,
+      latestDryRunProofId: latestDryProof?.dryRunProofId || null,
+      latestManualProviderMessageId: latestManualSend?.providerMessageId || null,
+      observedOutcomes: seedObservation.counts.observedOutcomes,
+      deliveredObserved: seedObservation.counts.deliveredObserved,
+      bounceObserved: seedObservation.counts.bounceObserved,
+      complaintObserved: seedObservation.counts.complaintObserved
+    },
+    proofGaps: [...new Set(proofGaps)],
+    operatorChecklist: [
+      'confirm_provider_config_redacted_and_valid_in_readiness_view',
+      'confirm_owned_recipient_is_configured_and_expecting_one_message',
+      'attach_latest_dry_run_or_local_capture_proof_id',
+      'verify_suppression_unsubscribe_rate_limit_warmup_and_bounce_complaint_gates',
+      'obtain_separate_out_of_band_human_approval_before_any_manual_send',
+      'if_manual_send_occurs_record_provider_message_id_and_outcome_in_proof_audit',
+      'observe_seed_inbox_manually_and_record_delivered_bounce_or_complaint_outcome',
+      'keep_campaign_scale_delivery_locked_until_final_future_approval_gate'
+    ],
+    recommendations: proofGaps.length
+      ? ['complete_proof_packet_gaps_before_any_manual_one_recipient_test', 'do_not_enable_automatic_or_campaign_scale_sending']
+      : ['packet_ready_for_human_review_only_no_send_trigger_available', 'continue_manual_seed_observation_after_any_out_of_band_one_message_test'],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noSend: true,
+      noNetworkProbe: true,
+      noMailboxConnection: true,
+      noInboxPolling: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSuppressionMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      maxMessagesIfLaterApproved: 1,
+      requiresSeparateManualExecution: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: proofAudits.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
+
 export const recordControlledLiveTestProofAudit = ({ recipientEmail, dryRunProofId, providerMessageId, outcome = 'not_sent', notes = '', actorEmail } = {}, env = process.env) => {
   const configuredRecipient = normalizeEmail(env.ORACLESTREET_CONTROLLED_TEST_RECIPIENT_EMAIL);
   const requestedRecipient = normalizeEmail(recipientEmail || configuredRecipient);

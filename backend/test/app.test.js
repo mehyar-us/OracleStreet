@@ -310,6 +310,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Recipient-domain reputation rollup/);
   assert.match(html, /api\/email\/controlled-live-test\/seed-observation/);
   assert.match(html, /Seed observations/);
+  assert.match(html, /api\/email\/controlled-live-test\/proof-packet/);
+  assert.match(html, /Controlled proof packet/);
   assert.match(html, /Save auto-pause thresholds/);
   assert.match(html, /Evaluate auto-pause/);
   assert.match(html, /reporting-screen/);
@@ -3748,6 +3750,8 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.equal(unauth.status, 401);
     const unauthSeed = await request('/api/email/controlled-live-test/seed-observation');
     assert.equal(unauthSeed.status, 401);
+    const unauthPacket = await request('/api/email/controlled-live-test/proof-packet');
+    assert.equal(unauthPacket.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3796,10 +3800,29 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.equal(seedObservation.body.realDeliveryAllowed, false);
     assert.equal(JSON.stringify(seedObservation.body).includes('pmta-secret'), false);
 
+    const proofPacket = await request('/api/email/controlled-live-test/proof-packet', { headers: { cookie } });
+    assert.equal(proofPacket.status, 200);
+    assert.equal(proofPacket.body.mode, 'controlled-live-test-proof-packet');
+    assert.equal(proofPacket.body.evidence.proofAuditCount, 1);
+    assert.equal(proofPacket.body.evidence.latestDryRunProofId, 'dryrun_123');
+    assert.equal(proofPacket.body.evidence.latestManualProviderMessageId, 'pmta-proof-001');
+    assert.ok(proofPacket.body.operatorChecklist.includes('keep_campaign_scale_delivery_locked_until_final_future_approval_gate'));
+    assert.equal(proofPacket.body.safety.noSend, true);
+    assert.equal(proofPacket.body.safety.noNetworkProbe, true);
+    assert.equal(proofPacket.body.safety.noMailboxConnection, true);
+    assert.equal(proofPacket.body.safety.noQueueMutation, true);
+    assert.equal(proofPacket.body.safety.noProviderMutation, true);
+    assert.equal(proofPacket.body.safety.noSuppressionMutation, true);
+    assert.equal(proofPacket.body.safety.noSecretOutput, true);
+    assert.equal(proofPacket.body.safety.noDeliveryUnlock, true);
+    assert.equal(proofPacket.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(proofPacket.body).includes('pmta-secret'), false);
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_record'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_seed_inbox_observation_plan_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_packet_view'));
   });
 });
 
