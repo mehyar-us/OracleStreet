@@ -27,7 +27,7 @@ import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, evaluateDomainReputationRollup, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { evaluateWarmupScheduleCap, listWarmupPolicies, saveWarmupPolicy } from './lib/warmupPolicies.js';
-import { campaignReportingSummary, emailReportingSummary, reportingDashboardDepth, reportingDashboardDrilldown, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
+import { campaignReportingSummary, emailReportingSummary, reportingDashboardDepth, reportingDashboardDrilldown, reportingDeliverabilityAudit, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
 import { createSegment, createSegmentSnapshot, estimateSegmentAudience, listSegmentSnapshots, listSegments } from './lib/segments.js';
 import { sendQueueReadiness } from './lib/sendQueueReadiness.js';
 import { dispatchNextDryRunJob, enqueueDryRunSend, listSendQueue } from './lib/sendQueue.js';
@@ -467,6 +467,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = reportingDashboardDrilldown(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'reporting_dashboard_drilldown_view', actorEmail: session.email, target: `${result.dimension}:${result.key || 'none'}`, status: 'ok', details: { dimension: result.dimension, key: result.key, events: result.counts.events, contacts: result.counts.contacts, aggregateOnly: true, noQueueMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/email/reporting/deliverability-audit' || url.pathname === '/email/reporting/deliverability-audit') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = reportingDeliverabilityAudit();
+      recordAuditEvent({ action: 'reporting_deliverability_audit_view', actorEmail: session.email, status: 'ok', details: { highRiskSources: result.totals.highRiskSources, highRiskDomains: result.totals.highRiskDomains, highRiskCampaigns: result.totals.highRiskCampaigns, aggregateOnly: true, noQueueMutation: true, noProviderMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

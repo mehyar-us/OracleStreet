@@ -379,6 +379,123 @@ export const reportingDashboardDrilldown = ({ dimension = 'source', key = '' } =
   };
 };
 
+const topRows = (rows, limit = 12) => rows.sort((a, b) => (b.riskScore - a.riskScore) || (b.events - a.events)).slice(0, limit);
+
+export const reportingDeliverabilityAudit = () => {
+  const dashboard = reportingDashboardDepth();
+  const campaigns = campaignReportingSummary();
+  const events = listEmailEvents();
+  const contacts = listContacts();
+  const suppressions = listSuppressions();
+  const contactByEmail = new Map((contacts.contacts || []).map((contact) => [String(contact.email || '').toLowerCase(), contact]));
+  const suppressionsByEmail = new Map((suppressions.suppressions || []).map((suppression) => [String(suppression.email || '').toLowerCase(), suppression]));
+  const eventRows = events.events || [];
+  const providerTrace = {
+    events: eventRows.length,
+    withProviderMessageId: eventRows.filter((event) => event.providerMessageId).length,
+    missingProviderMessageId: eventRows.filter((event) => ['dispatched', 'delivered', 'deferred', 'bounce'].includes(event.type) && !event.providerMessageId).length
+  };
+  const makeAuditRow = (row, dimension) => {
+    const denominator = Math.max(row.dispatched, row.delivered, row.bounces, row.complaints, row.events, 1);
+    const suppressionMatches = (suppressions.suppressions || []).filter((suppression) => {
+      if (dimension === 'source') return sourceForEmail(contactByEmail, suppression.email) === row.key;
+      if (dimension === 'domain') return domainOf(suppression.email) === row.key;
+      return false;
+    }).length;
+    const riskScore = Math.round(((row.bounces * 4) + (row.complaints * 10) + (row.deferred * 2) + suppressionMatches + (row.unsubscribes * 2)) * 100 / denominator) / 100;
+    const blockers = [];
+    if (row.complaints > 0) blockers.push('complaints_present');
+    if (rate(row.bounces, denominator) > 0.05) blockers.push('bounce_rate_above_review_threshold');
+    if (rate(row.deferred, denominator) > 0.1) blockers.push('deferral_rate_watch');
+    if (suppressionMatches > 0) blockers.push('suppression_history_present');
+    return {
+      dimension,
+      key: row.key,
+      contacts: row.contacts || 0,
+      events: row.events || 0,
+      delivered: row.delivered || 0,
+      deferred: row.deferred || 0,
+      bounces: row.bounces || 0,
+      complaints: row.complaints || 0,
+      suppressions: suppressionMatches,
+      riskScore,
+      blockers,
+      recommendation: blockers.length ? 'review_before_future_warmup_or_campaign_scheduling' : 'aggregate_posture_clear_keep_monitoring',
+      realDeliveryAllowed: false
+    };
+  };
+  const sourceRows = dashboard.sourcePerformance.map((row) => makeAuditRow(row, 'source'));
+  const domainRows = dashboard.domainPerformance.map((row) => makeAuditRow(row, 'domain'));
+  const campaignRows = campaigns.campaigns.map((campaign) => {
+    const denominator = Math.max(campaign.dispatchedDryRuns, campaign.queuedDryRuns, campaign.estimatedAudience, 1);
+    const eventsForCampaign = eventRows.filter((event) => event.campaignId === campaign.campaignId);
+    const counts = eventCountsFor(eventsForCampaign);
+    const riskScore = Math.round((((counts.bounce || 0) * 4) + ((counts.complaint || 0) * 10) + ((counts.deferred || 0) * 2) + campaign.unsubscribes * 2) * 100 / denominator) / 100;
+    const blockers = [];
+    if ((counts.complaint || 0) > 0) blockers.push('campaign_complaints_present');
+    if (rate(counts.bounce || 0, denominator) > 0.05) blockers.push('campaign_bounce_rate_above_review_threshold');
+    if (campaign.unsubscribes > 0) blockers.push('campaign_unsubscribes_present');
+    return {
+      dimension: 'campaign',
+      key: campaign.campaignId,
+      name: campaign.name,
+      status: campaign.status,
+      events: eventsForCampaign.length,
+      estimatedAudience: campaign.estimatedAudience,
+      queuedDryRuns: campaign.queuedDryRuns,
+      dispatchedDryRuns: campaign.dispatchedDryRuns,
+      opens: campaign.engagement.opens,
+      clicks: campaign.engagement.clicks,
+      bounces: counts.bounce || 0,
+      complaints: counts.complaint || 0,
+      unsubscribes: campaign.unsubscribes,
+      affiliate: campaign.affiliate,
+      riskScore,
+      blockers,
+      recommendation: blockers.length ? 'review_campaign_source_and_suppression_posture' : 'campaign_safe_for_reporting_review_only',
+      realDeliveryAllowed: false
+    };
+  });
+  const suppressedContacts = (contacts.contacts || []).filter((contact) => suppressionsByEmail.has(String(contact.email || '').toLowerCase())).length;
+  return {
+    ok: true,
+    mode: 'reporting-deliverability-audit',
+    generatedAt: new Date().toISOString(),
+    totals: {
+      contacts: contacts.count || 0,
+      suppressedContacts,
+      events: events.count || 0,
+      campaigns: campaigns.count || 0,
+      providerTraceCoverage: providerTrace.events > 0 ? providerTrace.withProviderMessageId / providerTrace.events : 0,
+      highRiskSources: sourceRows.filter((row) => row.blockers.length).length,
+      highRiskDomains: domainRows.filter((row) => row.blockers.length).length,
+      highRiskCampaigns: campaignRows.filter((row) => row.blockers.length).length
+    },
+    providerTrace,
+    sourceAudit: topRows(sourceRows),
+    domainAudit: topRows(domainRows),
+    campaignAudit: topRows(campaignRows),
+    recommendations: [
+      providerTrace.missingProviderMessageId > 0 ? 'improve_provider_message_id_traceability_before_live_proof_expansion' : 'provider_message_id_traceability_clear_for_recorded_events',
+      sourceRows.some((row) => row.blockers.length) ? 'review_high_risk_sources_before_future_campaign_scheduling' : 'source_deliverability_posture_clear',
+      domainRows.some((row) => row.blockers.length) ? 'throttle_or_pause_high_risk_recipient_domains_if_future_warmup_expands' : 'domain_deliverability_posture_clear'
+    ],
+    safety: {
+      adminSessionRequired: true,
+      readOnly: true,
+      aggregateOnly: true,
+      noSecretsIncluded: true,
+      noExternalDelivery: true,
+      noNetworkProbe: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSuppressionMutation: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};
+
 export const emailReportingSummary = (env = process.env) => {
   const audit = listAuditLog();
   const queue = listSendQueue();

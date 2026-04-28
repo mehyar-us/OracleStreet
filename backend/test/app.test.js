@@ -317,6 +317,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /reporting-screen/);
   assert.match(html, /api\/email\/reporting\/drilldown/);
   assert.match(html, /Reporting drilldown/);
+  assert.match(html, /api\/email\/reporting\/deliverability-audit/);
+  assert.match(html, /Deliverability audit/);
   assert.match(html, /api\/email\/reporting\/export/);
   assert.match(html, /Build CSV export/);
   assert.match(html, /reporting-export-dataset/);
@@ -3093,6 +3095,8 @@ test('reporting dashboard depth requires admin and aggregates campaign source do
     assert.equal(unauth.status, 401);
     const unauthDrilldown = await request('/api/email/reporting/drilldown?dimension=source&key=owned%20source%20A');
     assert.equal(unauthDrilldown.status, 401);
+    const unauthDeliverabilityAudit = await request('/api/email/reporting/deliverability-audit');
+    assert.equal(unauthDeliverabilityAudit.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3166,9 +3170,26 @@ test('reporting dashboard depth requires admin and aggregates campaign source do
     assert.equal(domainDrilldown.body.counts.bounces, 1);
     assert.ok(domainDrilldown.body.recommendations.includes('review_suppressions_and_source_quality_before_future_schedules'));
 
+    const deliverabilityAudit = await request('/api/email/reporting/deliverability-audit', { headers: { cookie } });
+    assert.equal(deliverabilityAudit.status, 200);
+    assert.equal(deliverabilityAudit.body.mode, 'reporting-deliverability-audit');
+    assert.equal(deliverabilityAudit.body.totals.contacts, 2);
+    assert.equal(deliverabilityAudit.body.totals.campaigns, 1);
+    assert.equal(deliverabilityAudit.body.providerTrace.withProviderMessageId, 1);
+    assert.ok(deliverabilityAudit.body.sourceAudit.some((row) => row.key === 'owned source B' && row.blockers.includes('bounce_rate_above_review_threshold')));
+    assert.ok(deliverabilityAudit.body.domainAudit.some((row) => row.key === 'example.test' && row.bounces === 1));
+    assert.equal(deliverabilityAudit.body.safety.aggregateOnly, true);
+    assert.equal(deliverabilityAudit.body.safety.noQueueMutation, true);
+    assert.equal(deliverabilityAudit.body.safety.noProviderMutation, true);
+    assert.equal(deliverabilityAudit.body.safety.noSuppressionMutation, true);
+    assert.equal(deliverabilityAudit.body.safety.noSecretsIncluded, true);
+    assert.equal(deliverabilityAudit.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(deliverabilityAudit.body).includes('correct-horse-battery-staple'), false);
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'reporting_dashboard_depth_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'reporting_dashboard_drilldown_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'reporting_deliverability_audit_view'));
   });
 });
 
@@ -3179,6 +3200,8 @@ test('email reporting endpoint also works behind nginx stripped api prefix', asy
   assert.equal(dashboard.status, 401);
   const drilldown = await request('/email/reporting/drilldown');
   assert.equal(drilldown.status, 401);
+  const deliverabilityAudit = await request('/email/reporting/deliverability-audit');
+  assert.equal(deliverabilityAudit.status, 401);
   const exportPreview = await request('/email/reporting/export?dataset=summary');
   assert.equal(exportPreview.status, 401);
 });
