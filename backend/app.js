@@ -10,7 +10,7 @@ import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planCon
 import { browseContacts, contactAudienceExclusionPreview, contactAudienceReadinessReview, contactBrowserExportPreview, contactCampaignFitPlan, contactCampaignHandoffPreview, contactConsentProvenanceReview, contactDetailDrilldown, contactDomainRiskPlan, contactEngagementRecencyPlan, contactRepermissionPlan, contactRiskTriageQueue, contactSourceDetailReview, contactSourceQualityRemediationBoard, contactSourceQuarantinePlan, contactSuppressionReviewPlan, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { auditDataSourceImportSchedules, createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportSchedulePreflight, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleTimeline, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, updateDataSourceImportScheduleStatus, validateDataSourceQuery } from './lib/dataSources.js';
+import { auditDataSourceImportSchedules, createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportSchedulePreflight, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleTimeline, planDataSourceImportScheduleWorker, planDataSourceImportSchedulerOperations, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, updateDataSourceImportScheduleStatus, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -307,6 +307,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = planDataSourceImportSchedulePreflight(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'data_source_import_schedule_preflight_view', actorEmail: session.email, status: 'ok', details: { schedules: result.totals.schedules, dueSchedules: result.totals.dueSchedules, blockedSchedules: result.totals.blockedSchedules, noWorkerStarted: true, noRemoteConnectionOpened: true, rowsPulled: 0, contactsMutated: 0, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/data-source-import-schedules/operations-board' || url.pathname === '/data-source-import-schedules/operations-board') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_data_sources');
+      if (!session) return;
+      const result = planDataSourceImportSchedulerOperations(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'data_source_import_scheduler_operations_view', actorEmail: session.email, status: 'ok', details: { schedules: result.totals.schedules, operationRows: result.totals.operationRows, dueSchedules: result.totals.dueSchedules, blockedSchedules: result.totals.blockedSchedules, noWorkerStarted: true, noRemoteConnectionOpened: true, rowsPulled: 0, contactsMutated: 0, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

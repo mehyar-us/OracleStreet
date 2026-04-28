@@ -1771,4 +1771,88 @@ export const planDataSourceImportSchedulePreflight = ({ days = 7, now = new Date
   };
 };
 
+
+export const planDataSourceImportSchedulerOperations = ({ days = 7, now = new Date() } = {}) => {
+  const preflight = planDataSourceImportSchedulePreflight({ days, now });
+  const audit = auditDataSourceImportSchedules({ now });
+  const timeline = planDataSourceImportScheduleTimeline({ days, now });
+  const worker = planDataSourceImportScheduleWorker({ now });
+  const runbook = planDataSourceImportScheduleRunbook({ now });
+  const operationRows = (audit.reviews || []).map((review) => {
+    const forecasted = (timeline.upcomingRuns || []).filter((run) => run.scheduleId === review.id);
+    const preflightRow = (preflight.reviewRows || []).find((row) => row.scheduleId === review.id) || null;
+    const priority = review.due ? 'high' : review.blockers.length ? 'medium' : forecasted.length ? 'low' : 'monitor';
+    return {
+      scheduleId: review.id,
+      dataSourceId: review.dataSourceId,
+      dataSourceName: review.dataSourceName,
+      priority,
+      enabled: review.enabled,
+      due: review.due,
+      status: review.status,
+      nextRunPreviewAt: review.nextRunPreviewAt,
+      forecastedRuns: forecasted.length,
+      nextForecastedRun: forecasted[0]?.plannedAt || null,
+      blockers: review.blockers,
+      operatorAction: preflightRow?.operatorAction || review.recommendation,
+      manualRunbookReady: Boolean(runbook.ok && runbook.schedule?.id === review.id),
+      rowsPulled: 0,
+      contactsMutated: 0,
+      workerStarted: false,
+      remoteConnectionOpened: false,
+      realDeliveryAllowed: false
+    };
+  }).sort((a, b) => ({ high: 0, medium: 1, low: 2, monitor: 3 }[a.priority] - { high: 0, medium: 1, low: 2, monitor: 3 }[b.priority]) || String(a.nextRunPreviewAt || '').localeCompare(String(b.nextRunPreviewAt || '')));
+  return {
+    ok: true,
+    mode: 'data-source-import-scheduler-operations-board',
+    evaluatedAt: preflight.evaluatedAt,
+    horizonDays: preflight.horizonDays,
+    totals: {
+      schedules: audit.totals.schedules,
+      enabledSchedules: audit.totals.enabledSchedules,
+      dueSchedules: audit.totals.dueSchedules,
+      blockedSchedules: audit.totals.blockedSchedules,
+      forecastedRuns: timeline.totals.forecastedRuns,
+      operationRows: operationRows.length,
+      highPriority: operationRows.filter((row) => row.priority === 'high').length,
+      mediumPriority: operationRows.filter((row) => row.priority === 'medium').length,
+      workerStarted: 0,
+      remoteConnectionsOpened: 0,
+      rowsPulled: 0,
+      contactsMutated: 0,
+      automaticWorkerEnabled: false,
+      realDeliveryAllowed: false
+    },
+    operationRows,
+    guardrails: preflight.guardrails,
+    nextRunbook: preflight.nextRunbook,
+    manualRunbook: runbook.ok ? runbook.manualRunbook : [],
+    requiredBeforeAutomaticWorker: worker.requiredBeforeAutomaticWorker,
+    recommendations: [
+      ...preflight.recommendations,
+      ...audit.recommendations,
+      ...timeline.recommendations,
+      worker.counts.dueSchedules ? 'due_schedules_remain_manual_runbook_only' : 'no_due_schedules_for_manual_runbook_now'
+    ].filter((value, index, values) => values.indexOf(value) === index),
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      operationsBoardOnly: true,
+      noWorkerStarted: true,
+      noRemoteConnectionOpened: true,
+      noRowsPulled: true,
+      noContactMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      automaticWorkerEnabled: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: preflight.persistenceMode,
+    realSync: false,
+    automaticPulls: false,
+    realDeliveryAllowed: false
+  };
+};
+
 export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;

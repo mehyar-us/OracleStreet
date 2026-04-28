@@ -762,6 +762,8 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(unauth.status, 401);
     const unauthPreflight = await request('/api/data-source-import-schedules/preflight');
     assert.equal(unauthPreflight.status, 401);
+    const unauthOperations = await request('/api/data-source-import-schedules/operations-board');
+    assert.equal(unauthOperations.status, 401);
     const unauthWorker = await request('/api/data-source-import-schedules/worker-plan');
     assert.equal(unauthWorker.status, 401);
     const unauthRunbook = await request('/api/data-source-import-schedules/runbook');
@@ -920,6 +922,34 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.ok(preflight.body.reviewRows.some((row) => row.dataSourceName === 'Schedule warehouse'));
     assert.equal(preflight.body.realDeliveryAllowed, false);
 
+
+    const operations = await request('/api/data-source-import-schedules/operations-board?days=7', { headers: { cookie } });
+    assert.equal(operations.status, 200);
+    assert.equal(operations.body.mode, 'data-source-import-scheduler-operations-board');
+    assert.equal(operations.body.totals.schedules, 1);
+    assert.equal(operations.body.totals.operationRows, 1);
+    assert.equal(operations.body.totals.forecastedRuns >= 1, true);
+    assert.equal(operations.body.totals.workerStarted, 0);
+    assert.equal(operations.body.totals.remoteConnectionsOpened, 0);
+    assert.equal(operations.body.totals.rowsPulled, 0);
+    assert.equal(operations.body.totals.contactsMutated, 0);
+    assert.equal(operations.body.totals.automaticWorkerEnabled, false);
+    assert.equal(operations.body.operationRows[0].dataSourceName, 'Schedule warehouse');
+    assert.equal(operations.body.operationRows[0].workerStarted, false);
+    assert.equal(operations.body.operationRows[0].remoteConnectionOpened, false);
+    assert.equal(operations.body.operationRows[0].rowsPulled, 0);
+    assert.equal(operations.body.operationRows[0].contactsMutated, 0);
+    assert.equal(operations.body.safety.operationsBoardOnly, true);
+    assert.equal(operations.body.safety.noWorkerStarted, true);
+    assert.equal(operations.body.safety.noRemoteConnectionOpened, true);
+    assert.equal(operations.body.safety.noRowsPulled, true);
+    assert.equal(operations.body.safety.noContactMutation, true);
+    assert.equal(operations.body.safety.noSecretOutput, true);
+    assert.equal(operations.body.realSync, false);
+    assert.equal(operations.body.automaticPulls, false);
+    assert.equal(operations.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(operations.body).includes('schedule-secret'), false);
+
     const worker = await request('/api/data-source-import-schedules/worker-plan', { headers: { cookie } });
     assert.equal(worker.status, 200);
     assert.equal(worker.body.mode, 'data-source-import-scheduler-worker-plan');
@@ -977,6 +1007,7 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_audit_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_preflight_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_scheduler_operations_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_worker_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_timeline_view' && event.details?.forecastedRuns >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_runbook_view'));

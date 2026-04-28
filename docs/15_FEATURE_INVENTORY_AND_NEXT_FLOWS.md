@@ -63,6 +63,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Send queue dry-run dispatch workflow.
 - Suppression management workflow.
 - Remote PostgreSQL source/query/schema/import/scheduler surfaces.
+- Remote PostgreSQL scheduler operations board with due/blocked/forecast rows, manual-runbook actions, and no worker/remote-read/contact mutation.
 - Reputation/readiness panel.
 - Warm-up planner controls.
 - Warm-up policy controls.
