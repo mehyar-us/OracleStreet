@@ -396,6 +396,102 @@ export const sourceHygieneActionPlan = ({ scoreThreshold = 70, staleAfterDays = 
   };
 };
 
+export const sourceQualityMatrix = ({ source = '', domain = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, staleAfterDays, limit: 500 });
+  const contacts = browser.contacts || [];
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const sourceFilter = clean(source);
+  const domainFilter = clean(domain).replace(/^@/, '');
+  const cells = new Map();
+  const sourceRows = new Map();
+  const domainRows = new Map();
+  const riskRows = new Map();
+
+  const inc = (map, key, seed, contact) => {
+    const row = map.get(key) || { ...seed, total: 0, ready: 0, blocked: 0, suppressed: 0, stale: 0, roleAccounts: 0, bounced: 0, complained: 0 };
+    row.total += 1;
+    const flags = contact.riskFlags || [];
+    const blocked = contact.suppressed || flags.length > 0 || !['opt_in', 'double_opt_in'].includes(contact.consentStatus);
+    if (!blocked) row.ready += 1;
+    if (blocked) row.blocked += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    if (flags.includes('stale_contact')) row.stale += 1;
+    if (flags.includes('role_account')) row.roleAccounts += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    map.set(key, row);
+    return row;
+  };
+
+  for (const contact of contacts) {
+    const sourceKey = contact.source || 'unknown_source';
+    const domainKey = contact.domain || domainOf(contact.email) || 'unknown_domain';
+    const cellKey = `${sourceKey}\u0000${domainKey}`;
+    inc(cells, cellKey, { source: sourceKey, domain: domainKey }, contact);
+    inc(sourceRows, sourceKey, { source: sourceKey }, contact);
+    inc(domainRows, domainKey, { domain: domainKey }, contact);
+    for (const flag of contact.riskFlags || []) {
+      const row = riskRows.get(flag) || { riskFlag: flag, total: 0, sources: new Set(), domains: new Set() };
+      row.total += 1;
+      row.sources.add(sourceKey);
+      row.domains.add(domainKey);
+      riskRows.set(flag, row);
+    }
+  }
+
+  const finish = (row) => ({
+    ...row,
+    readyRate: row.total ? row.ready / row.total : 0,
+    riskRate: row.total ? row.blocked / row.total : 0,
+    score: sourceScore({ total: row.total, suppressed: row.suppressed, risky: row.blocked, stale: row.stale, bounced: row.bounced, complained: row.complained }),
+    reviewGate: row.blocked > 0 || row.bounced > 0 || row.complained > 0,
+    recommendation: row.blocked > 0 || row.bounced > 0 || row.complained > 0
+      ? 'review_or_exclude_this_source_domain_cell_before_segment_snapshot_or_campaign_use'
+      : 'ready_for_dry_run_segment_planning_only',
+    realDeliveryAllowed: false
+  });
+
+  const matrix = [...cells.values()].map(finish).sort((a, b) => b.blocked - a.blocked || a.score - b.score || b.total - a.total).slice(0, rowLimit);
+  const recommendations = [];
+  if (matrix.some((row) => row.reviewGate)) recommendations.push('review_high_risk_source_domain_cells_before_creating_campaign_audiences');
+  if (matrix.some((row) => row.complained > 0)) recommendations.push('quarantine_sources_with_complaints_until_operator_review');
+  if (matrix.some((row) => row.suppressed > 0)) recommendations.push('keep_suppressed_contacts_excluded_from_all_saved_segments_and_snapshots');
+  if (!recommendations.length) recommendations.push('source_domain_matrix_clear_for_dry_run_planning_only');
+
+  return {
+    ok: true,
+    mode: 'contact-source-quality-matrix',
+    filters: { source: sourceFilter, domain: domainFilter, staleAfterDays: browser.filters?.staleAfterDays || staleAfterDays, limit: rowLimit },
+    totals: {
+      contactsReviewed: contacts.length,
+      sourceDomainCells: cells.size,
+      sources: sourceRows.size,
+      domains: domainRows.size,
+      reviewGates: matrix.filter((row) => row.reviewGate).length,
+      blockedContacts: contacts.filter((contact) => contact.suppressed || (contact.riskFlags || []).length > 0).length
+    },
+    matrix,
+    sourceRows: [...sourceRows.values()].map(finish).sort((a, b) => a.score - b.score || b.total - a.total).slice(0, rowLimit),
+    domainRows: [...domainRows.values()].map(finish).sort((a, b) => b.total - a.total || a.score - b.score).slice(0, rowLimit),
+    riskRows: [...riskRows.values()].map((row) => ({ riskFlag: row.riskFlag, total: row.total, sources: row.sources.size, domains: row.domains.size })).sort((a, b) => b.total - a.total || a.riskFlag.localeCompare(b.riskFlag)).slice(0, rowLimit),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
+
 export const contactAudienceReadinessReview = ({ search = '', source = '', domain = '', consentStatus = '', staleAfterDays = 180, limit = 100 } = {}) => {
   const browser = browseContacts({ search, source, domain, consentStatus, staleAfterDays, limit: 500 });
   const contacts = browser.contacts || [];

@@ -239,6 +239,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Source quality detail/);
   assert.match(html, /api\/contacts\/source-hygiene-plan/);
   assert.match(html, /Source hygiene action plan/);
+  assert.match(html, /api\/contacts\/source-quality-matrix/);
+  assert.match(html, /Source × domain quality matrix/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
   assert.match(html, /Dedupe\/merge planner/);
   assert.match(html, /segments-screen/);
@@ -1372,6 +1374,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthSourceQuality.status, 401);
     const unauthSourceHygiene = await request('/api/contacts/source-hygiene-plan');
     assert.equal(unauthSourceHygiene.status, 401);
+    const unauthSourceMatrix = await request('/api/contacts/source-quality-matrix');
+    assert.equal(unauthSourceMatrix.status, 401);
     const unauthAudienceReadiness = await request('/api/contacts/audience-readiness');
     assert.equal(unauthAudienceReadiness.status, 401);
     const unauthMerge = await request('/api/contacts/dedupe-merge-plan');
@@ -1453,6 +1457,22 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(sourceHygiene.body.safety.noProviderMutation, true);
     assert.equal(sourceHygiene.body.realDeliveryAllowed, false);
 
+    const sourceMatrix = await request('/api/contacts/source-quality-matrix?source=support%20imports&domain=example.test', { headers: { cookie } });
+    assert.equal(sourceMatrix.status, 200);
+    assert.equal(sourceMatrix.body.mode, 'contact-source-quality-matrix');
+    assert.equal(sourceMatrix.body.totals.contactsReviewed, 1);
+    assert.equal(sourceMatrix.body.totals.sourceDomainCells, 1);
+    assert.equal(sourceMatrix.body.matrix[0].source, 'support imports');
+    assert.equal(sourceMatrix.body.matrix[0].domain, 'example.test');
+    assert.equal(sourceMatrix.body.matrix[0].suppressed, 1);
+    assert.equal(sourceMatrix.body.matrix[0].reviewGate, true);
+    assert.ok(sourceMatrix.body.riskRows.some((row) => row.riskFlag === 'role_account' && row.total === 1));
+    assert.ok(sourceMatrix.body.recommendations.includes('review_high_risk_source_domain_cells_before_creating_campaign_audiences'));
+    assert.equal(sourceMatrix.body.safety.recommendationOnly, true);
+    assert.equal(sourceMatrix.body.safety.noContactMutation, true);
+    assert.equal(sourceMatrix.body.safety.noSegmentMutation, true);
+    assert.equal(sourceMatrix.body.realDeliveryAllowed, false);
+
     const audienceReadiness = await request('/api/contacts/audience-readiness?domain=example.test', { headers: { cookie } });
     assert.equal(audienceReadiness.status, 200);
     assert.equal(audienceReadiness.body.mode, 'contact-audience-readiness-review');
@@ -1491,6 +1511,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_matrix_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_audience_readiness_review_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
   });
