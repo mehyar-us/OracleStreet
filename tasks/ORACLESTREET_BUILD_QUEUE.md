@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow A contact source operations digest: priority source/remediation/quarantine/risk rows and audience readiness totals without contact/suppression/segment mutation.
 - Flow F reporting operations digest: executive cards, priority risk rows, and next-best actions without queue/provider/suppression mutation.
 - Flow E controlled final approval packet: pass/block evidence rows and max-one-message review checklist without send/probe/queue/provider/suppression mutation.
 - Flow D remote PostgreSQL scheduler operations board: due/blocked/forecast rows and manual-runbook actions without worker/remote-read/contact mutation.

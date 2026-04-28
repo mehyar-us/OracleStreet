@@ -7,7 +7,7 @@ import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.j
 import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarLaunchReadiness, campaignCalendarOperatorActions, campaignCalendarReschedulePlan, campaignCalendarWarmupBoard, campaignCalendarWarmupCapReview } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestFinalApprovalPacket, planControlledLiveTestOperatorActions, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
-import { browseContacts, contactAudienceExclusionPreview, contactAudienceReadinessReview, contactBrowserExportPreview, contactCampaignFitPlan, contactCampaignHandoffPreview, contactConsentProvenanceReview, contactDetailDrilldown, contactDomainRiskPlan, contactEngagementRecencyPlan, contactRepermissionPlan, contactRiskTriageQueue, contactSourceDetailReview, contactSourceQualityRemediationBoard, contactSourceQuarantinePlan, contactSuppressionReviewPlan, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
+import { browseContacts, contactAudienceExclusionPreview, contactAudienceReadinessReview, contactBrowserExportPreview, contactCampaignFitPlan, contactCampaignHandoffPreview, contactConsentProvenanceReview, contactDetailDrilldown, contactDomainRiskPlan, contactEngagementRecencyPlan, contactRepermissionPlan, contactRiskTriageQueue, contactSourceDetailReview, contactSourceOperationsDigest, contactSourceQualityRemediationBoard, contactSourceQuarantinePlan, contactSuppressionReviewPlan, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { auditDataSourceImportSchedules, createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportSchedulePreflight, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleTimeline, planDataSourceImportScheduleWorker, planDataSourceImportSchedulerOperations, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, updateDataSourceImportScheduleStatus, validateDataSourceQuery } from './lib/dataSources.js';
@@ -919,6 +919,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = sourceHygieneActionPlan(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'contact_source_hygiene_plan_view', actorEmail: session.email, status: 'ok', details: { scoreThreshold: result.scoreThreshold, sourcesReviewed: result.totals.sourcesReviewed, reviewGates: result.totals.reviewGates, noContactMutation: true, noSuppressionMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/contacts/source-operations-digest' || url.pathname === '/contacts/source-operations-digest') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = contactSourceOperationsDigest(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'contact_source_operations_digest_view', actorEmail: session.email, status: 'ok', details: { contactsReviewed: result.totals.contactsReviewed, sourcesReviewed: result.totals.sourcesReviewed, priorityRows: result.totals.priorityRows, noContactMutation: true, noSuppressionMutation: true, noSegmentMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

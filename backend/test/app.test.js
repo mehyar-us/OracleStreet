@@ -245,6 +245,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Source quality detail/);
   assert.match(html, /api\/contacts\/source-hygiene-plan/);
   assert.match(html, /api\/contacts\/source-quality-remediation-board/);
+  assert.match(html, /api\/contacts\/source-operations-digest/);
   assert.match(html, /Source quality remediation board/);
   assert.match(html, /Source hygiene action plan/);
   assert.match(html, /api\/contacts\/source-quality-matrix/);
@@ -1707,6 +1708,22 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(engagementRecency.body.safety.automaticQueueMutationAllowed, false);
     assert.equal(engagementRecency.body.realDeliveryAllowed, false);
 
+    const sourceOperations = await request('/api/contacts/source-operations-digest', { headers: { cookie } });
+    assert.equal(sourceOperations.status, 200);
+    assert.equal(sourceOperations.body.mode, 'contact-source-operations-digest');
+    assert.ok(sourceOperations.body.totals.contactsReviewed >= 1);
+    assert.ok(Array.isArray(sourceOperations.body.priorityRows));
+    assert.ok(sourceOperations.body.nextBestActions.includes('keep_contact_operations_digest_read_only_no_contact_suppression_segment_queue_mutation'));
+    assert.equal(sourceOperations.body.totals.automaticContactMutationAllowed, 0);
+    assert.equal(sourceOperations.body.totals.automaticSuppressionMutationAllowed, 0);
+    assert.equal(sourceOperations.body.totals.automaticSegmentMutationAllowed, 0);
+    assert.equal(sourceOperations.body.safety.noContactMutation, true);
+    assert.equal(sourceOperations.body.safety.noSuppressionMutation, true);
+    assert.equal(sourceOperations.body.safety.noSegmentMutation, true);
+    assert.equal(sourceOperations.body.safety.noQueueMutation, true);
+    assert.equal(sourceOperations.body.safety.noProviderMutation, true);
+    assert.equal(sourceOperations.body.realDeliveryAllowed, false);
+
     const sourceQuality = await request('/api/contacts/source-quality?source=support%20imports', { headers: { cookie } });
     assert.equal(sourceQuality.status, 200);
     assert.equal(sourceQuality.body.mode, 'contact-source-quality-drilldown');
@@ -1877,6 +1894,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_engagement_recency_plan_view' && event.details?.automaticQueueMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_source_operations_digest_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_remediation_board_view' && event.details?.highPrioritySources >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quarantine_plan_view' && event.details?.quarantineRecommended >= 1));

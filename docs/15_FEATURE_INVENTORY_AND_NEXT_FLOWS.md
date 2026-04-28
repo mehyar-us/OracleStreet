@@ -101,6 +101,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
   - read-only source-quality detail drilldowns with per-source score, domain/risk breakdowns, sample contacts, and cleanup recommendations
   - read-only source hygiene action plans with per-source review gates, quarantine/refresh recommendations, and no audience mutation
   - read-only source-quality remediation board combining hygiene, quarantine, and source × domain gates into prioritized operator actions
+  - read-only contact source operations digest combining remediation, quarantine, risk triage, and audience readiness into next-best actions
   - read-only source quarantine plans with operator checklists and no source/contact/segment mutation
   - read-only audience readiness reviews with ready/blocked counts, source/domain review gates, blocked samples, and no contact/suppression/segment mutation
   - domain concentration drilldowns

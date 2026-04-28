@@ -1797,3 +1797,93 @@ export const contactCampaignHandoffPreview = (filters = {}) => {
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactSourceOperationsDigest = ({ scoreThreshold = 70, staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ limit, staleAfterDays });
+  const remediation = contactSourceQualityRemediationBoard({ scoreThreshold, staleAfterDays, limit });
+  const quarantine = contactSourceQuarantinePlan({ scoreThreshold, staleAfterDays, limit });
+  const triage = contactRiskTriageQueue({ limit, staleAfterDays });
+  const audience = contactAudienceReadinessReview({ limit, staleAfterDays });
+  const priorityRows = [
+    ...((remediation.remediationRows || []).filter((row) => row.priority !== 'low').map((row) => ({
+      type: 'source_remediation',
+      priority: row.priority,
+      key: row.source,
+      contacts: row.contacts || 0,
+      blockedContacts: row.blockedContacts || 0,
+      readyContacts: row.readyContacts || 0,
+      recommendedAction: row.recommendedActions?.[0] || 'review_source_quality_before_campaign_handoff',
+      blockers: row.issues || [],
+      realDeliveryAllowed: false
+    }))),
+    ...((quarantine.rows || []).filter((row) => row.quarantineRecommended).map((row) => ({
+      type: 'source_quarantine',
+      priority: 'high',
+      key: row.source,
+      contacts: row.contacts || 0,
+      blockedContacts: row.blockedContacts || 0,
+      readyContacts: row.readyContacts || 0,
+      recommendedAction: row.suggestedAudienceRule || 'exclude_source_until_manual_review',
+      blockers: row.reasons || [],
+      realDeliveryAllowed: false
+    }))),
+    ...((triage.riskRows || []).slice(0, 10).map((row) => ({
+      type: 'risk_triage',
+      priority: row.priority,
+      key: row.key,
+      contacts: row.total || 0,
+      blockedContacts: row.suppressed || 0,
+      readyContacts: Math.max((row.total || 0) - (row.suppressed || 0), 0),
+      recommendedAction: row.recommendedAction,
+      blockers: [row.key],
+      realDeliveryAllowed: false
+    })))
+  ].sort((left, right) => ({ high: 0, medium: 1, low: 2 }[left.priority] - { high: 0, medium: 1, low: 2 }[right.priority]) || right.blockedContacts - left.blockedContacts || right.contacts - left.contacts).slice(0, 25);
+  return {
+    ok: true,
+    mode: 'contact-source-operations-digest',
+    generatedAt: new Date().toISOString(),
+    scoreThreshold: Number(scoreThreshold) || 70,
+    totals: {
+      contactsReviewed: browser.totals?.totalContacts || browser.totals?.contacts || 0,
+      sourcesReviewed: remediation.totals?.sourcesReviewed || 0,
+      priorityRows: priorityRows.length,
+      highPriorityRows: priorityRows.filter((row) => row.priority === 'high').length,
+      mediumPriorityRows: priorityRows.filter((row) => row.priority === 'medium').length,
+      riskyContacts: browser.totals?.riskyContacts || 0,
+      suppressedContacts: browser.totals?.suppressedContacts || 0,
+      staleContacts: browser.totals?.staleContacts || 0,
+      readyContacts: audience.totals?.readyContacts || 0,
+      blockedContacts: audience.totals?.blockedContacts || 0,
+      automaticContactMutationAllowed: 0,
+      automaticSuppressionMutationAllowed: 0,
+      automaticSegmentMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    priorityRows,
+    topSources: (browser.sourceQuality || []).slice(0, 10),
+    audienceReadiness: audience.sourceReadiness || [],
+    nextBestActions: [
+      priorityRows.some((row) => row.priority === 'high') ? 'review_high_priority_contact_sources_before_campaign_handoff' : 'no_high_priority_contact_source_rows_currently_visible',
+      'sample_source_quality_detail_before_segment_snapshot_changes',
+      'keep_contact_operations_digest_read_only_no_contact_suppression_segment_queue_mutation'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      operationsDigestOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noFileWrite: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
