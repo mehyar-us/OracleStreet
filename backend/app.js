@@ -7,7 +7,7 @@ import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.j
 import { campaignCalendar, campaignCalendarAllocation, campaignCalendarDrilldown, campaignCalendarReschedulePlan } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
-import { browseContacts, contactDetailDrilldown, sourceHygieneActionPlan, sourceQualityDrilldown } from './lib/contactBrowser.js';
+import { browseContacts, contactAudienceReadinessReview, contactDetailDrilldown, sourceHygieneActionPlan, sourceQualityDrilldown } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { auditDataSourceImportSchedules, createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
@@ -795,6 +795,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = sourceHygieneActionPlan(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'contact_source_hygiene_plan_view', actorEmail: session.email, status: 'ok', details: { scoreThreshold: result.scoreThreshold, sourcesReviewed: result.totals.sourcesReviewed, reviewGates: result.totals.reviewGates, noContactMutation: true, noSuppressionMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/contacts/audience-readiness' || url.pathname === '/contacts/audience-readiness') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = contactAudienceReadinessReview(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'contact_audience_readiness_review_view', actorEmail: session.email, status: 'ok', details: { matchedContacts: result.totals.matchedContacts, readyContacts: result.totals.readyContacts, blockedContacts: result.totals.blockedContacts, noContactMutation: true, noSuppressionMutation: true, noSegmentMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

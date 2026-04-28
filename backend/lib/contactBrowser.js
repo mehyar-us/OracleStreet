@@ -395,3 +395,84 @@ export const sourceHygieneActionPlan = ({ scoreThreshold = 70, staleAfterDays = 
     realDeliveryAllowed: false
   };
 };
+
+export const contactAudienceReadinessReview = ({ search = '', source = '', domain = '', consentStatus = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ search, source, domain, consentStatus, staleAfterDays, limit: 500 });
+  const contacts = browser.contacts || [];
+  const reviewLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const ready = contacts.filter((contact) => !contact.suppressed && (contact.riskFlags || []).length === 0 && ['opt_in', 'double_opt_in'].includes(contact.consentStatus));
+  const blocked = contacts.filter((contact) => contact.suppressed || (contact.riskFlags || []).length > 0 || !['opt_in', 'double_opt_in'].includes(contact.consentStatus));
+  const sourceRows = new Map();
+  const domainRows = new Map();
+  const addRow = (map, key, contact) => {
+    const row = map.get(key) || { key, total: 0, ready: 0, blocked: 0, suppressed: 0, stale: 0, risky: 0, roleAccounts: 0 };
+    row.total += 1;
+    if (!contact.suppressed && (contact.riskFlags || []).length === 0) row.ready += 1;
+    if (contact.suppressed || (contact.riskFlags || []).length > 0) row.blocked += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    if ((contact.riskFlags || []).includes('stale_contact')) row.stale += 1;
+    if ((contact.riskFlags || []).length) row.risky += 1;
+    if ((contact.riskFlags || []).includes('role_account')) row.roleAccounts += 1;
+    map.set(key, row);
+  };
+  contacts.forEach((contact) => {
+    addRow(sourceRows, contact.source || 'unknown_source', contact);
+    addRow(domainRows, contact.domain || domainOf(contact.email) || 'unknown_domain', contact);
+  });
+  const finishRow = (row) => ({
+    ...row,
+    readyRate: row.total ? row.ready / row.total : 0,
+    reviewGate: row.blocked > 0 || row.ready === 0,
+    recommendation: row.blocked > 0 ? 'review_blocked_contacts_before_segment_snapshot_or_campaign_use' : 'ready_for_dry_run_segment_snapshot_planning_only',
+    realDeliveryAllowed: false
+  });
+  const recommendations = [];
+  if (blocked.length > 0) recommendations.push('resolve_or_exclude_blocked_contacts_before_campaign_audience_use');
+  if (contacts.some((contact) => contact.suppressed)) recommendations.push('keep_suppressed_contacts_excluded_from_all_audience_snapshots');
+  if (contacts.some((contact) => (contact.riskFlags || []).includes('stale_contact'))) recommendations.push('refresh_stale_consent_before_warmup_or_campaign_scheduling');
+  if (contacts.some((contact) => (contact.riskFlags || []).includes('role_account'))) recommendations.push('review_role_accounts_before_any_affiliate_campaign_segment');
+  if (!recommendations.length) recommendations.push('audience_ready_for_dry_run_segment_snapshot_review_only');
+
+  return {
+    ok: true,
+    mode: 'contact-audience-readiness-review',
+    filters: browser.filters,
+    totals: {
+      matchedContacts: contacts.length,
+      readyContacts: ready.length,
+      blockedContacts: blocked.length,
+      suppressedContacts: contacts.filter((contact) => contact.suppressed).length,
+      riskyContacts: contacts.filter((contact) => (contact.riskFlags || []).length).length,
+      staleContacts: contacts.filter((contact) => (contact.riskFlags || []).includes('stale_contact')).length,
+      roleAccounts: contacts.filter((contact) => (contact.riskFlags || []).includes('role_account')).length,
+      readyRate: contacts.length ? ready.length / contacts.length : 0
+    },
+    sourceReadiness: [...sourceRows.values()].map(finishRow).sort((a, b) => b.blocked - a.blocked || a.readyRate - b.readyRate).slice(0, reviewLimit),
+    domainReadiness: [...domainRows.values()].map(finishRow).sort((a, b) => b.blocked - a.blocked || b.total - a.total).slice(0, reviewLimit),
+    blockedSamples: blocked.slice(0, reviewLimit).map((contact) => ({
+      id: contact.id || null,
+      email: contact.email,
+      source: contact.source || null,
+      domain: contact.domain || null,
+      consentStatus: contact.consentStatus || null,
+      suppressed: Boolean(contact.suppressed),
+      riskFlags: contact.riskFlags || [],
+      recommendation: contact.suppressed ? 'exclude_suppressed_contact' : ((contact.riskFlags || []).includes('stale_contact') ? 'refresh_consent_or_exclude' : 'operator_review_before_segment_use'),
+      realDeliveryAllowed: false
+    })),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};

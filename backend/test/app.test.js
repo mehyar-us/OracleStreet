@@ -312,6 +312,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Seed observations/);
   assert.match(html, /api\/email\/controlled-live-test\/proof-packet/);
   assert.match(html, /Controlled proof packet/);
+  assert.match(html, /api\/contacts\/audience-readiness/);
+  assert.match(html, /Audience readiness review/);
   assert.match(html, /Save auto-pause thresholds/);
   assert.match(html, /Evaluate auto-pause/);
   assert.match(html, /reporting-screen/);
@@ -1368,6 +1370,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthSourceQuality.status, 401);
     const unauthSourceHygiene = await request('/api/contacts/source-hygiene-plan');
     assert.equal(unauthSourceHygiene.status, 401);
+    const unauthAudienceReadiness = await request('/api/contacts/audience-readiness');
+    assert.equal(unauthAudienceReadiness.status, 401);
     const unauthMerge = await request('/api/contacts/dedupe-merge-plan');
     assert.equal(unauthMerge.status, 401);
 
@@ -1447,6 +1451,24 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(sourceHygiene.body.safety.noProviderMutation, true);
     assert.equal(sourceHygiene.body.realDeliveryAllowed, false);
 
+    const audienceReadiness = await request('/api/contacts/audience-readiness?domain=example.test', { headers: { cookie } });
+    assert.equal(audienceReadiness.status, 200);
+    assert.equal(audienceReadiness.body.mode, 'contact-audience-readiness-review');
+    assert.equal(audienceReadiness.body.totals.matchedContacts, 3);
+    assert.equal(audienceReadiness.body.totals.blockedContacts, 1);
+    assert.equal(audienceReadiness.body.totals.readyContacts, 2);
+    assert.ok(audienceReadiness.body.sourceReadiness.some((row) => row.key === 'support imports' && row.reviewGate === true));
+    assert.ok(audienceReadiness.body.domainReadiness.some((row) => row.key === 'example.test' && row.blocked === 1));
+    assert.ok(audienceReadiness.body.blockedSamples.some((contact) => contact.email === 'support@example.test' && contact.suppressed === true));
+    assert.ok(audienceReadiness.body.recommendations.includes('resolve_or_exclude_blocked_contacts_before_campaign_audience_use'));
+    assert.equal(audienceReadiness.body.safety.noContactMutation, true);
+    assert.equal(audienceReadiness.body.safety.noSuppressionMutation, true);
+    assert.equal(audienceReadiness.body.safety.noSegmentMutation, true);
+    assert.equal(audienceReadiness.body.safety.noQueueMutation, true);
+    assert.equal(audienceReadiness.body.safety.noProviderMutation, true);
+    assert.equal(audienceReadiness.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(audienceReadiness.body).includes('correct-horse-battery-staple'), false);
+
     const missingDetail = await request('/api/contacts/detail?email=missing@example.test', { headers: { cookie } });
     assert.equal(missingDetail.status, 404);
     assert.equal(missingDetail.body.error, 'contact_not_found');
@@ -1467,6 +1489,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_audience_readiness_review_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
   });
 });
