@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow A suppression review plan: reason/source/domain suppression review rows and samples with explicit no-auto-unsuppression guardrails and no contact/suppression mutation.
 - Flow A contact browser export preview: filtered CSV preview for contacts/source/consent/suppression/risk metadata without file writes or audience/contact mutation.
 - Flow D remote PostgreSQL scheduler timeline: add bounded upcoming-run forecast API/UI for manual run review windows, keeping all worker/remote/contact/delivery actions locked.
 - Flow D remote PostgreSQL scheduler control: add pause/re-enable schedule status API/UI with explicit approval for re-enable and no worker/remote/contact/delivery mutation.

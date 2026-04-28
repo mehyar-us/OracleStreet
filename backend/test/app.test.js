@@ -241,6 +241,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Source hygiene action plan/);
   assert.match(html, /api\/contacts\/source-quality-matrix/);
   assert.match(html, /api\/contacts\/browser\/export-preview/);
+  assert.match(html, /api\/contacts\/suppression-review/);
   assert.match(html, /Source × domain quality matrix/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
   assert.match(html, /Dedupe\/merge planner/);
@@ -1438,6 +1439,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthSourceHygiene.status, 401);
     const unauthSourceMatrix = await request('/api/contacts/source-quality-matrix');
     assert.equal(unauthSourceMatrix.status, 401);
+    const unauthSuppressionReview = await request('/api/contacts/suppression-review');
+    assert.equal(unauthSuppressionReview.status, 401);
     const unauthAudienceReadiness = await request('/api/contacts/audience-readiness');
     assert.equal(unauthAudienceReadiness.status, 401);
     const unauthMerge = await request('/api/contacts/dedupe-merge-plan');
@@ -1547,6 +1550,20 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(sourceMatrix.body.safety.noSegmentMutation, true);
     assert.equal(sourceMatrix.body.realDeliveryAllowed, false);
 
+    const suppressionReview = await request('/api/contacts/suppression-review?source=support%20imports', { headers: { cookie } });
+    assert.equal(suppressionReview.status, 200);
+    assert.equal(suppressionReview.body.mode, 'contact-suppression-review-plan');
+    assert.equal(suppressionReview.body.totals.suppressedContacts, 1);
+    assert.ok(suppressionReview.body.totals.manual + suppressionReview.body.totals.bounces >= 1);
+    assert.equal(suppressionReview.body.totals.automaticUnsuppressionAllowed, 0);
+    assert.ok(suppressionReview.body.reasonRows.some((row) => row.reviewGate === true));
+    assert.ok(suppressionReview.body.sourceRows.some((row) => row.key === 'support imports' && row.total === 1));
+    assert.ok(suppressionReview.body.samples.some((contact) => contact.email === 'support@example.test' && contact.suppressionReason));
+    assert.equal(suppressionReview.body.safety.recommendationOnly, true);
+    assert.equal(suppressionReview.body.safety.noSuppressionMutation, true);
+    assert.equal(suppressionReview.body.safety.automaticUnsuppressionAllowed, false);
+    assert.equal(suppressionReview.body.realDeliveryAllowed, false);
+
     const audienceReadiness = await request('/api/contacts/audience-readiness?domain=example.test', { headers: { cookie } });
     assert.equal(audienceReadiness.status, 200);
     assert.equal(audienceReadiness.body.mode, 'contact-audience-readiness-review');
@@ -1587,6 +1604,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_matrix_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_suppression_review_plan_view' && event.details?.suppressedContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_audience_readiness_review_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
   });

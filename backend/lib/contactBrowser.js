@@ -621,3 +621,100 @@ export const contactAudienceReadinessReview = ({ search = '', source = '', domai
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactSuppressionReviewPlan = ({ source = '', domain = '', reason = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, suppression: 'suppressed', staleAfterDays, limit: 500 });
+  const reasonFilter = clean(reason);
+  const reviewLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const suppressed = (browser.contacts || []).filter((contact) => {
+    if (!reasonFilter) return true;
+    return clean(contact.suppression?.reason).includes(reasonFilter);
+  });
+  const reasonRows = new Map();
+  const sourceRows = new Map();
+  const domainRows = new Map();
+  const add = (map, key, contact) => {
+    const row = map.get(key) || { key, total: 0, bounced: 0, complained: 0, unsubscribed: 0, manual: 0, stale: 0, roleAccounts: 0 };
+    row.total += 1;
+    const suppressionReason = clean(contact.suppression?.reason || 'unknown');
+    if (suppressionReason.includes('bounce')) row.bounced += 1;
+    if (suppressionReason.includes('complaint')) row.complained += 1;
+    if (suppressionReason.includes('unsubscribe')) row.unsubscribed += 1;
+    if (suppressionReason.includes('manual')) row.manual += 1;
+    if ((contact.riskFlags || []).includes('stale_contact')) row.stale += 1;
+    if ((contact.riskFlags || []).includes('role_account')) row.roleAccounts += 1;
+    map.set(key, row);
+  };
+  for (const contact of suppressed) {
+    add(reasonRows, contact.suppression?.reason || 'unknown_reason', contact);
+    add(sourceRows, contact.source || 'unknown_source', contact);
+    add(domainRows, contact.domain || domainOf(contact.email) || 'unknown_domain', contact);
+  }
+  const finish = (row) => ({
+    ...row,
+    reviewGate: true,
+    repermissionAllowedAutomatically: false,
+    recommendation: row.complained > 0
+      ? 'keep_suppressed_and_review_complaint_source_before_any_future_audience_use'
+      : row.bounced > 0
+        ? 'keep_suppressed_until_bounce_root_cause_and_address_validity_are_reviewed'
+        : row.unsubscribed > 0
+          ? 'honor_unsubscribe_and_do_not_repermission_without_new_explicit_consent'
+          : 'manual_operator_review_required_before_any_status_change',
+    realDeliveryAllowed: false
+  });
+  const recommendations = [];
+  if (suppressed.some((contact) => clean(contact.suppression?.reason).includes('complaint'))) recommendations.push('complaints_are_hard_stop_keep_suppressed_and_review_source_quality');
+  if (suppressed.some((contact) => clean(contact.suppression?.reason).includes('bounce'))) recommendations.push('bounce_suppressions_require_address_validity_review_before_any_future_repermission');
+  if (suppressed.some((contact) => clean(contact.suppression?.reason).includes('unsubscribe'))) recommendations.push('unsubscribes_must_remain_suppressed_without_new_explicit_consent');
+  if (!recommendations.length) recommendations.push(suppressed.length ? 'manual_review_required_before_any_suppression_status_change' : 'no_suppressed_contacts_match_current_filters');
+
+  return {
+    ok: true,
+    mode: 'contact-suppression-review-plan',
+    filters: { ...browser.filters, suppressionReason: reasonFilter, limit: reviewLimit },
+    totals: {
+      suppressedContacts: suppressed.length,
+      reasons: reasonRows.size,
+      sources: sourceRows.size,
+      domains: domainRows.size,
+      complaints: suppressed.filter((contact) => clean(contact.suppression?.reason).includes('complaint')).length,
+      bounces: suppressed.filter((contact) => clean(contact.suppression?.reason).includes('bounce')).length,
+      unsubscribes: suppressed.filter((contact) => clean(contact.suppression?.reason).includes('unsubscribe')).length,
+      manual: suppressed.filter((contact) => clean(contact.suppression?.reason).includes('manual')).length,
+      automaticUnsuppressionAllowed: 0
+    },
+    reasonRows: [...reasonRows.values()].map(finish).sort((a, b) => b.total - a.total || a.key.localeCompare(b.key)).slice(0, reviewLimit),
+    sourceRows: [...sourceRows.values()].map(finish).sort((a, b) => b.total - a.total || a.key.localeCompare(b.key)).slice(0, reviewLimit),
+    domainRows: [...domainRows.values()].map(finish).sort((a, b) => b.total - a.total || a.key.localeCompare(b.key)).slice(0, reviewLimit),
+    samples: suppressed.slice(0, reviewLimit).map((contact) => ({
+      id: contact.id || null,
+      email: contact.email,
+      source: contact.source || null,
+      domain: contact.domain || null,
+      suppressionReason: contact.suppression?.reason || null,
+      suppressionSource: contact.suppression?.source || null,
+      suppressedAt: contact.suppression?.createdAt || contact.suppression?.updatedAt || null,
+      riskFlags: contact.riskFlags || [],
+      recommendation: clean(contact.suppression?.reason).includes('unsubscribe') ? 'honor_unsubscribe_no_repermission_without_new_explicit_consent' : 'keep_suppressed_until_manual_operator_review',
+      realDeliveryAllowed: false
+    })),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticUnsuppressionAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
