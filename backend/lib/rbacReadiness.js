@@ -1,9 +1,9 @@
-import { listAdminUsers, permissionsForRole, ROLE_MATRIX } from './adminUsers.js';
+import { listAdminSessions, listAdminUsers, permissionsForRole, ROLE_MATRIX } from './adminUsers.js';
 
 const cleanEmail = (value) => String(value || '').trim().toLowerCase();
 
 export const RBAC_ROUTE_POLICY = [
-  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'GET /api/admin/sessions', 'POST /api/admin/sessions/revoke-user', 'GET /api/platform/rbac-effective-access', 'GET /api/platform/rbac-role-change-preview', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
+  { surface: 'admin_users', permission: 'manage_users', routes: ['GET /api/admin/users', 'GET /api/admin/sessions', 'POST /api/admin/sessions/revoke-user', 'GET /api/platform/rbac-effective-access', 'GET /api/platform/rbac-role-change-preview', 'GET /api/platform/rbac-operations-review', 'POST /api/admin/users/invite-plan', 'POST /api/admin/users/invite', 'POST /api/admin/users/password-reset-plan'] },
   { surface: 'audit_log', permission: 'view_audit_log', routes: ['GET /api/audit-log'] },
   { surface: 'contacts', permission: 'manage_contacts', routes: ['POST /api/contacts/import', 'POST /api/contacts/import/validate'] },
   { surface: 'contact_metadata', permission: 'view_contacts_metadata', routes: ['GET /api/contacts', 'GET /api/contacts/browser', 'GET /api/contacts/browser/export-preview', 'GET /api/contacts/campaign-fit-plan', 'GET /api/contacts/campaign-handoff-preview', 'GET /api/contacts/consent-provenance-review', 'GET /api/contacts/detail', 'GET /api/contacts/domain-risk-plan', 'GET /api/contacts/engagement-recency-plan', 'GET /api/contacts/source-detail-review', 'GET /api/contacts/source-quality', 'GET /api/contacts/source-hygiene-plan', 'GET /api/contacts/source-quarantine-plan', 'GET /api/contacts/source-quality-matrix', 'GET /api/contacts/risk-triage', 'GET /api/contacts/repermission-plan', 'GET /api/contacts/suppression-review', 'GET /api/contacts/audience-exclusion-preview', 'GET /api/contacts/audience-readiness', 'GET /api/list-hygiene/plan', 'GET /api/contacts/dedupe-merge-plan'] },
@@ -92,6 +92,114 @@ export const rbacEffectiveAccess = ({ currentEmail = null, currentRole = 'admin'
       realDeliveryAllowed: false
     },
     persistenceMode: directory.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
+
+
+export const rbacOperationsReview = ({ currentEmail = null, currentRole = 'admin' } = {}) => {
+  const access = rbacEffectiveAccess({ currentEmail, currentRole });
+  const sessions = listAdminSessions();
+  const sessionsByEmail = new Map();
+  for (const session of sessions.sessions || []) {
+    const key = cleanEmail(session.email);
+    const row = sessionsByEmail.get(key) || { email: key, active: 0, revoked: 0, expired: 0, total: 0, samples: [] };
+    row.total += 1;
+    if (session.status === 'active') row.active += 1;
+    else if (session.status === 'revoked') row.revoked += 1;
+    else if (session.status === 'expired') row.expired += 1;
+    if (row.samples.length < 3) row.samples.push({ sessionId: session.sessionId, status: session.status, createdAt: session.createdAt, expiresAt: session.expiresAt });
+    sessionsByEmail.set(key, row);
+  }
+  const userRows = (access.users || []).map((user) => {
+    const sessionRow = sessionsByEmail.get(cleanEmail(user.email)) || { active: 0, revoked: 0, expired: 0, total: 0, samples: [] };
+    const issues = [];
+    if (!user.passwordConfigured && !user.invitePending) issues.push('password_not_configured');
+    if (user.invitePending) issues.push('pending_invite_requires_out_of_band_followup');
+    if (user.resetPending) issues.push('pending_password_reset_requires_out_of_band_followup');
+    if (sessionRow.active > 3) issues.push('many_active_sessions_review_for_device_hygiene');
+    if (user.role === 'owner') issues.push('owner_role_review_for_owner_only_use');
+    return {
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      permissionCount: user.permissionCount,
+      allowedSurfaceCount: user.allowedSurfaceCount,
+      blockedSurfaceCount: user.blockedSurfaceCount,
+      activeSessions: sessionRow.active,
+      revokedSessions: sessionRow.revoked,
+      expiredSessions: sessionRow.expired,
+      sessionSamples: sessionRow.samples,
+      invitePending: user.invitePending,
+      resetPending: user.resetPending,
+      passwordConfigured: user.passwordConfigured,
+      issues,
+      recommendedAction: issues.includes('pending_invite_requires_out_of_band_followup')
+        ? 'complete_or_cancel_manual_invite_followup'
+        : issues.includes('pending_password_reset_requires_out_of_band_followup')
+          ? 'complete_or_expire_manual_password_reset_followup'
+          : issues.includes('many_active_sessions_review_for_device_hygiene')
+            ? 'consider_revoking_stale_sessions_after_operator_review'
+            : 'access_posture_ok_for_current_role',
+      userMutation: false,
+      roleMutation: false,
+      sessionMutation: false,
+      realDeliveryAllowed: false
+    };
+  });
+  const routeRows = (access.routePolicy || []).map((policy) => ({
+    surface: policy.surface,
+    permission: policy.permission,
+    routeCount: policy.routes.length,
+    rolesAllowed: ROLE_MATRIX.filter((role) => permissionsForRole(role.role).includes(policy.permission)).map((role) => role.role),
+    routes: policy.routes,
+    mutation: false,
+    realDeliveryAllowed: false
+  }));
+  return {
+    ok: true,
+    mode: 'rbac-operations-review',
+    currentUser: access.currentUser,
+    totals: {
+      usersReviewed: userRows.length,
+      activeSessions: userRows.reduce((sum, row) => sum + row.activeSessions, 0),
+      pendingInvites: userRows.filter((row) => row.invitePending).length,
+      pendingResets: userRows.filter((row) => row.resetPending).length,
+      usersNeedingReview: userRows.filter((row) => row.issues.length > 0).length,
+      routeSurfaces: routeRows.length,
+      routeCount: routeRows.reduce((sum, row) => sum + row.routeCount, 0),
+      automaticUserMutationAllowed: 0,
+      automaticRoleMutationAllowed: 0,
+      automaticSessionMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    userRows,
+    routeRows,
+    roleCoverage: access.roleCoverage,
+    recommendations: [
+      userRows.some((row) => row.invitePending) ? 'clear_pending_invites_with_manual_out_of_band_followup' : 'no_pending_invite_cleanup_needed',
+      userRows.some((row) => row.resetPending) ? 'clear_pending_password_resets_with_manual_out_of_band_followup' : 'no_pending_reset_cleanup_needed',
+      userRows.some((row) => row.activeSessions > 3) ? 'review_users_with_many_active_sessions_before_role_changes' : 'session_counts_within_review_threshold',
+      'keep_route_policy_review_read_only_before_any_role_or_session_mutation'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      operationsReviewOnly: true,
+      noUserMutation: true,
+      noRoleMutation: true,
+      noSessionMutation: true,
+      noPasswordOutput: true,
+      noTokenOutput: true,
+      noEmailSent: true,
+      noDeliveryUnlock: true,
+      automaticUserMutationAllowed: false,
+      automaticRoleMutationAllowed: false,
+      automaticSessionMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: access.persistenceMode,
+    sessionPersistenceMode: sessions.persistenceMode,
     realDeliveryAllowed: false
   };
 };

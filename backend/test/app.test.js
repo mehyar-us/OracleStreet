@@ -358,6 +358,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/platform\/rbac-policy/);
   assert.match(html, /Route permission enforcement/);
   assert.match(html, /api\/platform\/rbac-effective-access/);
+  assert.match(html, /api\/platform\/rbac-operations-review/);
+  assert.match(html, /RBAC operations review/);
   assert.match(html, /Effective access review/);
   assert.match(html, /api\/platform\/rbac-role-change-preview/);
   assert.match(html, /Role change impact preview/);
@@ -4606,6 +4608,8 @@ test('RBAC policy endpoint reports route permissions and denies insufficient rol
     assert.equal(unauth.status, 401);
     const unauthEffective = await request('/api/platform/rbac-effective-access');
     assert.equal(unauthEffective.status, 401);
+    const unauthOperations = await request('/api/platform/rbac-operations-review');
+    assert.equal(unauthOperations.status, 401);
     const unauthRolePreview = await request('/api/platform/rbac-role-change-preview');
     assert.equal(unauthRolePreview.status, 401);
 
@@ -4693,6 +4697,25 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
     assert.equal(effective.body.realDeliveryAllowed, false);
 
 
+    const operations = await request('/api/platform/rbac-operations-review', { headers: { cookie } });
+    assert.equal(operations.status, 200);
+    assert.equal(operations.body.mode, 'rbac-operations-review');
+    assert.ok(operations.body.totals.usersReviewed >= 1);
+    assert.ok(operations.body.totals.activeSessions >= 1);
+    assert.ok(operations.body.totals.routeSurfaces >= 1);
+    assert.equal(operations.body.totals.automaticUserMutationAllowed, 0);
+    assert.equal(operations.body.totals.automaticRoleMutationAllowed, 0);
+    assert.equal(operations.body.totals.automaticSessionMutationAllowed, 0);
+    assert.ok(operations.body.userRows.some((row) => row.email === 'admin@example.test' && row.activeSessions >= 1));
+    assert.ok(operations.body.routeRows.some((row) => row.surface === 'admin_users' && row.permission === 'manage_users'));
+    assert.equal(operations.body.safety.operationsReviewOnly, true);
+    assert.equal(operations.body.safety.noUserMutation, true);
+    assert.equal(operations.body.safety.noRoleMutation, true);
+    assert.equal(operations.body.safety.noSessionMutation, true);
+    assert.equal(operations.body.safety.noTokenOutput, true);
+    assert.equal(operations.body.realDeliveryAllowed, false);
+
+
     const rolePreview = await request('/api/platform/rbac-role-change-preview?email=admin@example.test&targetRole=admin', { headers: { cookie } });
     assert.equal(rolePreview.status, 200);
     assert.equal(rolePreview.body.mode, 'rbac-role-change-impact-preview');
@@ -4740,6 +4763,7 @@ test('admin user directory and invite-plan workflow require admin and avoid secr
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_directory_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_session_directory_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'rbac_effective_access_review'));
+    assert.ok(audit.body.events.some((event) => event.action === 'rbac_operations_review' && event.details?.noSessionMutation === true));
     assert.ok(audit.body.events.some((event) => event.action === 'rbac_role_change_impact_preview'));
     assert.ok(audit.body.events.some((event) => event.action === 'admin_user_invite_plan'));
   });

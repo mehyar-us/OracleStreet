@@ -22,7 +22,7 @@ import { mtaOperationsDashboard, providerReadinessDrilldown } from './lib/mtaOpe
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
 import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './lib/pmtaAccountingImport.js';
 import { getRateLimitConfig } from './lib/rateLimits.js';
-import { RBAC_ROUTE_POLICY, rbacEffectiveAccess, rbacReadiness, rbacRoleChangeImpactPreview } from './lib/rbacReadiness.js';
+import { RBAC_ROUTE_POLICY, rbacEffectiveAccess, rbacOperationsReview, rbacReadiness, rbacRoleChangeImpactPreview } from './lib/rbacReadiness.js';
 import { repositoryReadiness } from './lib/repositoryReadiness.js';
 import { evaluateAutoPause, evaluateDomainReputationRollup, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
@@ -690,6 +690,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = rbacEffectiveAccess({ currentEmail: session.email, currentRole: session.role });
       recordAuditEvent({ action: 'rbac_effective_access_review', actorEmail: session.email, target: session.role, status: 'ok', details: { usersReviewed: result.totals.usersReviewed, rolesReviewed: result.totals.rolesReviewed, routeSurfaces: result.totals.routeSurfaces, noUserMutation: true, noRoleMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/platform/rbac-operations-review' || url.pathname === '/platform/rbac-operations-review') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_users');
+      if (!session) return;
+      const result = rbacOperationsReview({ currentEmail: session.email, currentRole: session.role });
+      recordAuditEvent({ action: 'rbac_operations_review', actorEmail: session.email, target: session.role, status: 'ok', details: { usersReviewed: result.totals.usersReviewed, activeSessions: result.totals.activeSessions, usersNeedingReview: result.totals.usersNeedingReview, routeSurfaces: result.totals.routeSurfaces, noUserMutation: true, noRoleMutation: true, noSessionMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 
