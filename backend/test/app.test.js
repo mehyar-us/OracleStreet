@@ -312,6 +312,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Seed observations/);
   assert.match(html, /api\/email\/controlled-live-test\/proof-packet/);
   assert.match(html, /Controlled proof packet/);
+  assert.match(html, /api\/campaigns\/calendar\/capacity-forecast/);
+  assert.match(html, /Capacity forecast/);
   assert.match(html, /api\/contacts\/audience-readiness/);
   assert.match(html, /Audience readiness review/);
   assert.match(html, /Save auto-pause thresholds/);
@@ -3374,6 +3376,8 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(unauthDrilldown.status, 401);
     const unauthReschedule = await request('/api/campaigns/calendar/reschedule-plan?domains=calendar.test');
     assert.equal(unauthReschedule.status, 401);
+    const unauthCapacityForecast = await request('/api/campaigns/calendar/capacity-forecast?domains=calendar.test');
+    assert.equal(unauthCapacityForecast.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3468,6 +3472,20 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(reschedulePlan.body.safety.noProviderMutation, true);
     assert.equal(reschedulePlan.body.realDeliveryAllowed, false);
 
+    const capacityForecast = await request('/api/campaigns/calendar/capacity-forecast?domains=calendar.test,secondary-calendar.test&days=7&targetCount=1', { headers: { cookie } });
+    assert.equal(capacityForecast.status, 200);
+    assert.equal(capacityForecast.body.mode, 'campaign-calendar-capacity-forecast');
+    assert.equal(capacityForecast.body.targetCount, 1);
+    assert.ok(capacityForecast.body.totals.domainsWithTargetCapacity >= 1);
+    assert.ok(capacityForecast.body.bestNextSlot?.domain);
+    assert.ok(capacityForecast.body.domainForecasts.some((entry) => entry.domain === 'calendar.test' && entry.earliestSafeDate));
+    assert.ok(capacityForecast.body.recommendations.includes('use_best_next_slot_for_operator_review_only'));
+    assert.equal(capacityForecast.body.safety.forecastOnly, true);
+    assert.equal(capacityForecast.body.safety.noScheduleMutation, true);
+    assert.equal(capacityForecast.body.safety.noQueueMutation, true);
+    assert.equal(capacityForecast.body.safety.noProviderMutation, true);
+    assert.equal(capacityForecast.body.realDeliveryAllowed, false);
+
     const second = await request('/api/campaigns', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -3494,6 +3512,7 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_allocation_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_reschedule_plan_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_capacity_forecast_view'));
   });
 });
 

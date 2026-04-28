@@ -298,3 +298,77 @@ export const campaignCalendarReschedulePlan = ({ domains = '', startDate = null,
     realDeliveryAllowed: false
   };
 };
+
+export const campaignCalendarCapacityForecast = ({ domains = '', startDate = null, days = 30, targetCount = 1 } = {}) => {
+  const allocation = campaignCalendarAllocation({ domains, startDate, days });
+  const plannedCount = Math.max(1, Math.min(100000, Number(targetCount) || 1));
+  const domainForecasts = (allocation.domainAllocations || []).map((entry) => {
+    const daysWithCapacity = (entry.days || []).filter((day) => (day.remainingCap || 0) >= plannedCount);
+    const openDays = (entry.days || []).filter((day) => (day.remainingCap || 0) > 0 && !day.capExceeded);
+    const blockedDays = (entry.days || []).filter((day) => day.capExceeded || (day.remainingCap || 0) <= 0);
+    const tightDays = (entry.days || []).filter((day) => !day.capExceeded && (day.remainingCap || 0) > 0 && (day.remainingCap || 0) <= Math.max(1, Math.ceil((day.dailyCap || 0) * 0.2)));
+    const totalRemaining = (entry.days || []).reduce((sum, day) => sum + Math.max(0, day.remainingCap || 0), 0);
+    const peakDay = [...(entry.days || [])].sort((a, b) => (b.remainingCap || 0) - (a.remainingCap || 0))[0] || null;
+    return {
+      domain: entry.domain,
+      targetCount: plannedCount,
+      earliestSafeDate: daysWithCapacity[0]?.date || null,
+      openDays: openDays.length,
+      blockedDays: blockedDays.length,
+      tightDays: tightDays.length,
+      overCapDays: entry.totals.overCapDays,
+      totalRemainingCapacity: totalRemaining,
+      peakRemainingDay: peakDay ? { date: peakDay.date, remainingCap: peakDay.remainingCap, dailyCap: peakDay.dailyCap, scheduledCount: peakDay.scheduledCount, realDeliveryAllowed: false } : null,
+      readiness: daysWithCapacity.length > 0 ? 'has_capacity_for_target_dry_run' : 'no_single_day_capacity_for_target_in_window',
+      recommendation: daysWithCapacity.length > 0
+        ? 'schedule_future_dry_run_on_earliest_safe_date_after_operator_review'
+        : 'reduce_audience_split_campaign_or_extend_warmup_window',
+      realDeliveryAllowed: false
+    };
+  });
+  const bestDomain = [...domainForecasts]
+    .filter((row) => row.earliestSafeDate)
+    .sort((a, b) => a.earliestSafeDate.localeCompare(b.earliestSafeDate) || b.totalRemainingCapacity - a.totalRemainingCapacity)[0] || null;
+
+  return {
+    ok: true,
+    mode: 'campaign-calendar-capacity-forecast',
+    startDate: allocation.startDate,
+    days: allocation.days,
+    targetCount: plannedCount,
+    totals: {
+      domains: domainForecasts.length,
+      domainsWithTargetCapacity: domainForecasts.filter((row) => row.earliestSafeDate).length,
+      blockedDomains: domainForecasts.filter((row) => !row.earliestSafeDate).length,
+      totalRemainingCapacity: domainForecasts.reduce((sum, row) => sum + row.totalRemainingCapacity, 0),
+      tightDays: domainForecasts.reduce((sum, row) => sum + row.tightDays, 0),
+      overCapDays: domainForecasts.reduce((sum, row) => sum + row.overCapDays, 0)
+    },
+    bestNextSlot: bestDomain ? {
+      domain: bestDomain.domain,
+      date: bestDomain.earliestSafeDate,
+      targetCount: plannedCount,
+      scheduleMutation: false,
+      realDeliveryAllowed: false
+    } : null,
+    domainForecasts,
+    recommendations: [
+      bestDomain ? 'use_best_next_slot_for_operator_review_only' : 'no_domain_has_target_capacity_in_window',
+      domainForecasts.some((row) => row.overCapDays > 0) ? 'resolve_over_cap_days_before_new_campaign_schedules' : 'no_over_cap_days_in_forecast',
+      domainForecasts.some((row) => row.tightDays > 0) ? 'avoid_filling_tight_days_without_reputation_review' : 'forecast_capacity_not_tight'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      forecastOnly: true,
+      noScheduleMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};
