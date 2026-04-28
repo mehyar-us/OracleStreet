@@ -1326,3 +1326,118 @@ export const contactEngagementRecencyPlan = ({ source = '', domain = '', staleAf
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactConsentProvenanceReview = ({ source = '', domain = '', consentStatus = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, consentStatus, staleAfterDays, limit: 500 });
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const consentRows = new Map();
+  const sourceRows = new Map();
+  const issueRows = new Map();
+  const add = (map, key, contact, issues) => {
+    const row = map.get(key) || { key, contacts: 0, explicitConsent: 0, missingConsent: 0, missingSource: 0, stale: 0, suppressed: 0, risky: 0, issues: new Set(), domains: new Set(), sources: new Set() };
+    row.contacts += 1;
+    if (['opt_in', 'double_opt_in'].includes(contact.consentStatus)) row.explicitConsent += 1;
+    else row.missingConsent += 1;
+    if (!contact.source) row.missingSource += 1;
+    if ((contact.riskFlags || []).includes('stale_contact')) row.stale += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    if ((contact.riskFlags || []).length) row.risky += 1;
+    for (const issue of issues) row.issues.add(issue);
+    row.domains.add(contact.domain || domainOf(contact.email) || 'unknown_domain');
+    row.sources.add(contact.source || 'unknown_source');
+    map.set(key, row);
+  };
+  const samples = [];
+  for (const contact of browser.contacts || []) {
+    const issues = [];
+    if (!['opt_in', 'double_opt_in'].includes(contact.consentStatus)) issues.push('missing_explicit_consent');
+    if (!contact.source) issues.push('missing_source_metadata');
+    if ((contact.riskFlags || []).includes('stale_contact')) issues.push('stale_consent_or_source_record');
+    if (contact.suppressed) issues.push('suppressed_do_not_contact');
+    if ((contact.eventCounts?.complaint || 0) > 0) issues.push('complaint_history_do_not_contact');
+    if ((contact.eventCounts?.bounce || 0) > 0) issues.push('bounce_history_review_required');
+    if (!issues.length) issues.push('provenance_ready_for_dry_run_planning');
+    add(consentRows, contact.consentStatus || 'missing_consent_status', contact, issues);
+    add(sourceRows, contact.source || 'unknown_source', contact, issues);
+    for (const issue of issues) add(issueRows, issue, contact, issues);
+    samples.push({
+      email: contact.email,
+      source: contact.source || null,
+      consentStatus: contact.consentStatus || null,
+      domain: contact.domain || null,
+      issues,
+      provenanceReady: issues.length === 1 && issues[0] === 'provenance_ready_for_dry_run_planning',
+      recommendedAction: issues.includes('suppressed_do_not_contact') || issues.includes('complaint_history_do_not_contact')
+        ? 'exclude_from_campaign_and_repermission_until_separate_human_legal_review'
+        : issues.includes('missing_explicit_consent')
+          ? 'repair_or_collect_explicit_permission_before_campaign_or_warmup_use'
+          : issues.includes('missing_source_metadata')
+            ? 'repair_source_metadata_before_segment_use'
+            : issues.includes('stale_consent_or_source_record')
+              ? 'refresh_permission_metadata_before_campaign_use'
+              : 'eligible_for_dry_run_audience_planning_with_suppression_checks',
+      realDeliveryAllowed: false
+    });
+  }
+  const finish = (row) => ({
+    ...row,
+    issues: [...row.issues].sort(),
+    domains: row.domains.size,
+    sources: row.sources.size,
+    reviewGate: row.missingConsent > 0 || row.missingSource > 0 || row.stale > 0 || row.suppressed > 0,
+    recommendation: row.suppressed > 0
+      ? 'exclude_suppressed_contacts_and_preserve_do_not_contact_state'
+      : row.missingConsent > 0
+        ? 'repair_explicit_consent_metadata_before_campaign_use'
+        : row.missingSource > 0
+          ? 'repair_source_provenance_before_segment_use'
+          : row.stale > 0
+            ? 'refresh_stale_permission_records_before_campaign_use'
+            : 'provenance_clear_for_dry_run_planning_only',
+    automaticContactMutationAllowed: false,
+    realDeliveryAllowed: false
+  });
+  const consentStatusRows = [...consentRows.values()].map(finish).sort((a, b) => b.missingConsent - a.missingConsent || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const sourceProvenanceRows = [...sourceRows.values()].map(finish).sort((a, b) => b.missingConsent + b.missingSource + b.suppressed - (a.missingConsent + a.missingSource + a.suppressed) || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const issueSummaryRows = [...issueRows.values()].map(finish).sort((a, b) => b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const recommendations = [];
+  if (issueRows.has('suppressed_do_not_contact')) recommendations.push('preserve_suppression_and_exclude_do_not_contact_records_from_campaign_audiences');
+  if (issueRows.has('missing_explicit_consent')) recommendations.push('repair_explicit_permission_before_campaign_or_repermission_use');
+  if (issueRows.has('missing_source_metadata')) recommendations.push('repair_source_provenance_before_segment_or_import_scheduler_use');
+  if (issueRows.has('stale_consent_or_source_record')) recommendations.push('refresh_stale_permission_metadata_before_warmup_or_campaign_use');
+  if (!recommendations.length) recommendations.push(samples.length ? 'consent_provenance_clear_for_dry_run_planning_only' : 'import_contacts_before_consent_provenance_review');
+  return {
+    ok: true,
+    mode: 'contact-consent-provenance-review',
+    filters: { ...browser.filters, limit: rowLimit },
+    totals: {
+      matchedContacts: (browser.contacts || []).length,
+      explicitConsentContacts: samples.filter((row) => ['opt_in', 'double_opt_in'].includes(row.consentStatus)).length,
+      reviewRequiredContacts: samples.filter((row) => !row.provenanceReady).length,
+      suppressedContacts: samples.filter((row) => row.issues.includes('suppressed_do_not_contact')).length,
+      automaticContactMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    consentStatusRows,
+    sourceProvenanceRows,
+    issueSummaryRows,
+    samples: samples.slice(0, rowLimit),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticContactMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};

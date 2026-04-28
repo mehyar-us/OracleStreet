@@ -234,6 +234,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Cleanup planner/);
   assert.match(html, /Source quality/);
   assert.match(html, /api\/contacts\/detail/);
+  assert.match(html, /api\/contacts\/consent-provenance-review/);
   assert.match(html, /api\/contacts\/domain-risk-plan/);
   assert.match(html, /api\/contacts\/engagement-recency-plan/);
   assert.match(html, /Contact detail drilldown/);
@@ -1439,6 +1440,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauth.status, 401);
     const unauthDetail = await request('/api/contacts/detail?email=ada@example.test');
     assert.equal(unauthDetail.status, 401);
+    const unauthConsentProvenance = await request('/api/contacts/consent-provenance-review');
+    assert.equal(unauthConsentProvenance.status, 401);
     const unauthDomainRisk = await request('/api/contacts/domain-risk-plan');
     assert.equal(unauthDomainRisk.status, 401);
     const unauthEngagementRecency = await request('/api/contacts/engagement-recency-plan');
@@ -1530,6 +1533,22 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(detail.body.safety.noContactMutation, true);
     assert.equal(detail.body.safety.noQueueMutation, true);
     assert.equal(detail.body.realDeliveryAllowed, false);
+
+
+    const consentProvenance = await request('/api/contacts/consent-provenance-review?domain=example.test', { headers: { cookie } });
+    assert.equal(consentProvenance.status, 200);
+    assert.equal(consentProvenance.body.mode, 'contact-consent-provenance-review');
+    assert.equal(consentProvenance.body.totals.matchedContacts, 3);
+    assert.equal(consentProvenance.body.totals.explicitConsentContacts, 3);
+    assert.ok(consentProvenance.body.totals.reviewRequiredContacts >= 1);
+    assert.equal(consentProvenance.body.totals.automaticContactMutationAllowed, 0);
+    assert.ok(consentProvenance.body.consentStatusRows.some((row) => row.key === 'opt_in'));
+    assert.ok(consentProvenance.body.issueSummaryRows.some((row) => row.key === 'suppressed_do_not_contact' && row.reviewGate === true));
+    assert.ok(consentProvenance.body.samples.some((contact) => contact.email === 'support@example.test' && contact.issues.includes('suppressed_do_not_contact')));
+    assert.equal(consentProvenance.body.safety.recommendationOnly, true);
+    assert.equal(consentProvenance.body.safety.noContactMutation, true);
+    assert.equal(consentProvenance.body.safety.automaticContactMutationAllowed, false);
+    assert.equal(consentProvenance.body.realDeliveryAllowed, false);
 
 
     const domainRisk = await request('/api/contacts/domain-risk-plan?domain=example.test', { headers: { cookie } });
@@ -1707,6 +1726,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_export_preview' && event.details?.rowCount === 1));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_consent_provenance_review_view' && event.details?.automaticContactMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_domain_risk_plan_view' && event.details?.mxProbePerformed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_engagement_recency_plan_view' && event.details?.automaticQueueMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
