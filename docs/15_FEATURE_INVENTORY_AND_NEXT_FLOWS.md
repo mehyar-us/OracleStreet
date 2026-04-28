@@ -208,6 +208,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Recipient-domain reputation rollup over imported/dry-run delivery events with pause/throttle recommendations only.
 - Controlled one-recipient MTA live-test runbook gate without sending.
 - Controlled live-test proof audit log for manual/out-of-band one-recipient outcomes, provider message IDs, and dry-run/local-capture proof IDs without sending or mutating providers/queues.
+- Seed/live-proof inbox observation planner that summarizes manual proof outcomes and required observation fields without connecting to inboxes, polling mailboxes, sending, mutating queues/providers, or exposing secrets.
 - PostgreSQL runtime adapter for controlled live-test proof audits.
 - Bounce/complaint ingestion updates suppressions and event state.
 - Real delivery remains locked until final human approval.

@@ -158,6 +158,67 @@ export const listControlledLiveTestProofAudits = () => {
   };
 };
 
+export const planSeedInboxObservation = (env = process.env) => {
+  const readiness = controlledLiveTestReadiness(env);
+  const proofAudits = listControlledLiveTestProofAudits();
+  const records = proofAudits.records || [];
+  const outcomeCounts = records.reduce((counts, record) => ({ ...counts, [record.outcome]: (counts[record.outcome] || 0) + 1 }), {});
+  const observed = records.filter((record) => ['delivered_observed', 'bounce_observed', 'complaint_observed'].includes(record.outcome));
+  return {
+    ok: true,
+    mode: 'seed-inbox-observation-plan',
+    observationMode: 'manual_out_of_band_only',
+    readiness: {
+      controlledLiveTestReady: false,
+      blockers: readiness.blockers,
+      provider: readiness.provider.provider,
+      recipientConfigured: readiness.recipient.configured,
+      recipientOwned: readiness.recipient.owned
+    },
+    counts: {
+      proofAudits: records.length,
+      observedOutcomes: observed.length,
+      deliveredObserved: outcomeCounts.delivered_observed || 0,
+      bounceObserved: outcomeCounts.bounce_observed || 0,
+      complaintObserved: outcomeCounts.complaint_observed || 0,
+      manualOneMessageSent: outcomeCounts.manual_one_message_sent || 0,
+      blockedBeforeSend: outcomeCounts.blocked_before_send || 0,
+      notSent: outcomeCounts.not_sent || 0
+    },
+    latestObservations: records.slice(0, 10).map((record) => ({
+      id: record.id,
+      outcome: record.outcome,
+      recipient: record.recipient,
+      dryRunProofId: record.dryRunProofId,
+      providerMessageId: record.providerMessageId || null,
+      createdAt: record.createdAt
+    })),
+    requiredManualObservationFields: [
+      'seed_inbox_provider_or_mailbox_name_without_passwords',
+      'observed_outcome_delivered_bounce_complaint_or_not_seen',
+      'provider_message_id_if_manual_one_message_was_sent',
+      'timestamp_and_headers_summary_without_secrets',
+      'operator_notes_no_credentials_no_full_raw_message'
+    ],
+    nextSafeStep: records.length === 0
+      ? 'record_dry_run_or_local_capture_proof_before_any_manual_seed_observation'
+      : 'continue_manual_out_of_band_observation_and_record_results_in_proof_audit_only',
+    safety: {
+      noMailboxConnection: true,
+      noInboxPolling: true,
+      noNetworkProbe: true,
+      noSend: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSuppressionMutation: true,
+      noSecretOutput: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: proofAudits.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
+
 export const recordControlledLiveTestProofAudit = ({ recipientEmail, dryRunProofId, providerMessageId, outcome = 'not_sent', notes = '', actorEmail } = {}, env = process.env) => {
   const configuredRecipient = normalizeEmail(env.ORACLESTREET_CONTROLLED_TEST_RECIPIENT_EMAIL);
   const requestedRecipient = normalizeEmail(recipientEmail || configuredRecipient);

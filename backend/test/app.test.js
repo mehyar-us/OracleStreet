@@ -292,6 +292,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/email\/reputation\/auto-pause/);
   assert.match(html, /api\/email\/reputation\/domain-rollup/);
   assert.match(html, /Recipient-domain reputation rollup/);
+  assert.match(html, /api\/email\/controlled-live-test\/seed-observation/);
+  assert.match(html, /Seed observations/);
   assert.match(html, /Save auto-pause thresholds/);
   assert.match(html, /Evaluate auto-pause/);
   assert.match(html, /reporting-screen/);
@@ -3469,6 +3471,8 @@ test('controlled live test proof audit records manual outcomes without sending o
   }, async () => {
     const unauth = await request('/api/email/controlled-live-test/proof-audit');
     assert.equal(unauth.status, 401);
+    const unauthSeed = await request('/api/email/controlled-live-test/seed-observation');
+    assert.equal(unauthSeed.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3504,9 +3508,23 @@ test('controlled live test proof audit records manual outcomes without sending o
     assert.equal(list.body.records[0].providerMessageId, 'pmta-proof-001');
     assert.equal(list.body.realDeliveryAllowed, false);
 
+    const seedObservation = await request('/api/email/controlled-live-test/seed-observation', { headers: { cookie } });
+    assert.equal(seedObservation.status, 200);
+    assert.equal(seedObservation.body.mode, 'seed-inbox-observation-plan');
+    assert.equal(seedObservation.body.observationMode, 'manual_out_of_band_only');
+    assert.equal(seedObservation.body.counts.proofAudits, 1);
+    assert.equal(seedObservation.body.counts.manualOneMessageSent, 1);
+    assert.equal(seedObservation.body.safety.noMailboxConnection, true);
+    assert.equal(seedObservation.body.safety.noInboxPolling, true);
+    assert.equal(seedObservation.body.safety.noSend, true);
+    assert.equal(seedObservation.body.safety.noProviderMutation, true);
+    assert.equal(seedObservation.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(seedObservation.body).includes('pmta-secret'), false);
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_record'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_controlled_live_test_proof_audit_list'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_seed_inbox_observation_plan_view'));
   });
 });
 

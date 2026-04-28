@@ -6,7 +6,7 @@ import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
 import { campaignCalendar } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
-import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
+import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
@@ -496,6 +496,15 @@ export const createHandler = () => {
         return jsonResponse(res, result.ok ? 200 : 400, result);
       }
       return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/email/controlled-live-test/seed-observation' || url.pathname === '/email/controlled-live-test/seed-observation') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = planSeedInboxObservation();
+      recordAuditEvent({ action: 'email_seed_inbox_observation_plan_view', actorEmail: session.email, target: 'controlled-live-test', status: 'ok', details: { proofAudits: result.counts.proofAudits, observedOutcomes: result.counts.observedOutcomes, noMailboxConnection: true, noSend: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
     }
 
     if (url.pathname === '/api/email/domain-readiness' || url.pathname === '/email/domain-readiness') {
