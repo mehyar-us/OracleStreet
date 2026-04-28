@@ -818,6 +818,44 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(list.body.realSync, false);
     assert.equal(list.body.automaticPulls, false);
 
+    const pause = await request('/api/data-source-import-schedules/status', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ scheduleId: planned.body.schedule.id, enabled: false })
+    });
+    assert.equal(pause.status, 200);
+    assert.equal(pause.body.mode, 'data-source-import-schedule-status-update');
+    assert.equal(pause.body.schedule.enabled, false);
+    assert.equal(pause.body.schedule.status, 'paused_manual_schedule_plan');
+    assert.equal(pause.body.safety.noWorkerStarted, true);
+    assert.equal(pause.body.safety.noRemoteConnectionOpened, true);
+    assert.equal(pause.body.safety.noRowsPulled, true);
+    assert.equal(pause.body.safety.noContactMutation, true);
+    assert.equal(pause.body.realSync, false);
+    assert.equal(pause.body.automaticPulls, false);
+    assert.equal(pause.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(pause.body).includes('schedule-secret'), false);
+
+    const enableRejected = await request('/api/data-source-import-schedules/status', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ scheduleId: planned.body.schedule.id, enabled: true, approvalPhrase: 'wrong' })
+    });
+    assert.equal(enableRejected.status, 400);
+    assert.ok(enableRejected.body.errors.includes('exact_remote_import_schedule_approval_phrase_required'));
+    assert.equal(enableRejected.body.scheduleMutation, false);
+
+    const enable = await request('/api/data-source-import-schedules/status', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ scheduleId: planned.body.schedule.id, enabled: true, approvalPhrase: 'I_APPROVE_REMOTE_POSTGRESQL_IMPORT_SCHEDULE_PLAN' })
+    });
+    assert.equal(enable.status, 200);
+    assert.equal(enable.body.schedule.enabled, true);
+    assert.equal(enable.body.schedule.status, 'approved_manual_schedule_plan');
+    assert.equal(enable.body.safety.noWorkerStarted, true);
+    assert.equal(enable.body.realDeliveryAllowed, false);
+
     const worker = await request('/api/data-source-import-schedules/worker-plan', { headers: { cookie } });
     assert.equal(worker.status, 200);
     assert.equal(worker.body.mode, 'data-source-import-scheduler-worker-plan');
@@ -871,6 +909,7 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
 
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_plan'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_status_update' && event.details?.scheduleMutation === true));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_audit_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_worker_plan_view'));

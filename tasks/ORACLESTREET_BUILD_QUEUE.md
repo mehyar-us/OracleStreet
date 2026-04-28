@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow D remote PostgreSQL scheduler control: add pause/re-enable schedule status API/UI with explicit approval for re-enable and no worker/remote/contact/delivery mutation.
 - Flow C RBAC session control: add manage_users-protected user-session revocation from the admin UI with keep-current-self-session option and audit trail.
 - Flow C RBAC session ledger: add token-safe admin session directory API/UI for active/revoked/expired sessions, protected by manage_users and audited as read-only.
 - Flow C RBAC hardening: successful admin role updates now revoke target user sessions and auth checks validate the session ledger when available; route policy coverage also includes recent contact matrix and warm-up board routes.

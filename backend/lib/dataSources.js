@@ -290,6 +290,20 @@ const saveImportScheduleToPostgres = (schedule) => {
   return pgRowToImportSchedule(rows[0]);
 };
 
+
+const updateImportScheduleStatusInPostgres = ({ scheduleId, enabled, status, actorEmail, updatedAt }) => {
+  const rows = runLocalPgRows(`
+    UPDATE data_source_import_schedules
+    SET enabled = ${enabled ? 'true' : 'false'},
+      status = ${sqlLiteral(status)},
+      actor_email = ${sqlLiteral(actorEmail)},
+      updated_at = ${sqlLiteral(updatedAt)}
+    WHERE id = ${sqlLiteral(scheduleId)}
+    RETURNING id, data_source_id, data_source_name, status, enabled::text, interval_hours::text, next_run_preview_at::text, projected_sql, query_limit::text, timeout_ms::text, mapping::text, validation::text, safety::text, coalesce(actor_email, ''), created_at::text, coalesce(updated_at::text, '');
+  `);
+  return rows[0] ? pgRowToImportSchedule(rows[0]) : null;
+};
+
 const secretKeyMaterial = () => String(process.env.ORACLESTREET_DATA_SOURCE_SECRET_KEY || '').trim();
 
 const encryptionReadiness = () => {
@@ -1250,6 +1264,16 @@ export const createDataSourceImportSchedule = ({ dataSourceId, sql, limit = 100,
   };
 };
 
+
+const getDataSourceImportScheduleById = (scheduleId) => {
+  const cleanId = String(scheduleId || '').trim();
+  if (!cleanId) return null;
+  const memorySchedule = importSchedules.get(cleanId);
+  if (memorySchedule) return memorySchedule;
+  const listed = listDataSourceImportSchedules();
+  return (listed.schedules || []).find((schedule) => schedule.id === cleanId) || null;
+};
+
 export const listDataSourceImportSchedules = () => {
   if (isPgRepositoryEnabled('data_source_import_schedules')) {
     try {
@@ -1276,6 +1300,68 @@ export const listDataSourceImportSchedules = () => {
     realSync: false,
     automaticPulls: false,
     persistenceMode: isPgRepositoryEnabled('data_source_import_schedules') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-connection-enabled',
+    realDeliveryAllowed: false
+  };
+};
+
+
+export const updateDataSourceImportScheduleStatus = ({ scheduleId = '', enabled = false, approvalPhrase = '', actorEmail = null } = {}) => {
+  const cleanId = String(scheduleId || '').trim();
+  const schedule = getDataSourceImportScheduleById(cleanId);
+  const wantsEnabled = Boolean(enabled);
+  const errors = [];
+  if (!schedule) errors.push('schedule_not_found');
+  if (wantsEnabled && approvalPhrase !== requiredRemoteImportScheduleApprovalPhrase) errors.push('exact_remote_import_schedule_approval_phrase_required');
+  if (errors.length > 0) {
+    return { ok: false, mode: 'data-source-import-schedule-status-update', errors, scheduleId: cleanId || null, scheduleMutation: false, realSync: false, automaticPulls: false, realDeliveryAllowed: false };
+  }
+
+  const updatedAt = nowIso();
+  const updated = {
+    ...schedule,
+    enabled: wantsEnabled,
+    status: wantsEnabled ? 'approved_manual_schedule_plan' : 'paused_manual_schedule_plan',
+    actorEmail,
+    updatedAt,
+    safety: {
+      ...(schedule.safety || {}),
+      noImmediateRemotePull: true,
+      noAutomaticWorker: true,
+      noContactImportMutation: true,
+      noSecretOutput: true,
+      redactedErrors: true,
+      realDeliveryAllowed: false
+    }
+  };
+  let savedSchedule = updated;
+  let persistenceMode = 'in-memory-until-postgresql-connection-enabled';
+  if (isPgRepositoryEnabled('data_source_import_schedules')) {
+    try {
+      savedSchedule = updateImportScheduleStatusInPostgres({ scheduleId: cleanId, enabled: wantsEnabled, status: updated.status, actorEmail, updatedAt }) || updated;
+      persistenceMode = 'postgresql-local-psql-repository';
+    } catch {
+      persistenceMode = 'postgresql-error-fallback-in-memory';
+    }
+  }
+  importSchedules.set(savedSchedule.id, savedSchedule);
+  return {
+    ok: true,
+    mode: 'data-source-import-schedule-status-update',
+    schedule: cloneImportSchedule(savedSchedule),
+    scheduleMutation: true,
+    realSync: false,
+    automaticPulls: false,
+    safety: {
+      adminOnly: true,
+      noWorkerStarted: true,
+      noRemoteConnectionOpened: true,
+      noRowsPulled: true,
+      noContactMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode,
     realDeliveryAllowed: false
   };
 };
