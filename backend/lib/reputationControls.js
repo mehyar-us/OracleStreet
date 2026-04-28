@@ -197,3 +197,71 @@ export const evaluateAutoPause = ({ domain = policy.domain } = {}) => {
     realDeliveryAllowed: false
   };
 };
+
+export const evaluateDomainReputationRollup = ({ limit = 12 } = {}) => {
+  const maxRows = Math.min(Math.max(parsePositiveInt(limit, 12), 1), 50);
+  const allEvents = listEmailEvents().events || [];
+  const grouped = new Map();
+  for (const event of allEvents) {
+    const domain = emailDomain(event.email);
+    if (!domain) continue;
+    const entry = grouped.get(domain) || { domain, delivered: 0, deferred: 0, bounce: 0, complaint: 0, dispatched: 0, provider_error: 0, denominator: 0, latestEventAt: null };
+    entry[event.type] = (entry[event.type] || 0) + 1;
+    if (['delivered', 'deferred', 'bounce', 'complaint', 'dispatched'].includes(event.type)) entry.denominator += 1;
+    if (!entry.latestEventAt || String(event.createdAt || '') > entry.latestEventAt) entry.latestEventAt = event.createdAt || null;
+    grouped.set(domain, entry);
+  }
+
+  const domains = [...grouped.values()].map((counts) => {
+    const activePolicy = getReputationPolicyFromPostgres(counts.domain);
+    const denominator = Math.max(1, counts.denominator);
+    const rates = {
+      bounceRate: counts.bounce / denominator,
+      complaintRate: counts.complaint / denominator,
+      deferralRate: counts.deferred / denominator,
+      providerErrorRate: counts.provider_error / denominator
+    };
+    const breaches = [];
+    if (counts.denominator >= activePolicy.minimumEvents) {
+      if (rates.bounceRate >= activePolicy.bounceRateThreshold) breaches.push('bounce_rate_threshold_exceeded');
+      if (rates.complaintRate >= activePolicy.complaintRateThreshold) breaches.push('complaint_rate_threshold_exceeded');
+      if (rates.deferralRate >= activePolicy.deferralRateThreshold) breaches.push('deferral_rate_threshold_exceeded');
+      if (rates.providerErrorRate >= activePolicy.providerErrorRateThreshold) breaches.push('provider_error_rate_threshold_exceeded');
+    }
+    const insufficientData = counts.denominator < activePolicy.minimumEvents;
+    return {
+      domain: counts.domain,
+      counts,
+      rates,
+      thresholdBreaches: breaches,
+      insufficientData,
+      recommendation: breaches.length > 0
+        ? 'pause_or_reduce_domain_until_events_are_reviewed'
+        : insufficientData
+          ? 'collect_more_delivery_events_before_domain_decision'
+          : 'continue_under_current_warmup_caps',
+      recommendationOnly: true
+    };
+  }).sort((a, b) => {
+    if (b.thresholdBreaches.length !== a.thresholdBreaches.length) return b.thresholdBreaches.length - a.thresholdBreaches.length;
+    if (b.counts.denominator !== a.counts.denominator) return b.counts.denominator - a.counts.denominator;
+    return a.domain.localeCompare(b.domain);
+  }).slice(0, maxRows);
+
+  return {
+    ok: true,
+    mode: 'domain-reputation-rollup',
+    count: domains.length,
+    totalDomains: grouped.size,
+    domains,
+    safety: {
+      recommendationOnly: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noExternalDelivery: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};

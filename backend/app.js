@@ -23,7 +23,7 @@ import { importPowerMtaAccountingCsv, validatePowerMtaAccountingCsv } from './li
 import { getRateLimitConfig } from './lib/rateLimits.js';
 import { RBAC_ROUTE_POLICY, rbacReadiness } from './lib/rbacReadiness.js';
 import { repositoryReadiness } from './lib/repositoryReadiness.js';
-import { evaluateAutoPause, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
+import { evaluateAutoPause, evaluateDomainReputationRollup, getReputationPolicy, saveReputationPolicy } from './lib/reputationControls.js';
 import { planWarmupSchedule } from './lib/warmupPlans.js';
 import { evaluateWarmupScheduleCap, listWarmupPolicies, saveWarmupPolicy } from './lib/warmupPolicies.js';
 import { campaignReportingSummary, emailReportingSummary, reportingDashboardDepth, reportingExportPreview, sendingReadinessSummary } from './lib/reporting.js';
@@ -985,6 +985,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = evaluateAutoPause({ domain: url.searchParams.get('domain') || undefined });
       recordAuditEvent({ action: 'email_reputation_auto_pause_evaluate', actorEmail: session.email, target: result.domain, status: result.recommendPause ? 'rejected' : 'ok', details: { thresholdBreaches: result.thresholdBreaches, insufficientData: result.insufficientData, recommendationOnly: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/email/reputation/domain-rollup' || url.pathname === '/email/reputation/domain-rollup') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = evaluateDomainReputationRollup({ limit: url.searchParams.get('limit') || undefined });
+      recordAuditEvent({ action: 'email_reputation_domain_rollup_view', actorEmail: session.email, target: 'recipient-domains', status: result.domains.some((entry) => entry.thresholdBreaches.length > 0) ? 'rejected' : 'ok', details: { domains: result.totalDomains, shown: result.count, recommendationOnly: true, noQueueMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

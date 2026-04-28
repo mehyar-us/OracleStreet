@@ -203,6 +203,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Reputation policy persistence in PostgreSQL runtime adapter.
 - Auto-pause threshold controls for bounce, complaint, deferral, and provider-error signals.
 - Recommendation-only auto-pause evaluation without mutating queues/providers.
+- Recipient-domain reputation rollup over imported/dry-run delivery events with pause/throttle recommendations only.
 - Controlled one-recipient MTA live-test runbook gate without sending.
 - Controlled live-test proof audit log for manual/out-of-band one-recipient outcomes, provider message IDs, and dry-run/local-capture proof IDs without sending or mutating providers/queues.
 - PostgreSQL runtime adapter for controlled live-test proof audits.

@@ -286,6 +286,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Check schedule cap/);
   assert.match(html, /api\/email\/reputation\/policy/);
   assert.match(html, /api\/email\/reputation\/auto-pause/);
+  assert.match(html, /api\/email\/reputation\/domain-rollup/);
+  assert.match(html, /Recipient-domain reputation rollup/);
   assert.match(html, /Save auto-pause thresholds/);
   assert.match(html, /Evaluate auto-pause/);
   assert.match(html, /reporting-screen/);
@@ -3245,6 +3247,18 @@ test('reputation auto-pause threshold controls are protected, recommendation-onl
     assert.equal(evaluation.body.safety.noQueueMutation, true);
     assert.equal(evaluation.body.realDeliveryAllowed, false);
 
+    const rollup = await request('/api/email/reputation/domain-rollup?limit=5', { headers: { cookie } });
+    assert.equal(rollup.status, 200);
+    assert.equal(rollup.body.mode, 'domain-reputation-rollup');
+    assert.equal(rollup.body.realDeliveryAllowed, false);
+    assert.equal(rollup.body.safety.noQueueMutation, true);
+    assert.equal(rollup.body.safety.noProviderMutation, true);
+    assert.equal(rollup.body.safety.noNetworkProbe, true);
+    const exampleDomain = rollup.body.domains.find((entry) => entry.domain === 'example.test');
+    assert.ok(exampleDomain);
+    assert.ok(exampleDomain.thresholdBreaches.includes('bounce_rate_threshold_exceeded'));
+    assert.equal(exampleDomain.recommendationOnly, true);
+
     const rejected = await request('/api/email/reputation/policy', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -3257,6 +3271,7 @@ test('reputation auto-pause threshold controls are protected, recommendation-onl
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'email_reputation_policy_save'));
     assert.ok(audit.body.events.some((event) => event.action === 'email_reputation_auto_pause_evaluate'));
+    assert.ok(audit.body.events.some((event) => event.action === 'email_reputation_domain_rollup_view'));
   });
 });
 
@@ -3271,6 +3286,8 @@ test('warm-up and reputation endpoints also work behind nginx stripped api prefi
   assert.equal(policy.status, 401);
   const autoPause = await request('/email/reputation/auto-pause');
   assert.equal(autoPause.status, 401);
+  const rollup = await request('/email/reputation/domain-rollup');
+  assert.equal(rollup.status, 401);
 });
 
 test('sending readiness endpoint requires admin session and keeps real delivery locked', async () => {
