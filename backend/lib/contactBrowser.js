@@ -718,3 +718,114 @@ export const contactSuppressionReviewPlan = ({ source = '', domain = '', reason 
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactRiskTriageQueue = ({ source = '', domain = '', risk = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, risk: risk || 'risky', staleAfterDays, limit: 500 });
+  const triageLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const riskFilter = clean(risk);
+  const riskyContacts = (browser.contacts || []).filter((contact) => {
+    const flags = contact.riskFlags || [];
+    if (!riskFilter || riskFilter === 'risky') return flags.length > 0;
+    return flags.includes(riskFilter);
+  });
+  const riskRows = new Map();
+  const sourceRows = new Map();
+  const domainRows = new Map();
+  const addRow = (map, key, contact, flag = null) => {
+    const row = map.get(key) || { key, total: 0, suppressed: 0, stale: 0, roleAccounts: 0, missingConsent: 0, missingSource: 0, bounced: 0, complained: 0, sources: new Set(), domains: new Set(), riskFlags: new Set() };
+    row.total += 1;
+    const flags = contact.riskFlags || [];
+    if (contact.suppressed) row.suppressed += 1;
+    if (flags.includes('stale_contact')) row.stale += 1;
+    if (flags.includes('role_account')) row.roleAccounts += 1;
+    if (flags.includes('missing_explicit_consent')) row.missingConsent += 1;
+    if (flags.includes('missing_source')) row.missingSource += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    row.sources.add(contact.source || 'unknown_source');
+    row.domains.add(contact.domain || domainOf(contact.email) || 'unknown_domain');
+    for (const item of flags) row.riskFlags.add(item);
+    if (flag) row.riskFlags.add(flag);
+    map.set(key, row);
+  };
+  for (const contact of riskyContacts) {
+    for (const flag of contact.riskFlags || ['unknown_risk']) addRow(riskRows, flag, contact, flag);
+    addRow(sourceRows, contact.source || 'unknown_source', contact);
+    addRow(domainRows, contact.domain || domainOf(contact.email) || 'unknown_domain', contact);
+  }
+  const actionFor = (row) => {
+    if (row.complained > 0) return 'quarantine_and_review_complaint_source_before_audience_use';
+    if (row.suppressed > 0 || row.bounced > 0) return 'exclude_suppressed_or_bounced_contacts_before_segment_snapshot';
+    if (row.missingConsent > 0 || row.missingSource > 0) return 'repair_source_and_explicit_consent_metadata_before_campaign_use';
+    if (row.stale > 0) return 'refresh_stale_consent_or_exclude_from_campaign_audiences';
+    if (row.roleAccounts > 0) return 'operator_sample_role_accounts_before_affiliate_campaign_use';
+    return 'operator_review_before_segment_snapshot';
+  };
+  const finish = (row) => ({
+    ...row,
+    sources: row.sources.size,
+    domains: row.domains.size,
+    riskFlags: [...row.riskFlags].sort(),
+    priority: row.complained > 0 || row.suppressed > 0 ? 'high' : (row.bounced > 0 || row.missingConsent > 0 || row.missingSource > 0 ? 'medium' : 'low'),
+    reviewGate: true,
+    recommendedAction: actionFor(row),
+    realDeliveryAllowed: false
+  });
+  const rank = { high: 0, medium: 1, low: 2 };
+  const sortRows = (rows) => rows.map(finish).sort((a, b) => rank[a.priority] - rank[b.priority] || b.total - a.total || a.key.localeCompare(b.key)).slice(0, triageLimit);
+  const samples = riskyContacts.slice(0, triageLimit).map((contact) => ({
+    id: contact.id || null,
+    email: contact.email,
+    source: contact.source || null,
+    domain: contact.domain || null,
+    consentStatus: contact.consentStatus || null,
+    suppressed: Boolean(contact.suppressed),
+    riskFlags: contact.riskFlags || [],
+    eventCounts: contact.eventCounts || {},
+    recommendedAction: contact.suppressed ? 'exclude_suppressed_contact' : ((contact.riskFlags || []).includes('stale_contact') ? 'refresh_consent_or_exclude' : 'operator_review_before_segment_use'),
+    realDeliveryAllowed: false
+  }));
+  const recommendations = [];
+  if (riskyContacts.some((contact) => contact.suppressed)) recommendations.push('exclude_suppressed_contacts_from_all_segments_and_snapshots');
+  if (riskyContacts.some((contact) => (contact.eventCounts?.complaint || 0) > 0)) recommendations.push('quarantine_sources_with_complaint_events_until_operator_review');
+  if (riskyContacts.some((contact) => (contact.riskFlags || []).includes('missing_explicit_consent'))) recommendations.push('repair_or_exclude_contacts_without_explicit_consent_before_campaign_use');
+  if (riskyContacts.some((contact) => (contact.riskFlags || []).includes('stale_contact'))) recommendations.push('refresh_stale_consent_before_warmup_or_campaign_scheduling');
+  if (!recommendations.length) recommendations.push(riskyContacts.length ? 'sample_low_priority_risks_before_segment_snapshot' : 'no_risky_contacts_match_current_filters');
+
+  return {
+    ok: true,
+    mode: 'contact-risk-triage-queue',
+    filters: { ...browser.filters, risk: riskFilter || 'risky', limit: triageLimit },
+    totals: {
+      riskyContacts: riskyContacts.length,
+      riskTypes: riskRows.size,
+      sources: sourceRows.size,
+      domains: domainRows.size,
+      highPriorityRows: sortRows([...riskRows.values()]).filter((row) => row.priority === 'high').length,
+      mediumPriorityRows: sortRows([...riskRows.values()]).filter((row) => row.priority === 'medium').length,
+      lowPriorityRows: sortRows([...riskRows.values()]).filter((row) => row.priority === 'low').length,
+      automaticAudienceMutationAllowed: 0
+    },
+    riskRows: sortRows([...riskRows.values()]),
+    sourceRows: sortRows([...sourceRows.values()]),
+    domainRows: sortRows([...domainRows.values()]),
+    samples,
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticAudienceMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};

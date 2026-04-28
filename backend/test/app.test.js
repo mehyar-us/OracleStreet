@@ -242,6 +242,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/contacts\/source-quality-matrix/);
   assert.match(html, /api\/contacts\/browser\/export-preview/);
   assert.match(html, /api\/contacts\/suppression-review/);
+  assert.match(html, /api\/contacts\/risk-triage/);
   assert.match(html, /Source × domain quality matrix/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
   assert.match(html, /Dedupe\/merge planner/);
@@ -1439,6 +1440,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthSourceHygiene.status, 401);
     const unauthSourceMatrix = await request('/api/contacts/source-quality-matrix');
     assert.equal(unauthSourceMatrix.status, 401);
+    const unauthRiskTriage = await request('/api/contacts/risk-triage');
+    assert.equal(unauthRiskTriage.status, 401);
     const unauthSuppressionReview = await request('/api/contacts/suppression-review');
     assert.equal(unauthSuppressionReview.status, 401);
     const unauthAudienceReadiness = await request('/api/contacts/audience-readiness');
@@ -1550,6 +1553,20 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(sourceMatrix.body.safety.noSegmentMutation, true);
     assert.equal(sourceMatrix.body.realDeliveryAllowed, false);
 
+    const riskTriage = await request('/api/contacts/risk-triage?source=support%20imports&risk=role_account', { headers: { cookie } });
+    assert.equal(riskTriage.status, 200);
+    assert.equal(riskTriage.body.mode, 'contact-risk-triage-queue');
+    assert.equal(riskTriage.body.totals.riskyContacts, 1);
+    assert.equal(riskTriage.body.totals.automaticAudienceMutationAllowed, 0);
+    assert.ok(riskTriage.body.riskRows.some((row) => row.key === 'role_account' && row.reviewGate === true));
+    assert.ok(riskTriage.body.sourceRows.some((row) => row.key === 'support imports' && row.total === 1));
+    assert.ok(riskTriage.body.samples.some((contact) => contact.email === 'support@example.test' && contact.riskFlags.includes('role_account')));
+    assert.equal(riskTriage.body.safety.recommendationOnly, true);
+    assert.equal(riskTriage.body.safety.noContactMutation, true);
+    assert.equal(riskTriage.body.safety.noSegmentMutation, true);
+    assert.equal(riskTriage.body.safety.automaticAudienceMutationAllowed, false);
+    assert.equal(riskTriage.body.realDeliveryAllowed, false);
+
     const suppressionReview = await request('/api/contacts/suppression-review?source=support%20imports', { headers: { cookie } });
     assert.equal(suppressionReview.status, 200);
     assert.equal(suppressionReview.body.mode, 'contact-suppression-review-plan');
@@ -1604,6 +1621,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_matrix_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_risk_triage_queue_view' && event.details?.riskyContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_suppression_review_plan_view' && event.details?.suppressedContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_audience_readiness_review_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
