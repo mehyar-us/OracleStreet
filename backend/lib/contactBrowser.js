@@ -1024,6 +1024,91 @@ export const contactSourceQuarantinePlan = ({ scoreThreshold = 70, staleAfterDay
 };
 
 
+
+export const contactSourceQualityRemediationBoard = ({ scoreThreshold = 70, staleAfterDays = 180, limit = 50 } = {}) => {
+  const hygiene = sourceHygieneActionPlan({ scoreThreshold, staleAfterDays, limit });
+  const quarantine = contactSourceQuarantinePlan({ scoreThreshold, staleAfterDays, limit });
+  const matrix = sourceQualityMatrix({ staleAfterDays, limit: 250 });
+  const quarantineBySource = new Map((quarantine.rows || []).map((row) => [row.source, row]));
+  const matrixBySource = new Map();
+  for (const cell of matrix.matrix || []) {
+    const current = matrixBySource.get(cell.source) || { source: cell.source, domains: 0, reviewGateCells: 0, readyContacts: 0, blockedContacts: 0, contacts: 0, topDomains: [] };
+    current.domains += 1;
+    current.reviewGateCells += cell.reviewGate ? 1 : 0;
+    current.readyContacts += cell.readyContacts || 0;
+    current.blockedContacts += cell.blockedContacts || 0;
+    current.contacts += cell.contacts || 0;
+    current.topDomains.push({ domain: cell.domain, contacts: cell.contacts, blockedContacts: cell.blockedContacts, riskFlags: cell.riskFlags || [] });
+    matrixBySource.set(cell.source, current);
+  }
+  const remediationRows = (hygiene.plans || []).map((plan) => {
+    const quarantineRow = quarantineBySource.get(plan.source) || {};
+    const matrixRow = matrixBySource.get(plan.source) || { domains: 0, reviewGateCells: 0, readyContacts: 0, blockedContacts: 0, contacts: 0, topDomains: [] };
+    const priority = quarantineRow.quarantineRecommended || plan.score < Number(scoreThreshold) ? 'high' : plan.reviewGate ? 'medium' : 'low';
+    const nextAction = quarantineRow.quarantineRecommended
+      ? 'quarantine_source_from_campaign_audiences_until_operator_review'
+      : plan.reviewGate
+        ? 'sample_risky_or_stale_contacts_and_fix_consent_source_gaps'
+        : 'monitor_source_quality_before_next_campaign_snapshot';
+    return {
+      source: plan.source,
+      priority,
+      score: plan.score,
+      contacts: plan.contacts,
+      readyContacts: matrixRow.readyContacts,
+      blockedContacts: matrixRow.blockedContacts,
+      reviewGate: plan.reviewGate,
+      quarantineRecommended: Boolean(quarantineRow.quarantineRecommended),
+      reviewGateCells: matrixRow.reviewGateCells,
+      domainsReviewed: matrixRow.domains,
+      topDomains: matrixRow.topDomains.sort((a, b) => b.blockedContacts - a.blockedContacts || b.contacts - a.contacts).slice(0, 5),
+      issues: plan.issues || [],
+      recommendedActions: [...new Set([nextAction, ...(plan.actions || []), ...(quarantineRow.operatorChecklist || []).slice(0, 3)])],
+      automaticContactMutationAllowed: false,
+      automaticSegmentMutationAllowed: false,
+      realDeliveryAllowed: false
+    };
+  }).sort((left, right) => ({ high: 0, medium: 1, low: 2 }[left.priority] - { high: 0, medium: 1, low: 2 }[right.priority]) || left.score - right.score || left.source.localeCompare(right.source));
+  return {
+    ok: true,
+    mode: 'contact-source-quality-remediation-board',
+    scoreThreshold: Number(scoreThreshold) || 70,
+    totals: {
+      sourcesReviewed: remediationRows.length,
+      highPrioritySources: remediationRows.filter((row) => row.priority === 'high').length,
+      mediumPrioritySources: remediationRows.filter((row) => row.priority === 'medium').length,
+      lowPrioritySources: remediationRows.filter((row) => row.priority === 'low').length,
+      quarantineRecommended: remediationRows.filter((row) => row.quarantineRecommended).length,
+      blockedContacts: remediationRows.reduce((sum, row) => sum + (row.blockedContacts || 0), 0),
+      readyContacts: remediationRows.reduce((sum, row) => sum + (row.readyContacts || 0), 0),
+      automaticContactMutationAllowed: 0,
+      automaticSegmentMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    remediationRows,
+    recommendations: remediationRows.some((row) => row.priority === 'high')
+      ? ['review_high_priority_sources_before_campaign_snapshot_use', 'quarantine_or_refresh_bad_sources_manually_before_any_segment_handoff']
+      : remediationRows.some((row) => row.priority === 'medium')
+        ? ['sample_medium_priority_sources_before_campaign_handoff', 'keep_source_quality_monitoring_in_campaign_readiness_reviews']
+        : ['no_source_quality_remediation_blockers_found_for_current_contacts'],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      remediationPlanOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noFileWrite: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};
+
 export const contactRepermissionPlan = ({ source = '', domain = '', staleAfterDays = 180, limit = 100 } = {}) => {
   const browser = browseContacts({ source, domain, staleAfterDays, limit: 500 });
   const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
