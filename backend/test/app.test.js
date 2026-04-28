@@ -234,6 +234,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Cleanup planner/);
   assert.match(html, /Source quality/);
   assert.match(html, /api\/contacts\/detail/);
+  assert.match(html, /api\/contacts\/domain-risk-plan/);
   assert.match(html, /Contact detail drilldown/);
   assert.match(html, /api\/contacts\/source-quality/);
   assert.match(html, /Source quality detail/);
@@ -1437,6 +1438,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauth.status, 401);
     const unauthDetail = await request('/api/contacts/detail?email=ada@example.test');
     assert.equal(unauthDetail.status, 401);
+    const unauthDomainRisk = await request('/api/contacts/domain-risk-plan');
+    assert.equal(unauthDomainRisk.status, 401);
     const unauthSourceQuality = await request('/api/contacts/source-quality?source=owned');
     assert.equal(unauthSourceQuality.status, 401);
     const unauthSourceHygiene = await request('/api/contacts/source-hygiene-plan');
@@ -1520,6 +1523,19 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(detail.body.safety.noContactMutation, true);
     assert.equal(detail.body.safety.noQueueMutation, true);
     assert.equal(detail.body.realDeliveryAllowed, false);
+
+
+    const domainRisk = await request('/api/contacts/domain-risk-plan?domain=example.test', { headers: { cookie } });
+    assert.equal(domainRisk.status, 200);
+    assert.equal(domainRisk.body.mode, 'contact-domain-risk-plan');
+    assert.equal(domainRisk.body.totals.domainsReviewed, 1);
+    assert.ok(domainRisk.body.totals.blockedContacts >= 1);
+    assert.equal(domainRisk.body.totals.mxProbePerformed, 0);
+    assert.ok(domainRisk.body.rows.some((row) => row.domain === 'example.test' && row.reviewGate === true));
+    assert.equal(domainRisk.body.safety.recommendationOnly, true);
+    assert.equal(domainRisk.body.safety.noNetworkProbe, true);
+    assert.equal(domainRisk.body.safety.automaticDomainMutationAllowed, false);
+    assert.equal(domainRisk.body.realDeliveryAllowed, false);
 
     const sourceQuality = await request('/api/contacts/source-quality?source=support%20imports', { headers: { cookie } });
     assert.equal(sourceQuality.status, 200);
@@ -1668,6 +1684,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_export_preview' && event.details?.rowCount === 1));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_domain_risk_plan_view' && event.details?.mxProbePerformed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));

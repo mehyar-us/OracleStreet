@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow A domain risk plan: per-domain ready/blocked counts and warm-up allocation recommendations with no MX/network probes or domain/contact mutation.
 - Flow A repermission plan: stale/missing-consent/do-not-contact review rows and samples with no outbound repermission sends or contact mutation.
 - Flow A source quarantine plan: per-source quarantine recommendations, operator checklists, and safe audience rules without source/contact/segment mutation.
 - Flow A audience exclusion preview: retained/excluded contact counts, exclusion reasons, and samples before segment snapshot/campaign use with no segment/contact/suppression mutation.

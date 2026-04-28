@@ -1128,3 +1128,91 @@ export const contactRepermissionPlan = ({ source = '', domain = '', staleAfterDa
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactDomainRiskPlan = ({ source = '', domain = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, staleAfterDays, limit: 500 });
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const rowsByDomain = new Map();
+  for (const contact of browser.contacts || []) {
+    const key = contact.domain || domainOf(contact.email) || 'unknown_domain';
+    const row = rowsByDomain.get(key) || { domain: key, contacts: 0, ready: 0, blocked: 0, suppressed: 0, risky: 0, stale: 0, roleAccounts: 0, missingConsent: 0, bounced: 0, complained: 0, sources: new Set(), riskFlags: new Set() };
+    row.contacts += 1;
+    const flags = contact.riskFlags || [];
+    const hardBlocked = Boolean(contact.suppressed) || !['opt_in', 'double_opt_in'].includes(contact.consentStatus) || (contact.eventCounts?.complaint || 0) > 0 || (contact.eventCounts?.bounce || 0) > 0;
+    if (hardBlocked) row.blocked += 1;
+    else row.ready += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    if (flags.length) row.risky += 1;
+    if (flags.includes('stale_contact')) row.stale += 1;
+    if (flags.includes('role_account')) row.roleAccounts += 1;
+    if (flags.includes('missing_explicit_consent')) row.missingConsent += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    row.sources.add(contact.source || 'unknown_source');
+    for (const flag of flags) row.riskFlags.add(flag);
+    rowsByDomain.set(key, row);
+  }
+  const rows = [...rowsByDomain.values()].map((row) => {
+    const bounceComplaintLoad = row.bounced + row.complained;
+    const blockedRate = row.contacts ? row.blocked / row.contacts : 0;
+    const priority = row.complained > 0 || blockedRate >= 0.5 ? 'high' : (row.bounced > 0 || row.suppressed > 0 || row.risky > 0 || blockedRate >= 0.25 ? 'medium' : 'low');
+    const recommendedAction = priority === 'high'
+      ? 'pause_domain_from_campaign_audiences_until_operator_review'
+      : priority === 'medium'
+        ? 'limit_domain_allocation_and_review_samples_before_scheduling'
+        : 'allow_dry_run_planning_with_warmup_cap_monitoring';
+    return {
+      ...row,
+      sources: row.sources.size,
+      riskFlags: [...row.riskFlags].sort(),
+      blockedRate,
+      bounceComplaintLoad,
+      priority,
+      reviewGate: priority !== 'low',
+      mxProbePerformed: false,
+      recommendedAction,
+      realDeliveryAllowed: false
+    };
+  }).sort((a, b) => {
+    const rank = { high: 0, medium: 1, low: 2 };
+    return rank[a.priority] - rank[b.priority] || b.blocked - a.blocked || b.contacts - a.contacts || a.domain.localeCompare(b.domain);
+  }).slice(0, rowLimit);
+  const recommendations = [];
+  if (rows.some((row) => row.priority === 'high')) recommendations.push('pause_high_risk_domains_from_campaign_calendar_until_operator_review');
+  if (rows.some((row) => row.complained > 0)) recommendations.push('treat_complaint_domains_as_hard_stop_for_delivery_until_source_review');
+  if (rows.some((row) => row.stale > 0)) recommendations.push('refresh_stale_domain_contacts_before_warmup_allocation');
+  if (!recommendations.length) recommendations.push(rows.length ? 'domain_rows_clear_for_dry_run_planning_only' : 'import_contacts_before_domain_risk_planning');
+  return {
+    ok: true,
+    mode: 'contact-domain-risk-plan',
+    filters: { ...browser.filters, limit: rowLimit },
+    totals: {
+      domainsReviewed: rowsByDomain.size,
+      highPriorityDomains: rows.filter((row) => row.priority === 'high').length,
+      mediumPriorityDomains: rows.filter((row) => row.priority === 'medium').length,
+      blockedContacts: rows.reduce((sum, row) => sum + row.blocked, 0),
+      readyContacts: rows.reduce((sum, row) => sum + row.ready, 0),
+      mxProbePerformed: 0,
+      automaticDomainMutationAllowed: 0
+    },
+    rows,
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      mxProbePerformed: false,
+      automaticDomainMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
