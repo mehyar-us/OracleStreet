@@ -1544,3 +1544,113 @@ export const contactSourceDetailReview = ({ source = '', domain = '', staleAfter
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactCampaignFitPlan = ({ source = '', domain = '', consentStatus = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, consentStatus, staleAfterDays, limit: 500 });
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const sourceRows = new Map();
+  const domainRows = new Map();
+  const reasonRows = new Map();
+  const classify = (contact) => {
+    const reasons = [];
+    if (contact.suppressed) reasons.push('suppressed_do_not_contact');
+    if ((contact.eventCounts?.complaint || 0) > 0) reasons.push('complaint_history');
+    if ((contact.eventCounts?.bounce || 0) > 0) reasons.push('bounce_history');
+    if (!['opt_in', 'double_opt_in'].includes(contact.consentStatus)) reasons.push('missing_explicit_consent');
+    if (!contact.source) reasons.push('missing_source');
+    if ((contact.riskFlags || []).includes('stale_contact')) reasons.push('stale_contact');
+    if ((contact.riskFlags || []).includes('role_account')) reasons.push('role_account_review');
+    const blocked = reasons.some((reason) => ['suppressed_do_not_contact', 'complaint_history', 'bounce_history', 'missing_explicit_consent', 'missing_source'].includes(reason));
+    const review = !blocked && reasons.length > 0;
+    return { reasons: reasons.length ? reasons : ['ready_for_dry_run_campaign_planning'], fit: blocked ? 'blocked' : review ? 'review' : 'ready' };
+  };
+  const add = (map, key, contact, status) => {
+    const row = map.get(key) || { key, contacts: 0, ready: 0, review: 0, blocked: 0, suppressed: 0, bounced: 0, complained: 0, domains: new Set(), sources: new Set(), reasons: new Set() };
+    row.contacts += 1;
+    row[status.fit] += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    row.domains.add(contact.domain || domainOf(contact.email) || 'unknown_domain');
+    row.sources.add(contact.source || 'unknown_source');
+    for (const reason of status.reasons) row.reasons.add(reason);
+    map.set(key, row);
+  };
+  const samples = [];
+  for (const contact of browser.contacts || []) {
+    const status = classify(contact);
+    add(sourceRows, contact.source || 'unknown_source', contact, status);
+    add(domainRows, contact.domain || 'unknown_domain', contact, status);
+    for (const reason of status.reasons) add(reasonRows, reason, contact, status);
+    samples.push({
+      email: contact.email,
+      source: contact.source || null,
+      domain: contact.domain || null,
+      campaignFit: status.fit,
+      reasons: status.reasons,
+      recommendedAction: status.fit === 'blocked'
+        ? 'exclude_from_campaign_audience_until_hygiene_or_permission_issue_is_resolved'
+        : status.fit === 'review'
+          ? 'operator_review_before_campaign_calendar_or_warmup_allocation'
+          : 'eligible_for_dry_run_campaign_planning_with_existing_suppression_and_warmup_gates',
+      realDeliveryAllowed: false
+    });
+  }
+  const finish = (row) => ({
+    ...row,
+    domains: row.domains.size,
+    sources: row.sources.size,
+    reasons: [...row.reasons].sort(),
+    reviewGate: row.blocked > 0 || row.review > 0,
+    recommendation: row.blocked > 0
+      ? 'exclude_blocked_contacts_before_campaign_fit_use'
+      : row.review > 0
+        ? 'operator_review_before_campaign_calendar_allocation'
+        : 'ready_for_dry_run_campaign_planning_only',
+    automaticSegmentMutationAllowed: false,
+    realDeliveryAllowed: false
+  });
+  const sourceFitRows = [...sourceRows.values()].map(finish).sort((a, b) => b.blocked - a.blocked || b.review - a.review || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const domainFitRows = [...domainRows.values()].map(finish).sort((a, b) => b.blocked - a.blocked || b.review - a.review || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const reasonSummaryRows = [...reasonRows.values()].map(finish).sort((a, b) => b.blocked - a.blocked || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const recommendations = [];
+  if (reasonRows.has('suppressed_do_not_contact') || reasonRows.has('complaint_history')) recommendations.push('preserve_do_not_contact_rows_and_exclude_from_campaign_fit');
+  if (reasonRows.has('bounce_history')) recommendations.push('exclude_bounce_history_rows_before_warmup_or_calendar_use');
+  if (reasonRows.has('missing_explicit_consent') || reasonRows.has('missing_source')) recommendations.push('repair_permission_and_source_metadata_before_campaign_fit');
+  if (reasonRows.has('stale_contact') || reasonRows.has('role_account_review')) recommendations.push('review_stale_or_role_account_rows_before_campaign_calendar_allocation');
+  if (!recommendations.length) recommendations.push(samples.length ? 'campaign_fit_ready_for_dry_run_planning_only' : 'import_contacts_before_campaign_fit_planning');
+  return {
+    ok: true,
+    mode: 'contact-campaign-fit-plan',
+    filters: { ...browser.filters, limit: rowLimit },
+    totals: {
+      matchedContacts: (browser.contacts || []).length,
+      readyContacts: samples.filter((row) => row.campaignFit === 'ready').length,
+      reviewContacts: samples.filter((row) => row.campaignFit === 'review').length,
+      blockedContacts: samples.filter((row) => row.campaignFit === 'blocked').length,
+      automaticSegmentMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    sourceFitRows,
+    domainFitRows,
+    reasonSummaryRows,
+    samples: samples.slice(0, rowLimit),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticSegmentMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};

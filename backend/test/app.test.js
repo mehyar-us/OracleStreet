@@ -234,6 +234,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Cleanup planner/);
   assert.match(html, /Source quality/);
   assert.match(html, /api\/contacts\/detail/);
+  assert.match(html, /api\/contacts\/campaign-fit-plan/);
   assert.match(html, /api\/contacts\/consent-provenance-review/);
   assert.match(html, /api\/contacts\/source-detail-review/);
   assert.match(html, /api\/contacts\/domain-risk-plan/);
@@ -1441,6 +1442,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauth.status, 401);
     const unauthDetail = await request('/api/contacts/detail?email=ada@example.test');
     assert.equal(unauthDetail.status, 401);
+    const unauthCampaignFit = await request('/api/contacts/campaign-fit-plan');
+    assert.equal(unauthCampaignFit.status, 401);
     const unauthConsentProvenance = await request('/api/contacts/consent-provenance-review');
     assert.equal(unauthConsentProvenance.status, 401);
     const unauthSourceDetail = await request('/api/contacts/source-detail-review');
@@ -1536,6 +1539,21 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(detail.body.safety.noContactMutation, true);
     assert.equal(detail.body.safety.noQueueMutation, true);
     assert.equal(detail.body.realDeliveryAllowed, false);
+
+
+    const campaignFit = await request('/api/contacts/campaign-fit-plan?domain=example.test', { headers: { cookie } });
+    assert.equal(campaignFit.status, 200);
+    assert.equal(campaignFit.body.mode, 'contact-campaign-fit-plan');
+    assert.equal(campaignFit.body.totals.matchedContacts, 3);
+    assert.ok(campaignFit.body.totals.readyContacts >= 1);
+    assert.ok(campaignFit.body.totals.blockedContacts >= 1);
+    assert.equal(campaignFit.body.totals.automaticSegmentMutationAllowed, 0);
+    assert.ok(campaignFit.body.reasonSummaryRows.some((row) => row.key === 'suppressed_do_not_contact' && row.reviewGate === true));
+    assert.ok(campaignFit.body.samples.some((contact) => contact.email === 'support@example.test' && contact.campaignFit === 'blocked'));
+    assert.equal(campaignFit.body.safety.recommendationOnly, true);
+    assert.equal(campaignFit.body.safety.noSegmentMutation, true);
+    assert.equal(campaignFit.body.safety.automaticSegmentMutationAllowed, false);
+    assert.equal(campaignFit.body.realDeliveryAllowed, false);
 
 
     const consentProvenance = await request('/api/contacts/consent-provenance-review?domain=example.test', { headers: { cookie } });
@@ -1744,6 +1762,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_export_preview' && event.details?.rowCount === 1));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_campaign_fit_plan_view' && event.details?.automaticSegmentMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_consent_provenance_review_view' && event.details?.automaticContactMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_detail_review_view' && event.details?.automaticContactMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_domain_risk_plan_view' && event.details?.mxProbePerformed === false));
