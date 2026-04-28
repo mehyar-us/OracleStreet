@@ -260,6 +260,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Calendar day drilldown/);
   assert.match(html, /api\/campaigns\/calendar\/allocation/);
   assert.match(html, /Multi-domain allocation/);
+  assert.match(html, /api\/campaigns\/calendar\/reschedule-plan/);
+  assert.match(html, /Campaign calendar reschedule plan/);
   assert.match(html, /api\/campaigns\/affiliate-summary/);
   assert.match(html, /api\/campaigns\/audit-timeline/);
   assert.match(html, /Affiliate metadata rollup/);
@@ -1945,6 +1947,8 @@ test('campaign endpoints also work behind nginx stripped api prefix', async () =
   assert.equal(calendarAllocation.status, 401);
   const calendarDrilldown = await request('/campaigns/calendar/drilldown');
   assert.equal(calendarDrilldown.status, 401);
+  const calendarReschedule = await request('/campaigns/calendar/reschedule-plan');
+  assert.equal(calendarReschedule.status, 401);
 });
 
 
@@ -3295,6 +3299,8 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(unauthAllocation.status, 401);
     const unauthDrilldown = await request('/api/campaigns/calendar/drilldown?domain=calendar.test');
     assert.equal(unauthDrilldown.status, 401);
+    const unauthReschedule = await request('/api/campaigns/calendar/reschedule-plan?domains=calendar.test');
+    assert.equal(unauthReschedule.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3378,6 +3384,17 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(allocation.body.safety.noProviderMutation, true);
     assert.equal(allocation.body.realDeliveryAllowed, false);
 
+    const reschedulePlan = await request('/api/campaigns/calendar/reschedule-plan?domains=calendar.test,secondary-calendar.test&days=7', { headers: { cookie } });
+    assert.equal(reschedulePlan.status, 200);
+    assert.equal(reschedulePlan.body.mode, 'campaign-calendar-reschedule-plan');
+    assert.ok(reschedulePlan.body.suggestions.some((item) => item.domain === 'calendar.test' && item.reason === 'tight_warmup_capacity' && item.candidateCampaign.name === 'Calendar dry-run'));
+    assert.ok(reschedulePlan.body.recommendations.includes('review_tight_days_before_new_schedules'));
+    assert.equal(reschedulePlan.body.safety.recommendationOnly, true);
+    assert.equal(reschedulePlan.body.safety.noScheduleMutation, true);
+    assert.equal(reschedulePlan.body.safety.noQueueMutation, true);
+    assert.equal(reschedulePlan.body.safety.noProviderMutation, true);
+    assert.equal(reschedulePlan.body.realDeliveryAllowed, false);
+
     const second = await request('/api/campaigns', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -3403,6 +3420,7 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_allocation_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_drilldown_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_reschedule_plan_view'));
   });
 });
 

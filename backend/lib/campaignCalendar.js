@@ -217,3 +217,84 @@ export const campaignCalendarAllocation = ({ domains = '', startDate = null, day
     realDeliveryAllowed: false
   };
 };
+
+const nextCapacityDay = (days, afterDate, plannedCount = 1) => (days || [])
+  .filter((day) => day.date > afterDate)
+  .find((day) => (day.remainingCap || 0) >= plannedCount) || null;
+
+export const campaignCalendarReschedulePlan = ({ domains = '', startDate = null, days = 14 } = {}) => {
+  const allocation = campaignCalendarAllocation({ domains, startDate, days });
+  const suggestions = [];
+  for (const entry of allocation.domainAllocations || []) {
+    const calendar = campaignCalendar({ domain: entry.domain, startDate: allocation.startDate, days: allocation.days });
+    for (const day of calendar.calendar || []) {
+      const tightThreshold = Math.max(1, Math.ceil((day.dailyCap || 0) * 0.2));
+      const needsReview = day.capExceeded || (day.campaigns.length > 0 && day.remainingCap <= tightThreshold);
+      if (!needsReview) continue;
+      const campaigns = [...(day.campaigns || [])].sort((a, b) => (b.plannedCount || 0) - (a.plannedCount || 0));
+      const candidate = campaigns[0] || null;
+      const nextDay = nextCapacityDay(calendar.calendar, day.date, candidate?.plannedCount || 1);
+      suggestions.push({
+        domain: entry.domain,
+        date: day.date,
+        priority: day.capExceeded ? 'high' : 'medium',
+        reason: day.capExceeded ? 'over_warmup_daily_cap' : 'tight_warmup_capacity',
+        dailyCap: day.dailyCap,
+        scheduledCount: day.scheduledCount,
+        remainingCap: day.remainingCap,
+        campaignCount: day.campaigns.length,
+        candidateCampaign: candidate ? {
+          id: candidate.id,
+          name: candidate.name,
+          plannedCount: candidate.plannedCount,
+          scheduledAt: candidate.scheduledAt,
+          status: candidate.status,
+          realDeliveryAllowed: false
+        } : null,
+        suggestedDate: nextDay?.date || null,
+        suggestedRemainingCap: nextDay?.remainingCap ?? null,
+        action: nextDay ? 'operator_may_reschedule_in_campaign_builder_after_review' : 'extend_calendar_or_reduce_campaign_audience_before_scheduling',
+        scheduleMutation: false,
+        realDeliveryAllowed: false
+      });
+    }
+  }
+  suggestions.sort((a, b) => {
+    const rank = { high: 0, medium: 1, low: 2 };
+    return rank[a.priority] - rank[b.priority] || a.date.localeCompare(b.date) || a.domain.localeCompare(b.domain);
+  });
+
+  return {
+    ok: true,
+    mode: 'campaign-calendar-reschedule-plan',
+    startDate: allocation.startDate,
+    days: allocation.days,
+    totals: {
+      domains: allocation.totals.domains,
+      suggestions: suggestions.length,
+      highPriority: suggestions.filter((item) => item.priority === 'high').length,
+      mediumPriority: suggestions.filter((item) => item.priority === 'medium').length,
+      suggestedMoveCandidates: suggestions.filter((item) => item.suggestedDate).length
+    },
+    suggestions,
+    recommendations: suggestions.length
+      ? [
+        suggestions.some((item) => item.priority === 'high') ? 'resolve_over_cap_days_before_enqueue' : 'review_tight_days_before_new_schedules',
+        suggestions.some((item) => item.suggestedDate) ? 'use_suggested_dates_for_operator_review_only' : 'extend_calendar_or_reduce_audience_for_capacity'
+      ]
+      : ['no_reschedule_candidates_detected_for_current_warmup_window'],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      recommendationOnly: true,
+      noScheduleMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};

@@ -209,7 +209,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Warm-up planner API/UI for sender-domain caps and ramp schedule.
 - Warm-up policy persistence in PostgreSQL runtime adapter.
 - Campaign schedule cap enforcement baseline.
-- Campaign calendar API/UI showing scheduled dry-runs against sender-domain warm-up caps, remaining capacity, over-cap days, read-only multi-domain allocation, and read-only day drilldowns with campaign breakdowns/recommendations.
+- Campaign calendar API/UI showing scheduled dry-runs against sender-domain warm-up caps, remaining capacity, over-cap days, read-only multi-domain allocation, read-only day drilldowns with campaign breakdowns/recommendations, and read-only reschedule plans for tight/over-cap days.
 - Reputation policy persistence in PostgreSQL runtime adapter.
 - Auto-pause threshold controls for bounce, complaint, deferral, and provider-error signals.
 - Recommendation-only auto-pause evaluation without mutating queues/providers.
