@@ -1441,3 +1441,106 @@ export const contactConsentProvenanceReview = ({ source = '', domain = '', conse
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactSourceDetailReview = ({ source = '', domain = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, staleAfterDays, limit: 500 });
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const rowsBySourceDetail = new Map();
+  const rowsBySource = new Map();
+  const add = (map, key, contact) => {
+    const row = map.get(key) || { key, contacts: 0, missingSourceDetail: 0, explicitConsent: 0, suppressed: 0, risky: 0, stale: 0, bounced: 0, complained: 0, sources: new Set(), domains: new Set() };
+    row.contacts += 1;
+    if (!contact.sourceDetail) row.missingSourceDetail += 1;
+    if (['opt_in', 'double_opt_in'].includes(contact.consentStatus)) row.explicitConsent += 1;
+    if (contact.suppressed) row.suppressed += 1;
+    if ((contact.riskFlags || []).length) row.risky += 1;
+    if ((contact.riskFlags || []).includes('stale_contact')) row.stale += 1;
+    row.bounced += contact.eventCounts?.bounce || 0;
+    row.complained += contact.eventCounts?.complaint || 0;
+    row.sources.add(contact.source || 'unknown_source');
+    row.domains.add(contact.domain || domainOf(contact.email) || 'unknown_domain');
+    map.set(key, row);
+  };
+  const samples = [];
+  for (const contact of browser.contacts || []) {
+    const key = contact.sourceDetail || 'missing_source_detail';
+    add(rowsBySourceDetail, key, contact);
+    add(rowsBySource, contact.source || 'unknown_source', contact);
+    const issues = [];
+    if (!contact.sourceDetail) issues.push('missing_source_detail');
+    if (contact.suppressed) issues.push('suppressed_contact');
+    if ((contact.riskFlags || []).includes('stale_contact')) issues.push('stale_contact');
+    if ((contact.eventCounts?.bounce || 0) > 0) issues.push('bounce_history');
+    if ((contact.eventCounts?.complaint || 0) > 0) issues.push('complaint_history');
+    samples.push({
+      email: contact.email,
+      source: contact.source || null,
+      sourceDetail: contact.sourceDetail || null,
+      domain: contact.domain || null,
+      issues: issues.length ? issues : ['source_detail_ready_for_review'],
+      recommendedAction: contact.suppressed || (contact.eventCounts?.complaint || 0) > 0
+        ? 'exclude_until_source_detail_and_suppression_review_complete'
+        : !contact.sourceDetail
+          ? 'add_import_batch_or_form_source_detail_before_campaign_use'
+          : (contact.riskFlags || []).includes('stale_contact')
+            ? 'refresh_source_detail_and_permission_before_campaign_use'
+            : 'eligible_for_dry_run_source_detail_planning',
+      realDeliveryAllowed: false
+    });
+  }
+  const finish = (row) => ({
+    ...row,
+    sources: row.sources.size,
+    domains: row.domains.size,
+    reviewGate: row.missingSourceDetail > 0 || row.suppressed > 0 || row.bounced > 0 || row.complained > 0,
+    recommendation: row.suppressed > 0 || row.complained > 0
+      ? 'exclude_or_review_do_not_contact_rows_before_campaign_use'
+      : row.missingSourceDetail > 0
+        ? 'repair_source_detail_metadata_before_campaign_use'
+        : row.bounced > 0
+          ? 'review_bounce_history_before_warmup_allocation'
+          : 'source_detail_clear_for_dry_run_planning_only',
+    automaticContactMutationAllowed: false,
+    realDeliveryAllowed: false
+  });
+  const sourceDetailRows = [...rowsBySourceDetail.values()].map(finish).sort((a, b) => b.missingSourceDetail - a.missingSourceDetail || b.suppressed - a.suppressed || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const sourceRows = [...rowsBySource.values()].map(finish).sort((a, b) => b.missingSourceDetail - a.missingSourceDetail || b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const recommendations = [];
+  if (sourceDetailRows.some((row) => row.missingSourceDetail > 0)) recommendations.push('repair_missing_source_detail_before_campaign_or_remote_import_scheduler_use');
+  if (sourceDetailRows.some((row) => row.suppressed > 0 || row.complained > 0)) recommendations.push('exclude_do_not_contact_rows_from_source_detail_batches');
+  if (sourceDetailRows.some((row) => row.bounced > 0)) recommendations.push('review_bounce_heavy_source_detail_batches_before_warmup_allocation');
+  if (!recommendations.length) recommendations.push(sourceDetailRows.length ? 'source_detail_rows_clear_for_dry_run_planning_only' : 'import_contacts_before_source_detail_review');
+  return {
+    ok: true,
+    mode: 'contact-source-detail-review',
+    filters: { ...browser.filters, limit: rowLimit },
+    totals: {
+      matchedContacts: (browser.contacts || []).length,
+      sourceDetailRows: rowsBySourceDetail.size,
+      missingSourceDetailContacts: samples.filter((row) => !row.sourceDetail).length,
+      reviewRequiredContacts: samples.filter((row) => row.issues.some((issue) => issue !== 'source_detail_ready_for_review')).length,
+      automaticContactMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    sourceDetailRows,
+    sourceRows,
+    samples: samples.slice(0, rowLimit),
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      automaticContactMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
