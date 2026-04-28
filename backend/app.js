@@ -7,7 +7,7 @@ import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.j
 import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarReschedulePlan, campaignCalendarWarmupBoard } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
-import { browseContacts, contactAudienceReadinessReview, contactDetailDrilldown, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
+import { browseContacts, contactAudienceReadinessReview, contactBrowserExportPreview, contactDetailDrilldown, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
 import { auditDataSourceImportSchedules, createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceImportScheduleRunbook, planDataSourceImportScheduleTimeline, planDataSourceImportScheduleWorker, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, updateDataSourceImportScheduleStatus, validateDataSourceQuery } from './lib/dataSources.js';
@@ -820,6 +820,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = browseContacts(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'contact_browser_search', actorEmail: session.email, status: 'ok', details: { filters: result.filters, matchedContacts: result.totals.matchedContacts, noContactMutation: true, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/contacts/browser/export-preview' || url.pathname === '/contacts/browser/export-preview') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = contactBrowserExportPreview(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'contact_browser_export_preview', actorEmail: session.email, status: 'ok', details: { filters: result.filters, rowCount: result.rowCount, exportMutation: false, noContactMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

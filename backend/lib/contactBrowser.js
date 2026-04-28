@@ -159,6 +159,55 @@ export const browseContacts = ({ search = '', status = '', consentStatus = '', s
   };
 };
 
+
+const csvEscape = (value) => {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+export const contactBrowserExportPreview = (filters = {}) => {
+  const result = browseContacts({ ...filters, limit: Math.min(500, Number(filters.limit) || 100) });
+  const rows = (result.contacts || []).map((contact) => ({
+    email: contact.email,
+    name: contact.name || '',
+    source: contact.source || '',
+    consentStatus: contact.consentStatus || '',
+    domain: contact.domain || '',
+    suppressed: contact.suppressed ? 'yes' : 'no',
+    riskFlags: (contact.riskFlags || []).join('|'),
+    createdAt: contact.createdAt || '',
+    updatedAt: contact.updatedAt || ''
+  }));
+  const headers = ['email', 'name', 'source', 'consentStatus', 'domain', 'suppressed', 'riskFlags', 'createdAt', 'updatedAt'];
+  const csv = [headers.join(','), ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))].join('\n');
+  return {
+    ok: true,
+    mode: 'contact-browser-export-preview',
+    filters: result.filters,
+    totals: result.totals,
+    filename: `oraclestreet-contact-browser-preview-${new Date().toISOString().slice(0, 10)}.csv`,
+    rowCount: rows.length,
+    columns: headers,
+    previewRows: rows.slice(0, 25),
+    csvPreview: csv.split('\n').slice(0, 26).join('\n'),
+    exportMutation: false,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noSecretOutput: true,
+      noNetworkProbe: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: result.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
+
 export const contactDetailDrilldown = ({ email = '', id = '', staleAfterDays = 180 } = {}) => {
   const contactsResult = listContacts();
   const suppressionsResult = listSuppressions();

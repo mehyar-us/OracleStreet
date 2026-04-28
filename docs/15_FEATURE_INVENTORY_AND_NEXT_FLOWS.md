@@ -99,6 +99,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
   - contact timeline stubs from imports, events, and dry-run jobs
   - read-only contact detail drilldowns with suppression, event, queue, timeline, and recommendation metadata
   - source × domain quality matrix with ready/blocked counts, review gates, risk flags, and no audience mutation
+  - CSV export preview for current contact browser filters with source/consent/suppression/risk columns and no file write/contact mutation
 - Dedupe/merge planning API/UI that previews exact-email and same-name-domain merge candidates, candidate primary contact, consent/source summary, and operator-review recommendations without mutating contacts or suppressions.
 - Saved segment filter and audience snapshot workflow:
   - reusable consent/source/domain filters

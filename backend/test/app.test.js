@@ -240,6 +240,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/contacts\/source-hygiene-plan/);
   assert.match(html, /Source hygiene action plan/);
   assert.match(html, /api\/contacts\/source-quality-matrix/);
+  assert.match(html, /api\/contacts\/browser\/export-preview/);
   assert.match(html, /Source × domain quality matrix/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
   assert.match(html, /Dedupe\/merge planner/);
@@ -1472,6 +1473,18 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(search.body.contacts[0].email, 'ada@example.test');
     assert.equal(search.body.contacts[0].suppressed, false);
     assert.equal(search.body.safety.noContactMutation, true);
+
+    const exportPreview = await request('/api/contacts/browser/export-preview?search=ada@example.test&domain=example.test&suppression=not_suppressed', { headers: { cookie } });
+    assert.equal(exportPreview.status, 200);
+    assert.equal(exportPreview.body.mode, 'contact-browser-export-preview');
+    assert.equal(exportPreview.body.rowCount, 1);
+    assert.match(exportPreview.body.filename, /contact-browser-preview/);
+    assert.match(exportPreview.body.csvPreview, /email,name,source,consentStatus,domain,suppressed,riskFlags/);
+    assert.match(exportPreview.body.csvPreview, /ada@example.test/);
+    assert.equal(exportPreview.body.exportMutation, false);
+    assert.equal(exportPreview.body.safety.noContactMutation, true);
+    assert.equal(exportPreview.body.safety.noSecretOutput, true);
+    assert.equal(exportPreview.body.realDeliveryAllowed, false);
     assert.equal(search.body.safety.realDeliveryAllowed, false);
 
     const risky = await request('/api/contacts/browser?risk=role_account', { headers: { cookie } });
@@ -1569,6 +1582,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(contacts.body.count, 4);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_export_preview' && event.details?.rowCount === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_detail_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_drilldown_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
