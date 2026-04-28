@@ -48,8 +48,9 @@ const cloneSource = (source) => ({
 
 const cloneSyncRun = (run) => ({
   ...run,
-  validation: { ...run.validation, requiredGates: [...run.validation.requiredGates], blockers: [...run.validation.blockers] },
-  mapping: { ...run.mapping, fields: [...run.mapping.fields] }
+  validation: { ...(run.validation || {}), requiredGates: [...(run.validation?.requiredGates || [])], blockers: [...(run.validation?.blockers || [])] },
+  mapping: { ...(run.mapping || {}), fields: [...(run.mapping?.fields || [])] },
+  safety: run.safety ? { ...run.safety } : undefined
 });
 
 const cloneImportSchedule = (schedule) => ({
@@ -106,6 +107,70 @@ const getDataSourceFromPostgres = (id) => {
     LIMIT 1;
   `);
   return rows[0] ? pgRowToDataSource(rows[0]) : null;
+};
+
+const pgRowToSyncRun = ([id, dataSourceId, dataSourceName, status, mode, validationJson, mappingJson, rowsSeen, rowsImported, rowsPulled, realSync, networkProbe, replayOf, actorEmail, createdAt, finishedAt]) => ({
+  id,
+  dataSourceId,
+  dataSourceName,
+  status,
+  mode,
+  validation: safeParseJson(validationJson, { ok: true, requiredGates: [], blockers: [] }),
+  mapping: safeParseJson(mappingJson, { status: 'not_configured', fields: [] }),
+  rowsSeen: Number(rowsSeen || 0),
+  rowsImported: Number(rowsImported || 0),
+  rowsPulled: Number(rowsPulled || 0),
+  realSync: realSync === 't' || realSync === 'true',
+  networkProbe: networkProbe || 'skipped',
+  replayOf: replayOf || null,
+  actorEmail: actorEmail || null,
+  createdAt,
+  finishedAt: finishedAt || null,
+  safety: { noNetworkProbe: true, noRemoteRowsPulled: true, noContactMutation: true, realDeliveryAllowed: false }
+});
+
+const saveSyncRunToPostgres = (run) => {
+  const rows = runLocalPgRows(`
+    INSERT INTO data_source_sync_runs (id, data_source_id, data_source_name, status, mode, validation, mapping, rows_seen, rows_imported, rows_pulled, real_sync, network_probe, replay_of, actor_email, created_at, finished_at)
+    VALUES (${[
+      sqlLiteral(run.id),
+      sqlLiteral(run.dataSourceId),
+      sqlLiteral(run.dataSourceName),
+      sqlLiteral(run.status),
+      sqlLiteral(run.mode),
+      `${sqlLiteral(JSON.stringify(run.validation || {}))}::jsonb`,
+      `${sqlLiteral(JSON.stringify(run.mapping || {}))}::jsonb`,
+      Number(run.rowsSeen || 0),
+      Number(run.rowsImported || 0),
+      Number(run.rowsPulled || 0),
+      run.realSync ? 'true' : 'false',
+      sqlLiteral(run.networkProbe || 'skipped'),
+      sqlLiteral(run.replayOf || null),
+      sqlLiteral(run.actorEmail || null),
+      sqlLiteral(run.createdAt || nowIso()),
+      sqlLiteral(run.finishedAt || null)
+    ].join(',')})
+    ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, mode = EXCLUDED.mode, validation = EXCLUDED.validation, mapping = EXCLUDED.mapping, rows_seen = EXCLUDED.rows_seen, rows_imported = EXCLUDED.rows_imported, rows_pulled = EXCLUDED.rows_pulled, real_sync = EXCLUDED.real_sync, network_probe = EXCLUDED.network_probe, replay_of = EXCLUDED.replay_of, actor_email = EXCLUDED.actor_email, finished_at = EXCLUDED.finished_at
+    RETURNING id, data_source_id, data_source_name, status, mode, validation::text, mapping::text, rows_seen::text, rows_imported::text, rows_pulled::text, real_sync::text, network_probe, coalesce(replay_of, ''), coalesce(actor_email, ''), created_at::text, coalesce(finished_at::text, '');
+  `);
+  return pgRowToSyncRun(rows[0]);
+};
+
+const listSyncRunsFromPostgres = () => runLocalPgRows(`
+  SELECT id, data_source_id, data_source_name, status, mode, validation::text, mapping::text, rows_seen::text, rows_imported::text, rows_pulled::text, real_sync::text, network_probe, coalesce(replay_of, ''), coalesce(actor_email, ''), created_at::text, coalesce(finished_at::text, '')
+  FROM data_source_sync_runs
+  ORDER BY created_at DESC
+  LIMIT 100;
+`).map(pgRowToSyncRun);
+
+const getSyncRunFromPostgres = (id) => {
+  const rows = runLocalPgRows(`
+    SELECT id, data_source_id, data_source_name, status, mode, validation::text, mapping::text, rows_seen::text, rows_imported::text, rows_pulled::text, real_sync::text, network_probe, coalesce(replay_of, ''), coalesce(actor_email, ''), created_at::text, coalesce(finished_at::text, '')
+    FROM data_source_sync_runs
+    WHERE id = ${sqlLiteral(id)}
+    LIMIT 1;
+  `);
+  return rows[0] ? pgRowToSyncRun(rows[0]) : null;
 };
 
 const saveDataSourceToPostgres = (source, secretRecord = null) => {
@@ -968,22 +1033,111 @@ export const createDataSourceSyncRun = ({ dataSourceId, mapping = {}, actorEmail
     rowsPulled: 0,
     realSync: false,
     networkProbe: 'skipped',
+    replayOf: null,
+    safety: { noNetworkProbe: true, noRemoteRowsPulled: true, noContactMutation: true, realDeliveryAllowed: false },
     actorEmail,
     createdAt: nowIso(),
     finishedAt: nowIso()
   };
-  syncRuns.set(run.id, run);
+  let savedRun = run;
+  let persistenceMode = 'in-memory-until-postgresql-sync-runs-enabled';
+  if (isPgRepositoryEnabled('data_source_sync_runs')) {
+    try {
+      savedRun = saveSyncRunToPostgres(run);
+      persistenceMode = 'postgresql-local-psql-repository';
+    } catch {
+      persistenceMode = 'postgresql-error-fallback-in-memory';
+    }
+  }
+  syncRuns.set(savedRun.id, savedRun);
 
-  return { ok: true, run: cloneSyncRun(run), realSync: false };
+  return { ok: true, run: cloneSyncRun(savedRun), realSync: false, persistenceMode };
 };
 
-export const listDataSourceSyncRuns = () => ({
-  ok: true,
-  mode: 'data-source-sync-dry-run-baseline',
-  count: syncRuns.size,
-  runs: [...syncRuns.values()].map(cloneSyncRun),
-  realSync: false
-});
+export const listDataSourceSyncRuns = () => {
+  if (isPgRepositoryEnabled('data_source_sync_runs')) {
+    try {
+      const runs = listSyncRunsFromPostgres();
+      runs.forEach((run) => syncRuns.set(run.id, run));
+      return {
+        ok: true,
+        mode: 'data-source-sync-run-history',
+        count: runs.length,
+        runs: runs.map(cloneSyncRun),
+        realSync: false,
+        persistenceMode: 'postgresql-local-psql-repository',
+        replayAvailable: true
+      };
+    } catch {
+      // Safe fallback to memory if the local psql adapter is unavailable.
+    }
+  }
+  return {
+    ok: true,
+    mode: 'data-source-sync-run-history',
+    count: syncRuns.size,
+    runs: [...syncRuns.values()].map(cloneSyncRun),
+    realSync: false,
+    persistenceMode: isPgRepositoryEnabled('data_source_sync_runs') ? 'postgresql-error-fallback-in-memory' : 'in-memory-until-postgresql-sync-runs-enabled',
+    replayAvailable: true
+  };
+};
+
+const getDataSourceSyncRun = (id) => {
+  const cleanId = String(id || '').trim();
+  if (!cleanId) return null;
+  const memoryRun = syncRuns.get(cleanId);
+  if (memoryRun) return memoryRun;
+  if (isPgRepositoryEnabled('data_source_sync_runs')) {
+    try {
+      const run = getSyncRunFromPostgres(cleanId);
+      if (run) syncRuns.set(run.id, run);
+      return run;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+export const replayDataSourceSyncRun = ({ runId, actorEmail = null } = {}) => {
+  const previous = getDataSourceSyncRun(runId);
+  if (!previous) {
+    return { ok: false, mode: 'data-source-sync-run-replay', errors: ['sync_run_not_found'], replayMutation: false, realSync: false, rowsPulled: 0, networkProbe: 'skipped' };
+  }
+  const source = getDataSource(previous.dataSourceId);
+  if (!source) {
+    return { ok: false, mode: 'data-source-sync-run-replay', errors: ['data_source_not_found'], replayOf: previous.id, replayMutation: false, realSync: false, rowsPulled: 0, networkProbe: 'skipped' };
+  }
+  const result = createDataSourceSyncRun({ dataSourceId: previous.dataSourceId, mapping: { fields: previous.mapping?.fields || [] }, actorEmail });
+  if (!result.ok) return { ...result, mode: 'data-source-sync-run-replay', replayOf: previous.id, replayMutation: false };
+  const replayed = {
+    ...result.run,
+    id: result.run.id,
+    status: 'replayed_dry_run',
+    mode: 'data-source-sync-run-replay',
+    replayOf: previous.id,
+    validation: {
+      ...result.run.validation,
+      replayedFrom: previous.id,
+      requiredGates: [...(result.run.validation?.requiredGates || []), 'operator_replay_request'],
+      blockers: result.run.validation?.blockers || []
+    },
+    safety: { noNetworkProbe: true, noRemoteRowsPulled: true, noContactMutation: true, realDeliveryAllowed: false }
+  };
+  let savedReplay = replayed;
+  let persistenceMode = result.persistenceMode;
+  if (isPgRepositoryEnabled('data_source_sync_runs')) {
+    try {
+      savedReplay = saveSyncRunToPostgres(replayed);
+      persistenceMode = 'postgresql-local-psql-repository';
+    } catch {
+      persistenceMode = 'postgresql-error-fallback-in-memory';
+    }
+  }
+  syncRuns.set(savedReplay.id, savedReplay);
+  return { ok: true, mode: 'data-source-sync-run-replay', run: cloneSyncRun(savedReplay), replayOf: previous.id, replayMutation: true, realSync: false, rowsPulled: 0, networkProbe: 'skipped', persistenceMode };
+};
 
 const validateImportScheduleMapping = (mapping = {}) => {
   const clean = {

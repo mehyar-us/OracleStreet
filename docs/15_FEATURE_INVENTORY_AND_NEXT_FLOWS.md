@@ -187,6 +187,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Remote import schedule planner with SELECT-only query, mapping profile, interval, approval phrase, and no automatic pulls.
 - PostgreSQL runtime adapter for remote import schedules.
 - Sync-run/schedule history for preview/execution/planned recurrence.
+- PostgreSQL-backed sync-run history with operator replay of prior dry-run validations.
 - Live remote writes/destructive queries are not supported.
 
 ### Reputation, warm-up, and safety gates
@@ -312,7 +313,7 @@ Acceptance:
 
 ### Flow D — Remote PostgreSQL import scheduler
 
-Status: shipped safe baseline. The Remote PostgreSQL workbench now plans recurring contact import schedules over the existing SELECT-only query and contact mapping surfaces. Schedule plans are protected, audited, approval-gated when marked enabled, store redacted metadata only, and do not start background pulls or mutate contacts.
+Status: shipped safe baseline plus sync-run persistence/replay. The Remote PostgreSQL workbench now plans recurring contact import schedules over the existing SELECT-only query and contact mapping surfaces, and sync-run dry-run validation history is PostgreSQL-backed where enabled with operator replay controls. Schedule plans and replay records are protected, audited, redacted, approval-gated where relevant, and do not start background pulls or mutate contacts.
 
 Shipped:
 - source sync schedule form
@@ -320,6 +321,8 @@ Shipped:
 - dry-run next-sync preview timestamp
 - sync schedule history UI with interval/status/query/mapping metadata
 - exact approval gate for marking a schedule plan enabled
+- PostgreSQL-backed sync-run history
+- operator replay of prior sync validations without network probes/imports
 
 Acceptance:
 - no automatic live pulls unless future env/operator/worker gates pass

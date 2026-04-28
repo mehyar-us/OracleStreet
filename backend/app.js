@@ -10,7 +10,7 @@ import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planCon
 import { browseContacts } from './lib/contactBrowser.js';
 import { importContacts, listContacts, validateContactImport } from './lib/contacts.js';
 import { validateDatabaseConfig } from './lib/database.js';
-import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, validateDataSourceQuery } from './lib/dataSources.js';
+import { createDataSource, createDataSourceImportSchedule, createDataSourceSyncRun, executeDataSourceQuery, executeDataSourceSchemaDiscovery, importContactsFromDataSource, listDataSources, listDataSourceImportSchedules, listDataSourceSyncRuns, planDataSourceSchemaDiscovery, previewContactImportFromDataSource, replayDataSourceSyncRun, validateDataSourceQuery } from './lib/dataSources.js';
 import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
@@ -255,6 +255,17 @@ export const createHandler = () => {
         return jsonResponse(res, result.ok ? 200 : 400, result);
       }
       return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' }, { allow: 'GET, POST' });
+    }
+
+    if (url.pathname === '/api/data-source-sync-runs/replay' || url.pathname === '/data-source-sync-runs/replay') {
+      if (!requireMethod(req, res, 'POST')) return;
+      const session = requirePermission(req, res, 'manage_data_sources');
+      if (!session) return;
+      const body = await readJsonBody(req);
+      if (body === null) return jsonResponse(res, 400, { ok: false, error: 'invalid_json' });
+      const result = replayDataSourceSyncRun({ runId: body.runId, actorEmail: session.email });
+      recordAuditEvent({ action: 'data_source_sync_run_replay', actorEmail: session.email, target: body.runId || null, status: result.ok ? 'ok' : 'rejected', details: { errors: result.errors || [], replayOf: result.replayOf || body.runId || null, rowsPulled: 0, realSync: false, replayMutation: Boolean(result.replayMutation) } });
+      return jsonResponse(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/data-source-import-schedules' || url.pathname === '/data-source-import-schedules') {

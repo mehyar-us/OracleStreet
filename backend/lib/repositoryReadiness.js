@@ -17,8 +17,9 @@ const MODULES = [
   { module: 'admin_sessions', targetTable: 'admin_sessions', runtimeMode: 'signed-cookie-plus-memory-session-ledger', priority: 13, blocker: 'wire_session_repository_to_postgresql_driver' },
   { module: 'data_sources', targetTable: 'data_source_registry', runtimeMode: 'in-memory', priority: 14, blocker: 'wire_remote_source_registry_to_postgresql_driver' },
   { module: 'data_source_encrypted_secrets', targetTable: 'data_source_encrypted_secrets', runtimeMode: 'in-memory', priority: 15, blocker: 'wire_remote_source_secret_metadata_to_postgresql_driver' },
-  { module: 'data_source_import_schedules', targetTable: 'data_source_import_schedules', runtimeMode: 'in-memory', priority: 16, blocker: 'wire_remote_import_schedule_repository_to_postgresql_driver' },
-  { module: 'controlled_live_test_proof_audits', targetTable: 'controlled_live_test_proof_audits', runtimeMode: 'in-memory', priority: 17, blocker: 'wire_controlled_proof_audit_repository_to_postgresql_driver' }
+  { module: 'data_source_sync_runs', targetTable: 'data_source_sync_runs', runtimeMode: 'in-memory', priority: 16, blocker: 'wire_remote_sync_run_history_to_postgresql_driver' },
+  { module: 'data_source_import_schedules', targetTable: 'data_source_import_schedules', runtimeMode: 'in-memory', priority: 17, blocker: 'wire_remote_import_schedule_repository_to_postgresql_driver' },
+  { module: 'controlled_live_test_proof_audits', targetTable: 'controlled_live_test_proof_audits', runtimeMode: 'in-memory', priority: 18, blocker: 'wire_controlled_proof_audit_repository_to_postgresql_driver' }
 ];
 
 export const repositoryReadiness = () => {

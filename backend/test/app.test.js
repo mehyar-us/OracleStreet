@@ -271,6 +271,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Plan schema discovery/);
   assert.match(html, /api\/data-source-query\/validate/);
   assert.match(html, /Validate SELECT query/);
+  assert.match(html, /api\/data-source-sync-runs\/replay/);
+  assert.match(html, /Replay sync validation/);
   assert.match(html, /reputation-screen/);
   assert.match(html, /api\/email\/warmup\/plan/);
   assert.match(html, /Plan warm-up preview/);
@@ -358,6 +360,10 @@ test('migration manifest is protected and lists initial PostgreSQL schema plus e
     assert.ok(segmentSnapshotsMigration);
     assert.match(segmentSnapshotsMigration.description, /segment snapshot metadata/);
     assert.ok(segmentSnapshotsMigration.statements >= 5);
+    const syncRunsMigration = res.body.migrations.find((migration) => migration.id === '014_data_source_sync_runs_runtime');
+    assert.ok(syncRunsMigration);
+    assert.match(syncRunsMigration.description, /sync-run persistence/);
+    assert.ok(syncRunsMigration.statements >= 5);
   });
 });
 
@@ -379,6 +385,7 @@ test('database repository readiness is protected and exposes PostgreSQL schema m
     assert.ok(res.body.modules.some((module) => module.module === 'warmup_policies' && module.targetTable === 'warmup_policies'));
     assert.ok(res.body.modules.some((module) => module.module === 'data_sources' && module.targetTable === 'data_source_registry'));
     assert.ok(res.body.modules.some((module) => module.module === 'data_source_encrypted_secrets' && module.targetTable === 'data_source_encrypted_secrets'));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_source_sync_runs' && module.targetTable === 'data_source_sync_runs'));
     assert.ok(res.body.modules.some((module) => module.module === 'data_source_import_schedules' && module.targetTable === 'data_source_import_schedules'));
     assert.ok(res.body.modules.some((module) => module.module === 'controlled_live_test_proof_audits' && module.targetTable === 'controlled_live_test_proof_audits'));
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.nextAction === 'wire_contact_repository_to_postgresql_driver'));
@@ -394,7 +401,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     ORACLESTREET_ADMIN_EMAIL: 'admin@example.test',
     ORACLESTREET_ADMIN_PASSWORD: 'correct-horse-battery-staple',
     ORACLESTREET_SESSION_SECRET: 'test-secret-at-least-stable',
-    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,segments,campaigns,send_queue,email_events,users,user_invite_password_workflow,admin_sessions,audit_log,warmup_policies,reputation_policies,data_sources,data_source_encrypted_secrets,data_source_import_schedules,controlled_live_test_proof_audits',
+    ORACLESTREET_PG_REPOSITORIES: 'contacts,suppressions,templates,segments,campaigns,send_queue,email_events,users,user_invite_password_workflow,admin_sessions,audit_log,warmup_policies,reputation_policies,data_sources,data_source_encrypted_secrets,data_source_sync_runs,data_source_import_schedules,controlled_live_test_proof_audits',
     ORACLESTREET_DATABASE_URL: 'postgresql://oraclestreet_app:super-secret@127.0.0.1:5432/oraclestreet?sslmode=disable'
   }, async () => {
     const login = await loginAsAdmin();
@@ -402,7 +409,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.equal(res.status, 200);
     assert.equal(res.body.liveRepositoryEnabled, true);
     assert.equal(res.body.currentRuntimePersistence, 'partial-postgresql-runtime-repositories');
-    assert.equal(res.body.summary.liveRepositoryModules, 17);
+    assert.equal(res.body.summary.liveRepositoryModules, 18);
     assert.equal(res.body.summary.psqlAdapterReady, true);
     assert.ok(res.body.modules.some((module) => module.module === 'contacts' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'suppressions' && module.liveRepositoryEnabled));
@@ -419,6 +426,7 @@ test('database repository readiness reports enabled CMS repositories from env wi
     assert.ok(res.body.modules.some((module) => module.module === 'reputation_policies' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'data_sources' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'data_source_encrypted_secrets' && module.liveRepositoryEnabled));
+    assert.ok(res.body.modules.some((module) => module.module === 'data_source_sync_runs' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'data_source_import_schedules' && module.liveRepositoryEnabled));
     assert.ok(res.body.modules.some((module) => module.module === 'controlled_live_test_proof_audits' && module.liveRepositoryEnabled));
     assert.doesNotMatch(JSON.stringify(res.body), /super-secret/);
@@ -633,8 +641,36 @@ test('data source sync dry-run requires admin and validates registered sources w
     assert.equal(list.body.runs[0].dataSourceName, 'Sync warehouse');
     assert.equal(list.body.realSync, false);
 
+    const replayUnauth = await request('/api/data-source-sync-runs/replay', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ runId: sync.body.run.id })
+    });
+    assert.equal(replayUnauth.status, 401);
+
+    const replay = await request('/api/data-source-sync-runs/replay', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ runId: sync.body.run.id })
+    });
+    assert.equal(replay.status, 200);
+    assert.equal(replay.body.mode, 'data-source-sync-run-replay');
+    assert.equal(replay.body.replayOf, sync.body.run.id);
+    assert.equal(replay.body.run.status, 'replayed_dry_run');
+    assert.equal(replay.body.run.rowsPulled, 0);
+    assert.equal(replay.body.run.realSync, false);
+    assert.equal(replay.body.run.safety.noContactMutation, true);
+    assert.equal(replay.body.networkProbe, 'skipped');
+    assert.equal(JSON.stringify(replay.body).includes('sync-secret'), false);
+
+    const replayList = await request('/api/data-source-sync-runs', { headers: { cookie } });
+    assert.equal(replayList.status, 200);
+    assert.equal(replayList.body.count, 2);
+    assert.ok(replayList.body.runs.some((run) => run.replayOf === sync.body.run.id));
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_dry_run'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_run_replay'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_sync_runs_list'));
   });
 });
