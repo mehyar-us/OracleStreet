@@ -111,7 +111,7 @@ export const validateAdminSession = ({ token, email } = {}) => {
         WHERE id = ${sqlLiteral(id)} AND email = ${sqlLiteral(cleanEmail)}
         LIMIT 1;
       `);
-      const active = rows[0]?.[0] === 't' || rows[0]?.[0] === true;
+      const active = ['t', 'true'].includes(String(rows[0]?.[0]).toLowerCase()) || rows[0]?.[0] === true;
       return { ok: active, reason: active ? null : 'session_revoked_or_not_found', persistenceMode: 'postgresql-local-psql-repository' };
     } catch (error) {
       // fall through to signed-cookie-only validation so repository outages do not lock out bootstrap admins
