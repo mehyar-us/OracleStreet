@@ -244,6 +244,7 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/contacts\/browser\/export-preview/);
   assert.match(html, /api\/contacts\/suppression-review/);
   assert.match(html, /api\/contacts\/risk-triage/);
+  assert.match(html, /api\/contacts\/repermission-plan/);
   assert.match(html, /api\/contacts\/audience-exclusion-preview/);
   assert.match(html, /Source × domain quality matrix/);
   assert.match(html, /api\/contacts\/dedupe-merge-plan/);
@@ -1446,6 +1447,8 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(unauthSourceQuarantine.status, 401);
     const unauthRiskTriage = await request('/api/contacts/risk-triage');
     assert.equal(unauthRiskTriage.status, 401);
+    const unauthRepermission = await request('/api/contacts/repermission-plan');
+    assert.equal(unauthRepermission.status, 401);
     const unauthExclusionPreview = await request('/api/contacts/audience-exclusion-preview');
     assert.equal(unauthExclusionPreview.status, 401);
     const unauthSuppressionReview = await request('/api/contacts/suppression-review');
@@ -1587,6 +1590,19 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.equal(riskTriage.body.safety.automaticAudienceMutationAllowed, false);
     assert.equal(riskTriage.body.realDeliveryAllowed, false);
 
+    const repermissionPlan = await request('/api/contacts/repermission-plan?domain=example.test', { headers: { cookie } });
+    assert.equal(repermissionPlan.status, 200);
+    assert.equal(repermissionPlan.body.mode, 'contact-repermission-plan');
+    assert.ok(repermissionPlan.body.totals.repermissionReviewContacts >= 1);
+    assert.equal(repermissionPlan.body.totals.outboundRepermissionAllowed, 0);
+    assert.equal(repermissionPlan.body.totals.automaticContactMutationAllowed, 0);
+    assert.ok(repermissionPlan.body.reasonRows.some((row) => row.key === 'suppressed_contact_do_not_contact' && row.outboundRepermissionAllowed === false));
+    assert.ok(repermissionPlan.body.samples.some((contact) => contact.email === 'support@example.test' && contact.reasons.includes('suppressed_contact_do_not_contact')));
+    assert.equal(repermissionPlan.body.safety.recommendationOnly, true);
+    assert.equal(repermissionPlan.body.safety.noContactMutation, true);
+    assert.equal(repermissionPlan.body.safety.outboundRepermissionAllowed, false);
+    assert.equal(repermissionPlan.body.realDeliveryAllowed, false);
+
     const suppressionReview = await request('/api/contacts/suppression-review?source=support%20imports', { headers: { cookie } });
     assert.equal(suppressionReview.status, 200);
     assert.equal(suppressionReview.body.mode, 'contact-suppression-review-plan');
@@ -1657,6 +1673,7 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_hygiene_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quarantine_plan_view' && event.details?.quarantineRecommended >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_source_quality_matrix_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_repermission_plan_view' && event.details?.outboundRepermissionAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_risk_triage_queue_view' && event.details?.riskyContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_suppression_review_plan_view' && event.details?.suppressedContacts === 1));
     assert.ok(audit.body.events.some((event) => event.action === 'contact_audience_exclusion_preview_view' && event.details?.excludedContacts === 1));

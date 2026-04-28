@@ -1022,3 +1022,109 @@ export const contactSourceQuarantinePlan = ({ scoreThreshold = 70, staleAfterDay
     realDeliveryAllowed: false
   };
 };
+
+
+export const contactRepermissionPlan = ({ source = '', domain = '', staleAfterDays = 180, limit = 100 } = {}) => {
+  const browser = browseContacts({ source, domain, staleAfterDays, limit: 500 });
+  const rowLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+  const candidates = (browser.contacts || []).map((contact) => {
+    const flags = contact.riskFlags || [];
+    const reasons = [];
+    if (!['opt_in', 'double_opt_in'].includes(contact.consentStatus)) reasons.push('missing_or_non_explicit_consent');
+    if (flags.includes('stale_contact')) reasons.push('stale_consent');
+    if (!contact.source) reasons.push('missing_source_metadata');
+    if (contact.suppressed) reasons.push('suppressed_contact_do_not_contact');
+    if ((contact.eventCounts?.complaint || 0) > 0) reasons.push('complaint_history_do_not_contact');
+    if ((contact.eventCounts?.bounce || 0) > 0) reasons.push('bounce_history_do_not_contact');
+    return { contact, reasons };
+  }).filter((item) => item.reasons.length);
+  const rowsByReason = new Map();
+  const rowsBySource = new Map();
+  const add = (map, key, item) => {
+    const row = map.get(key) || { key, contacts: 0, doNotContact: 0, repermissionCandidates: 0, stale: 0, missingConsent: 0, missingSource: 0, sources: new Set(), domains: new Set() };
+    row.contacts += 1;
+    const { contact, reasons } = item;
+    const hardStop = reasons.some((reason) => reason.includes('do_not_contact'));
+    if (hardStop) row.doNotContact += 1;
+    else row.repermissionCandidates += 1;
+    if (reasons.includes('stale_consent')) row.stale += 1;
+    if (reasons.includes('missing_or_non_explicit_consent')) row.missingConsent += 1;
+    if (reasons.includes('missing_source_metadata')) row.missingSource += 1;
+    row.sources.add(contact.source || 'unknown_source');
+    row.domains.add(contact.domain || domainOf(contact.email) || 'unknown_domain');
+    map.set(key, row);
+  };
+  for (const item of candidates) {
+    for (const reason of item.reasons) add(rowsByReason, reason, item);
+    add(rowsBySource, item.contact.source || 'unknown_source', item);
+  }
+  const finish = (row) => ({
+    ...row,
+    sources: row.sources.size,
+    domains: row.domains.size,
+    reviewGate: true,
+    recommendation: row.doNotContact > 0
+      ? 'exclude_do_not_contact_records_and_review_source_history'
+      : row.missingConsent > 0
+        ? 'repair_explicit_consent_or_collect_permission_before_campaign_use'
+        : row.stale > 0
+          ? 'refresh_permission_before_campaign_or_warmup_use'
+          : 'operator_review_before_repermission_or_segment_use',
+    outboundRepermissionAllowed: false,
+    realDeliveryAllowed: false
+  });
+  const reasonRows = [...rowsByReason.values()].map(finish).sort((a, b) => b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const sourceRows = [...rowsBySource.values()].map(finish).sort((a, b) => b.contacts - a.contacts || a.key.localeCompare(b.key)).slice(0, rowLimit);
+  const samples = candidates.slice(0, rowLimit).map(({ contact, reasons }) => ({
+    id: contact.id || null,
+    email: contact.email,
+    source: contact.source || null,
+    domain: contact.domain || null,
+    consentStatus: contact.consentStatus || null,
+    suppressed: Boolean(contact.suppressed),
+    reasons,
+    recommendedAction: reasons.some((reason) => reason.includes('do_not_contact')) ? 'do_not_contact_exclude_from_segments' : 'repair_permission_metadata_or_refresh_consent_manually',
+    outboundRepermissionAllowed: false,
+    realDeliveryAllowed: false
+  }));
+  const recommendations = [];
+  if (candidates.some(({ reasons }) => reasons.includes('suppressed_contact_do_not_contact'))) recommendations.push('never_repermission_suppressed_contacts_without_separate_human_legal_review');
+  if (candidates.some(({ reasons }) => reasons.includes('complaint_history_do_not_contact'))) recommendations.push('exclude_complaint_history_contacts_from_repermission_and_campaign_use');
+  if (candidates.some(({ reasons }) => reasons.includes('missing_or_non_explicit_consent'))) recommendations.push('repair_explicit_consent_metadata_before_any_campaign_or_repermission_work');
+  if (candidates.some(({ reasons }) => reasons.includes('stale_consent'))) recommendations.push('refresh_stale_consent_through_manual_operator_process_before_campaign_use');
+  if (!recommendations.length) recommendations.push('no_repermission_candidates_match_current_filters');
+  return {
+    ok: true,
+    mode: 'contact-repermission-plan',
+    filters: { ...browser.filters, limit: rowLimit },
+    totals: {
+      matchedContacts: (browser.contacts || []).length,
+      repermissionReviewContacts: candidates.length,
+      doNotContact: candidates.filter((item) => item.reasons.some((reason) => reason.includes('do_not_contact'))).length,
+      staleConsent: candidates.filter((item) => item.reasons.includes('stale_consent')).length,
+      missingConsent: candidates.filter((item) => item.reasons.includes('missing_or_non_explicit_consent')).length,
+      outboundRepermissionAllowed: 0,
+      automaticContactMutationAllowed: 0
+    },
+    reasonRows,
+    sourceRows,
+    samples,
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      recommendationOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noSegmentMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      outboundRepermissionAllowed: false,
+      automaticContactMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: browser.persistenceMode,
+    realDeliveryAllowed: false
+  };
+};
