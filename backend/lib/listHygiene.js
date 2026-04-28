@@ -10,6 +10,39 @@ const localPart = (email) => normalizeEmail(email).split('@')[0] || '';
 const daysBetween = (left, right) => Math.floor((left.getTime() - right.getTime()) / (24 * 60 * 60 * 1000));
 
 const sourceKey = (contact) => String(contact.source || 'unknown').trim() || 'unknown';
+const displayNameKey = (contact) => [contact.firstName, contact.lastName]
+  .map((part) => String(part || '').trim().toLowerCase())
+  .filter(Boolean)
+  .join(' ');
+
+const contactMergePreview = (rows, reason) => {
+  const sorted = [...rows].sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
+  const primary = sorted.find((row) => row.consentStatus === 'double_opt_in') || sorted[0];
+  const sources = [...new Set(sorted.map((row) => sourceKey(row)))];
+  const consentStatuses = [...new Set(sorted.map((row) => row.consentStatus).filter(Boolean))];
+  return {
+    reason,
+    primaryContactId: primary?.id || null,
+    primaryEmail: primary?.email || null,
+    contactIds: sorted.map((row) => row.id),
+    emails: sorted.map((row) => normalizeEmail(row.email)),
+    sources,
+    consentStatuses,
+    action: 'operator_review_merge_or_quarantine',
+    mergeFields: {
+      firstName: sorted.find((row) => row.firstName)?.firstName || null,
+      lastName: sorted.find((row) => row.lastName)?.lastName || null,
+      consentStatus: consentStatuses.includes('double_opt_in') ? 'double_opt_in' : consentStatuses[0] || null,
+      sourceSummary: sources.join(' + ')
+    },
+    safety: {
+      previewOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noDeliveryUnlock: true
+    }
+  };
+};
 
 export const buildListHygienePlan = ({ staleAfterDays = 180 } = {}) => {
   const contacts = getAllContacts();
@@ -113,6 +146,57 @@ export const buildListHygienePlan = ({ staleAfterDays = 180 } = {}) => {
     domainConcentration,
     recommendations,
     cleanupMutation: false,
+    realDeliveryAllowed: false
+  };
+};
+
+export const buildContactDedupeMergePlan = () => {
+  const contacts = getAllContacts();
+  const byEmail = new Map();
+  const byNameDomain = new Map();
+  contacts.forEach((contact) => {
+    const email = normalizeEmail(contact.email);
+    const domain = emailDomain(email);
+    if (!byEmail.has(email)) byEmail.set(email, []);
+    byEmail.get(email).push(contact);
+    const name = displayNameKey(contact);
+    if (name && domain) {
+      const key = `${name}@${domain}`;
+      if (!byNameDomain.has(key)) byNameDomain.set(key, []);
+      byNameDomain.get(key).push(contact);
+    }
+  });
+
+  const exactEmailPlans = [...byEmail.values()]
+    .filter((rows) => rows.length > 1)
+    .map((rows) => contactMergePreview(rows, 'exact_email_duplicate'));
+  const fuzzyPlans = [...byNameDomain.values()]
+    .filter((rows) => rows.length > 1 && new Set(rows.map((row) => normalizeEmail(row.email))).size > 1)
+    .map((rows) => contactMergePreview(rows, 'same_name_and_domain'));
+  const plans = [...exactEmailPlans, ...fuzzyPlans].slice(0, 50);
+
+  return {
+    ok: true,
+    mode: 'contact-dedupe-merge-plan',
+    totals: {
+      contacts: contacts.length,
+      exactEmailGroups: exactEmailPlans.length,
+      sameNameDomainGroups: fuzzyPlans.length,
+      mergePlans: plans.length
+    },
+    plans,
+    recommendations: plans.length > 0
+      ? [{ priority: 'high', action: 'review_contact_merge_plans', count: plans.length, note: 'Review primary contact selection and source/consent summary before any future merge mutation.' }]
+      : [{ priority: 'low', action: 'no_merge_candidates_found', count: 0, note: 'No exact-email or same-name-domain merge candidates found.' }],
+    safety: {
+      previewOnly: true,
+      noContactMutation: true,
+      noSuppressionMutation: true,
+      noNetworkProbe: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    mergeMutation: false,
     realDeliveryAllowed: false
   };
 };

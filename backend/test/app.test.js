@@ -233,6 +233,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/list-hygiene\/plan/);
   assert.match(html, /Cleanup planner/);
   assert.match(html, /Source quality/);
+  assert.match(html, /api\/contacts\/dedupe-merge-plan/);
+  assert.match(html, /Dedupe\/merge planner/);
   assert.match(html, /segments-screen/);
   assert.match(html, /api\/segments\/snapshots/);
   assert.match(html, /Saved segments \+ snapshots/);
@@ -1287,6 +1289,8 @@ test('contact browser search filters and source-quality drilldowns require admin
   }, async () => {
     const unauth = await request('/api/contacts/browser?search=example');
     assert.equal(unauth.status, 401);
+    const unauthMerge = await request('/api/contacts/dedupe-merge-plan');
+    assert.equal(unauthMerge.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -1295,6 +1299,7 @@ test('contact browser search filters and source-quality drilldowns require admin
       headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({ contacts: [
         { email: 'Ada@Example.test', consentStatus: 'opt_in', source: 'owned newsletter', firstName: 'Ada', lastName: 'Lovelace' },
+        { email: 'ada.alt@example.test', consentStatus: 'double_opt_in', source: 'crm export', firstName: 'Ada', lastName: 'Lovelace' },
         { email: 'support@example.test', consentStatus: 'opt_in', source: 'support imports', firstName: 'Support' },
         { email: 'reader@other.test', consentStatus: 'double_opt_in', source: 'partner optin', firstName: 'Reader' }
       ] })
@@ -1305,7 +1310,7 @@ test('contact browser search filters and source-quality drilldowns require admin
       body: JSON.stringify({ email: 'support@example.test', reason: 'manual', source: 'test suppression' })
     });
 
-    const search = await request('/api/contacts/browser?search=ada&domain=example.test&suppression=not_suppressed', { headers: { cookie } });
+    const search = await request('/api/contacts/browser?search=ada@example.test&domain=example.test&suppression=not_suppressed', { headers: { cookie } });
     assert.equal(search.status, 200);
     assert.equal(search.body.mode, 'contact-browser-search-filter-drilldown');
     assert.equal(search.body.totals.matchedContacts, 1);
@@ -1320,10 +1325,20 @@ test('contact browser search filters and source-quality drilldowns require admin
     assert.ok(risky.body.sourceQuality.some((source) => source.source === 'support imports' && source.suppressed === 1));
     assert.ok(risky.body.domainConcentration.some((entry) => entry.domain === 'example.test'));
 
+    const mergePlan = await request('/api/contacts/dedupe-merge-plan', { headers: { cookie } });
+    assert.equal(mergePlan.status, 200);
+    assert.equal(mergePlan.body.mode, 'contact-dedupe-merge-plan');
+    assert.equal(mergePlan.body.mergeMutation, false);
+    assert.equal(mergePlan.body.realDeliveryAllowed, false);
+    assert.equal(mergePlan.body.safety.noContactMutation, true);
+    assert.equal(mergePlan.body.totals.sameNameDomainGroups, 1);
+    assert.ok(mergePlan.body.plans.some((plan) => plan.reason === 'same_name_and_domain' && plan.primaryEmail === 'ada.alt@example.test'));
+
     const contacts = await request('/api/contacts', { headers: { cookie } });
-    assert.equal(contacts.body.count, 3);
+    assert.equal(contacts.body.count, 4);
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'contact_browser_search'));
+    assert.ok(audit.body.events.some((event) => event.action === 'contact_dedupe_merge_plan_view'));
   });
 });
 
@@ -1378,6 +1393,8 @@ test('contact endpoints also work behind nginx stripped api prefix', async () =>
   assert.equal(validate.status, 401);
   const hygiene = await request('/list-hygiene/plan');
   assert.equal(hygiene.status, 401);
+  const mergePlan = await request('/contacts/dedupe-merge-plan');
+  assert.equal(mergePlan.status, 401);
 });
 
 test('segment endpoints require admin session', async () => {

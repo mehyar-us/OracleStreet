@@ -15,7 +15,7 @@ import { senderDomainReadiness } from './lib/domainReadiness.js';
 import { findEmailEventsByProviderMessageId, ingestDeliveryEvents, ingestEmailEvents, listEmailEvents, recordEmailEvent, recordTrackingEvent } from './lib/emailEvents.js';
 import { validateEventImportCsv } from './lib/eventImport.js';
 import { dryRunSend, getEmailProviderConfig, getProviderAdapter, listLocalCapture, validatePowerMtaConfig, validateSelectedProviderConfig } from './lib/emailProvider.js';
-import { buildListHygienePlan } from './lib/listHygiene.js';
+import { buildContactDedupeMergePlan, buildListHygienePlan } from './lib/listHygiene.js';
 import { listMigrations } from './lib/migrations.js';
 import { monitoringReadiness } from './lib/monitoringReadiness.js';
 import { platformRateLimitReadiness } from './lib/platformRateLimits.js';
@@ -718,6 +718,15 @@ export const createHandler = () => {
       const staleAfterDays = Number(url.searchParams.get('staleAfterDays') || 180);
       const result = buildListHygienePlan({ staleAfterDays });
       recordAuditEvent({ action: 'list_hygiene_plan_view', actorEmail: session.email, status: 'ok', details: { riskyContacts: result.totals.riskyContacts, staleContacts: result.totals.staleContacts, cleanupMutation: false, realDeliveryAllowed: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/contacts/dedupe-merge-plan' || url.pathname === '/contacts/dedupe-merge-plan') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requireSession(req, res);
+      if (!session) return;
+      const result = buildContactDedupeMergePlan();
+      recordAuditEvent({ action: 'contact_dedupe_merge_plan_view', actorEmail: session.email, status: 'ok', details: { mergePlans: result.totals.mergePlans, exactEmailGroups: result.totals.exactEmailGroups, sameNameDomainGroups: result.totals.sameNameDomainGroups, mergeMutation: false, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 
