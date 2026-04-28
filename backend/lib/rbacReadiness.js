@@ -11,7 +11,7 @@ export const RBAC_ROUTE_POLICY = [
   { surface: 'templates', permission: 'manage_templates', routes: ['POST /api/templates', 'POST /api/templates/preview'] },
   { surface: 'suppressions', permission: 'manage_suppressions', routes: ['GET /api/suppressions', 'POST /api/suppressions'] },
   { surface: 'data_sources', permission: 'manage_data_sources', routes: ['POST /api/data-sources', 'POST /api/data-source-query/execute', 'POST /api/data-source-schema/discover', 'POST /api/data-source-import/execute', 'POST /api/data-source-import-schedules', 'GET /api/data-source-import-schedules/worker-plan', 'GET /api/data-source-import-schedules/runbook'] },
-  { surface: 'reporting', permission: 'view_reporting', routes: ['GET /api/email/reporting', 'GET /api/email/reporting/dashboard', 'GET /api/email/reporting/export', 'GET /api/campaigns/reporting'] },
+  { surface: 'reporting', permission: 'view_reporting', routes: ['GET /api/email/reporting', 'GET /api/email/reporting/dashboard', 'GET /api/email/reporting/drilldown', 'GET /api/email/reporting/export', 'GET /api/campaigns/reporting'] },
   { surface: 'sending_readiness', permission: 'review_sending_readiness', routes: ['GET /api/email/sending-readiness', 'GET /api/email/controlled-live-test/readiness', 'POST /api/email/controlled-live-test/plan', 'GET /api/email/controlled-live-test/seed-observation', 'GET /api/send-queue/readiness'] }
 ];
 

@@ -158,7 +158,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
 - Campaign tracking URL injection baseline.
 - Campaign reporting safe summary.
 - Campaign engagement dashboard summary.
-- Reporting dashboard depth API/UI with campaign leaderboard, source performance, domain performance, event trends, queue status, and aggregate-only safety posture.
+- Reporting dashboard depth API/UI with campaign leaderboard, source performance, domain performance, event trends, queue status, source/domain/campaign/trend drilldowns, and aggregate-only safety posture.
 - Reporting CSV export preview API/UI for:
   - summary
   - campaigns

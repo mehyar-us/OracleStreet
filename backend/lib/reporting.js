@@ -259,6 +259,126 @@ export const reportingDashboardDepth = (env = process.env) => {
   };
 };
 
+const normalizeDrilldownDimension = (value) => {
+  const clean = String(value || 'source').trim().toLowerCase();
+  return ['campaign', 'source', 'domain', 'trend'].includes(clean) ? clean : 'source';
+};
+
+export const reportingDashboardDrilldown = ({ dimension = 'source', key = '' } = {}) => {
+  const cleanDimension = normalizeDrilldownDimension(dimension);
+  const dashboard = reportingDashboardDepth();
+  const contacts = listContacts();
+  const events = listEmailEvents();
+  const suppressions = listSuppressions();
+  const campaigns = campaignReportingSummary();
+  const contactByEmail = new Map((contacts.contacts || []).map((contact) => [String(contact.email || '').toLowerCase(), contact]));
+  const fallbackKey = cleanDimension === 'campaign'
+    ? dashboard.campaignLeaderboard[0]?.campaignId
+    : cleanDimension === 'domain'
+      ? dashboard.domainPerformance[0]?.key
+      : cleanDimension === 'trend'
+        ? dashboard.trends[dashboard.trends.length - 1]?.key
+        : dashboard.sourcePerformance[0]?.key;
+  const selectedKey = String(key || fallbackKey || '').trim();
+
+  const matchesEvent = (event) => {
+    if (cleanDimension === 'campaign') return String(event.campaignId || '') === selectedKey;
+    if (cleanDimension === 'domain') return domainOf(event.email) === selectedKey;
+    if (cleanDimension === 'trend') return String(event.createdAt || '').slice(0, 10) === selectedKey;
+    return sourceForEmail(contactByEmail, event.email) === selectedKey;
+  };
+  const matchesContact = (contact) => {
+    if (cleanDimension === 'domain') return domainOf(contact.email) === selectedKey;
+    if (cleanDimension === 'source') return String(contact.source || 'unknown') === selectedKey;
+    return false;
+  };
+  const matchingEvents = (events.events || []).filter(matchesEvent);
+  const matchingContacts = (contacts.contacts || []).filter(matchesContact);
+  const matchingSuppressions = (suppressions.suppressions || []).filter((suppression) => {
+    if (cleanDimension === 'domain') return domainOf(suppression.email) === selectedKey;
+    if (cleanDimension === 'source') return sourceForEmail(contactByEmail, suppression.email) === selectedKey;
+    if (cleanDimension === 'campaign') return String(suppression.source || '').includes(selectedKey);
+    if (cleanDimension === 'trend') return String(suppression.createdAt || '').slice(0, 10) === selectedKey;
+    return false;
+  });
+  const counts = eventCountsFor(matchingEvents);
+  const denominator = Math.max(counts.dispatched || 0, counts.delivered || 0, matchingEvents.length, matchingContacts.length, 1);
+  const trendMap = new Map();
+  matchingEvents.forEach((event) => {
+    const day = String(event.createdAt || new Date().toISOString()).slice(0, 10);
+    addRollup(trendMap, day, event, contactByEmail);
+  });
+  const campaignBreakdown = campaigns.campaigns
+    .filter((campaign) => cleanDimension !== 'campaign' || campaign.campaignId === selectedKey)
+    .map((campaign) => ({
+      campaignId: campaign.campaignId,
+      name: campaign.name,
+      status: campaign.status,
+      opens: campaign.engagement.opens,
+      clicks: campaign.engagement.clicks,
+      openRate: campaign.engagement.openRate,
+      clickRate: campaign.engagement.clickRate,
+      affiliate: campaign.affiliate,
+      realDeliveryAllowed: false
+    }))
+    .slice(0, 10);
+  const recommendations = [];
+  if ((counts.bounce || 0) > 0 || (counts.complaint || 0) > 0) recommendations.push('review_suppressions_and_source_quality_before_future_schedules');
+  if ((counts.deferred || 0) > 0) recommendations.push('watch_recipient_domain_deferrals_before_warmup_increase');
+  if ((counts.open || 0) === 0 && (counts.click || 0) === 0 && matchingEvents.length > 0) recommendations.push('low_engagement_review_segment_or_creative');
+  if (matchingEvents.length === 0) recommendations.push('no_events_yet_keep_aggregate_only_monitoring');
+
+  return {
+    ok: true,
+    mode: 'reporting-dashboard-drilldown-safe-summary',
+    dimension: cleanDimension,
+    key: selectedKey || null,
+    counts: {
+      contacts: matchingContacts.length,
+      events: matchingEvents.length,
+      suppressions: matchingSuppressions.length,
+      dispatched: counts.dispatched || 0,
+      delivered: counts.delivered || 0,
+      deferred: counts.deferred || 0,
+      opens: counts.open || 0,
+      clicks: counts.click || 0,
+      bounces: counts.bounce || 0,
+      complaints: counts.complaint || 0,
+      unsubscribes: counts.unsubscribed || matchingSuppressions.filter((s) => s.reason === 'unsubscribe').length
+    },
+    rates: {
+      openRate: rate(counts.open || 0, denominator),
+      clickRate: rate(counts.click || 0, denominator),
+      bounceRate: rate(counts.bounce || 0, denominator),
+      complaintRate: rate(counts.complaint || 0, denominator)
+    },
+    campaignBreakdown,
+    eventTrend: [...trendMap.values()].map(finishRollup).sort((a, b) => a.key.localeCompare(b.key)).slice(-14),
+    sampleEvents: matchingEvents.slice(-10).map((event) => ({
+      type: event.type,
+      emailDomain: domainOf(event.email),
+      source: sourceForEmail(contactByEmail, event.email),
+      campaignId: event.campaignId || null,
+      providerMessageIdPresent: Boolean(event.providerMessageId),
+      createdAt: event.createdAt,
+      realDeliveryAllowed: false
+    })),
+    recommendations,
+    safety: {
+      adminSessionRequired: true,
+      readOnly: true,
+      aggregateOnly: true,
+      noSecretsIncluded: true,
+      noExternalDelivery: true,
+      noNetworkProbe: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};
+
 export const emailReportingSummary = (env = process.env) => {
   const audit = listAuditLog();
   const queue = listSendQueue();

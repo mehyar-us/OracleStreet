@@ -117,15 +117,16 @@ Acceptance:
 - Keep real outbound campaign sending locked until all safety gates pass and Boss explicitly approves.
 
 Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
-1. Reporting dashboard depth and campaign/source trend drilldowns.
-2. Remaining CRUD polish for visible admin CMS screens.
-3. Campaign calendar UX polish for multi-domain allocation views.
+1. Remaining CRUD polish for visible admin CMS screens.
+2. Campaign calendar UX polish for multi-domain allocation views.
+3. Continued MTA/reputation operational depth.
 
 Latest shipped slice:
 - Remote source persistence for source registry/encrypted secret metadata: migration `011_data_source_registry_runtime` adds `data_source_registry` and `data_source_encrypted_secrets`; `/api/data-sources` now uses local PostgreSQL runtime persistence when enabled, keeps safe in-memory fallback, stores encrypted secret ciphertext metadata only, displays registry persistence in the UI, and never returns plaintext credentials.
 - Affiliate/campaign metadata and audit timeline depth: migration `010_campaign_affiliate_metadata` adds campaign planning metadata columns; campaign drafts can capture affiliate program, offer ID, payout model, tracking-template configured flag, UTM source/campaign, and notes; `/api/campaigns/affiliate-summary` and `/api/campaigns/audit-timeline` expose protected no-secret/no-delivery rollups in the Campaigns UI; reporting carries affiliate metadata without unlocking delivery.
 - RBAC enforcement hardening: added a protected route-permission policy endpoint, visible Users/RBAC policy surface, permission checks for hardened admin/user/audit/contact-import/data-source write paths, and audited `rbac_permission_denied` responses with no user mutation, role mutation, secret output, or delivery unlock.
 - PostgreSQL persistence hardening for remote import schedules and controlled proof audits: migration `009_schedule_proof_runtime` adds `data_source_import_schedules` and `controlled_live_test_proof_audits`; both runtime paths now use local `psql` repositories on VPS when enabled, keep safe in-memory fallback for tests/adapter failure, never print secrets, and preserve no-pull/no-send/no-mutation posture.
+- Flow F reporting dashboard drilldown: `/api/email/reporting/drilldown` provides protected source/domain/campaign/trend drilldowns with counts, rates, sample metadata, event trends, campaign breakdowns, and recommendations while remaining aggregate/read-only with no secrets, probes, queue/provider mutation, or delivery unlock.
 - Flow F reporting dashboard depth safe baseline: `/api/email/reporting/dashboard` provides protected aggregate campaign leaderboard, source performance, domain performance, event trend, queue-status, and export-link metadata; the Reporting UI exposes the cards/lists after login, audits dashboard views, includes no secrets, probes no networks, sends no email, and keeps real delivery locked.
 - Flow E controlled one-recipient MTA proof path safe baseline: `/api/email/controlled-live-test/proof-audit` records manual/out-of-band proof outcomes, dry-run/local-capture proof IDs, optional provider message IDs, masked recipient metadata, and notes; it audits accepted/rejected records, sends no email, probes no network, mutates no queues/providers/suppressions, exposes no secrets, and the Reputation/readiness UI exposes proof audit history and controls after login.
 - Flow D remote PostgreSQL import scheduler safe baseline: `/api/data-source-import-schedules` plans recurring imports from a SELECT-only query plus contact mapping profile, interval, next-run preview timestamp, and exact approval phrase when marked enabled; it audits accepted/rejected plans, stores no raw credentials, performs no immediate remote pull, starts no worker, mutates no contacts, and the Remote PostgreSQL UI exposes schedule planning/history after login.

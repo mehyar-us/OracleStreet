@@ -301,6 +301,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Save auto-pause thresholds/);
   assert.match(html, /Evaluate auto-pause/);
   assert.match(html, /reporting-screen/);
+  assert.match(html, /api\/email\/reporting\/drilldown/);
+  assert.match(html, /Reporting drilldown/);
   assert.match(html, /api\/email\/reporting\/export/);
   assert.match(html, /Build CSV export/);
   assert.match(html, /reporting-export-dataset/);
@@ -2982,6 +2984,8 @@ test('reporting dashboard depth requires admin and aggregates campaign source do
   await withAdminEnv(async () => {
     const unauth = await request('/api/email/reporting/dashboard');
     assert.equal(unauth.status, 401);
+    const unauthDrilldown = await request('/api/email/reporting/drilldown?dimension=source&key=owned%20source%20A');
+    assert.equal(unauthDrilldown.status, 401);
 
     const login = await loginAsAdmin();
     const cookie = login.headers.get('set-cookie');
@@ -3034,8 +3038,30 @@ test('reporting dashboard depth requires admin and aggregates campaign source do
     assert.equal(dashboard.body.realDeliveryAllowed, false);
     assert.equal(JSON.stringify(dashboard.body).includes('correct-horse-battery-staple'), false);
 
+    const sourceDrilldown = await request('/api/email/reporting/drilldown?dimension=source&key=owned%20source%20A', { headers: { cookie } });
+    assert.equal(sourceDrilldown.status, 200);
+    assert.equal(sourceDrilldown.body.mode, 'reporting-dashboard-drilldown-safe-summary');
+    assert.equal(sourceDrilldown.body.dimension, 'source');
+    assert.equal(sourceDrilldown.body.key, 'owned source A');
+    assert.equal(sourceDrilldown.body.counts.contacts, 1);
+    assert.equal(sourceDrilldown.body.counts.events, 2);
+    assert.equal(sourceDrilldown.body.counts.opens, 1);
+    assert.equal(sourceDrilldown.body.counts.clicks, 1);
+    assert.equal(sourceDrilldown.body.sampleEvents[0].providerMessageIdPresent, false);
+    assert.equal(sourceDrilldown.body.safety.aggregateOnly, true);
+    assert.equal(sourceDrilldown.body.safety.noQueueMutation, true);
+    assert.equal(sourceDrilldown.body.realDeliveryAllowed, false);
+    assert.equal(JSON.stringify(sourceDrilldown.body).includes('correct-horse-battery-staple'), false);
+
+    const domainDrilldown = await request('/api/email/reporting/drilldown?dimension=domain&key=example.test', { headers: { cookie } });
+    assert.equal(domainDrilldown.status, 200);
+    assert.equal(domainDrilldown.body.counts.contacts, 2);
+    assert.equal(domainDrilldown.body.counts.bounces, 1);
+    assert.ok(domainDrilldown.body.recommendations.includes('review_suppressions_and_source_quality_before_future_schedules'));
+
     const audit = await request('/api/audit-log', { headers: { cookie } });
     assert.ok(audit.body.events.some((event) => event.action === 'reporting_dashboard_depth_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'reporting_dashboard_drilldown_view'));
   });
 });
 
@@ -3044,6 +3070,8 @@ test('email reporting endpoint also works behind nginx stripped api prefix', asy
   assert.equal(res.status, 401);
   const dashboard = await request('/email/reporting/dashboard');
   assert.equal(dashboard.status, 401);
+  const drilldown = await request('/email/reporting/drilldown');
+  assert.equal(drilldown.status, 401);
   const exportPreview = await request('/email/reporting/export?dataset=summary');
   assert.equal(exportPreview.status, 401);
 });
