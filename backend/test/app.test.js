@@ -301,7 +301,9 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /Validate SELECT query/);
   assert.match(html, /api\/data-source-sync-runs\/replay/);
   assert.match(html, /Replay sync validation/);
+  assert.match(html, /api\/data-source-import-schedules\/preflight/);
   assert.match(html, /api\/data-source-import-schedules\/worker-plan/);
+  assert.match(html, /Remote import scheduler preflight/);
   assert.match(html, /Scheduler worker plan/);
   assert.match(html, /api\/data-source-import-schedules\/runbook/);
   assert.match(html, /Manual scheduler runbook/);
@@ -750,6 +752,8 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
   }, async () => {
     const unauth = await request('/api/data-source-import-schedules', { method: 'POST', body: JSON.stringify({ dataSourceId: 'ds_missing' }) });
     assert.equal(unauth.status, 401);
+    const unauthPreflight = await request('/api/data-source-import-schedules/preflight');
+    assert.equal(unauthPreflight.status, 401);
     const unauthWorker = await request('/api/data-source-import-schedules/worker-plan');
     assert.equal(unauthWorker.status, 401);
     const unauthRunbook = await request('/api/data-source-import-schedules/runbook');
@@ -893,6 +897,21 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.equal(timeline.body.realDeliveryAllowed, false);
     assert.equal(JSON.stringify(timeline.body).includes('schedule-secret'), false);
 
+    const preflight = await request('/api/data-source-import-schedules/preflight?days=7', { headers: { cookie } });
+    assert.equal(preflight.status, 200);
+    assert.equal(preflight.body.mode, 'data-source-import-scheduler-preflight');
+    assert.equal(preflight.body.safety.preflightOnly, true);
+    assert.equal(preflight.body.safety.noWorkerStarted, true);
+    assert.equal(preflight.body.safety.noRemoteConnectionOpened, true);
+    assert.equal(preflight.body.safety.noRowsPulled, true);
+    assert.equal(preflight.body.safety.noContactMutation, true);
+    assert.equal(preflight.body.totals.rowsPulled, 0);
+    assert.equal(preflight.body.totals.contactsMutated, 0);
+    assert.equal(preflight.body.totals.automaticWorkerEnabled, false);
+    assert.ok(preflight.body.guardrails.some((gate) => gate.key === 'per_run_approval_required' && gate.passed));
+    assert.ok(preflight.body.reviewRows.some((row) => row.dataSourceName === 'Schedule warehouse'));
+    assert.equal(preflight.body.realDeliveryAllowed, false);
+
     const worker = await request('/api/data-source-import-schedules/worker-plan', { headers: { cookie } });
     assert.equal(worker.status, 200);
     assert.equal(worker.body.mode, 'data-source-import-scheduler-worker-plan');
@@ -949,6 +968,7 @@ test('remote PostgreSQL import scheduler plans recurring imports without pulling
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_status_update' && event.details?.scheduleMutation === true));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedules_list'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_audit_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_preflight_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_worker_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_timeline_view' && event.details?.forecastedRuns >= 1));
     assert.ok(audit.body.events.some((event) => event.action === 'data_source_import_schedule_runbook_view'));
@@ -1294,6 +1314,8 @@ test('data source sync audit endpoint also works behind nginx stripped api prefi
 });
 
 test('data source import schedule worker plan endpoint also works behind nginx stripped api prefix', async () => {
+  const preflight = await request('/data-source-import-schedules/preflight');
+  assert.equal(preflight.status, 401);
   const res = await request('/data-source-import-schedules/worker-plan');
   assert.equal(res.status, 401);
   const runbook = await request('/data-source-import-schedules/runbook');

@@ -359,6 +359,7 @@ Shipped:
 - mapping profile persistence in safe schedule memory baseline
 - dry-run next-sync preview timestamp
 - sync schedule history UI with interval/status/query/mapping metadata
+- read-only scheduler preflight with prioritized schedule rows, due/blocker counts, guardrails, and next runbook summary
 - exact approval gate for marking a schedule plan enabled
 - PostgreSQL-backed sync-run history
 - operator replay of prior sync validations without network probes/imports

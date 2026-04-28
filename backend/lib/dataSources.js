@@ -1680,4 +1680,95 @@ export const auditDataSourceImportSchedules = ({ now = new Date() } = {}) => {
   };
 };
 
+
+export const planDataSourceImportSchedulePreflight = ({ days = 7, now = new Date() } = {}) => {
+  const audit = auditDataSourceImportSchedules({ now });
+  const timeline = planDataSourceImportScheduleTimeline({ days, now });
+  const worker = planDataSourceImportScheduleWorker({ now });
+  const runbook = planDataSourceImportScheduleRunbook({ now });
+  const reviewRows = (audit.reviews || []).map((review) => {
+    const upcoming = (timeline.upcomingRuns || []).filter((run) => run.scheduleId === review.id).slice(0, 3);
+    const priority = review.due ? 'high' : review.blockers.length ? 'medium' : 'low';
+    return {
+      scheduleId: review.id,
+      dataSourceId: review.dataSourceId,
+      dataSourceName: review.dataSourceName,
+      priority,
+      enabled: review.enabled,
+      due: review.due,
+      nextRunPreviewAt: review.nextRunPreviewAt,
+      forecastedRuns: upcoming.length,
+      nextForecastedRuns: upcoming.map((run) => run.plannedAt),
+      blockers: review.blockers,
+      operatorAction: review.blockers.length
+        ? 'resolve_schedule_preflight_blockers_before_manual_remote_read'
+        : review.due
+          ? 'open_manual_runbook_and_reconfirm_approval_phrases_before_any_read'
+          : 'monitor_next_forecasted_window_no_worker_started',
+      rowsPulled: 0,
+      contactsMutated: 0,
+      realDeliveryAllowed: false
+    };
+  }).sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] - { high: 0, medium: 1, low: 2 }[b.priority]) || String(a.nextRunPreviewAt || '').localeCompare(String(b.nextRunPreviewAt || '')));
+  const guardrails = [
+    { key: 'automatic_worker_disabled', passed: worker.scheduler.automaticWorkerEnabled === false },
+    { key: 'no_remote_connection_opened', passed: true },
+    { key: 'no_rows_pulled', passed: true },
+    { key: 'no_contact_mutation', passed: true },
+    { key: 'encrypted_secret_refs_required', passed: true },
+    { key: 'per_run_approval_required', passed: true },
+    { key: 'separate_contact_import_approval_required', passed: true }
+  ];
+  return {
+    ok: true,
+    mode: 'data-source-import-scheduler-preflight',
+    evaluatedAt: audit.evaluatedAt,
+    horizonDays: timeline.horizonDays,
+    totals: {
+      schedules: audit.totals.schedules,
+      enabledSchedules: audit.totals.enabledSchedules,
+      dueSchedules: audit.totals.dueSchedules,
+      blockedSchedules: audit.totals.blockedSchedules,
+      forecastedRuns: timeline.totals.forecastedRuns,
+      highPriority: reviewRows.filter((row) => row.priority === 'high').length,
+      mediumPriority: reviewRows.filter((row) => row.priority === 'medium').length,
+      lowPriority: reviewRows.filter((row) => row.priority === 'low').length,
+      rowsPulled: 0,
+      contactsMutated: 0,
+      automaticWorkerEnabled: false,
+      realDeliveryAllowed: false
+    },
+    reviewRows,
+    nextRunbook: runbook.ok ? {
+      scheduleId: runbook.schedule.id,
+      dataSourceName: runbook.schedule.dataSourceName,
+      due: runbook.schedule.due,
+      blockers: runbook.readiness.blockers,
+      manualRunbook: runbook.manualRunbook
+    } : null,
+    guardrails,
+    recommendations: [
+      reviewRows.some((row) => row.priority === 'high') ? 'review_due_schedule_runbooks_first' : 'no_due_schedule_preflight_rows_now',
+      reviewRows.some((row) => row.blockers.length) ? 'resolve_blocked_schedule_metadata_before_future_worker_design' : 'schedule_metadata_ready_for_manual_review_windows',
+      'keep_remote_reads_contact_imports_and_campaign_delivery_separately_approved'
+    ],
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      preflightOnly: true,
+      noWorkerStarted: true,
+      noRemoteConnectionOpened: true,
+      noRowsPulled: true,
+      noContactMutation: true,
+      noSecretOutput: true,
+      noDeliveryUnlock: true,
+      realDeliveryAllowed: false
+    },
+    persistenceMode: audit.persistenceMode,
+    realSync: false,
+    automaticPulls: false,
+    realDeliveryAllowed: false
+  };
+};
+
 export const getEncryptedSecretCountForTests = () => encryptedConnectionSecrets.size;
