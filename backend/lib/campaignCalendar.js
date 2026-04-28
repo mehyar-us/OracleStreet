@@ -515,3 +515,101 @@ export const campaignCalendarWarmupBoard = ({ domains = '', startDate = null, da
     realDeliveryAllowed: false
   };
 };
+
+
+export const campaignCalendarLaunchReadiness = ({ domains = '', startDate = null, days = 14, targetCount = 1 } = {}) => {
+  const board = campaignCalendarWarmupBoard({ domains, startDate, days, targetCount });
+  const campaigns = (listCampaigns().campaigns || []).filter((campaign) => ['draft', 'approved_dry_run', 'scheduled_dry_run', 'queued_dry_run'].includes(campaign.status));
+  const campaignRows = campaigns.map((campaign) => {
+    const domain = normalizeDomain(campaign.senderDomain || 'stuffprettygood.com');
+    const scheduledDate = dateOnly(campaign.scheduledAt);
+    const boardDay = scheduledDate ? (board.days || []).find((day) => day.date === scheduledDate) : null;
+    const domainStatus = boardDay ? (boardDay.domainStatuses || []).find((entry) => normalizeDomain(entry.domain) === domain) : null;
+    const blockers = [];
+    if (campaign.status === 'draft') blockers.push('campaign_not_approved_for_dry_run');
+    if (campaign.status === 'approved_dry_run' && !campaign.scheduledAt) blockers.push('campaign_not_scheduled_on_calendar');
+    if (campaign.status === 'scheduled_dry_run' && domainStatus?.status === 'over_cap') blockers.push('scheduled_day_over_warmup_cap');
+    if (!campaign.senderDomain && ['approved_dry_run', 'scheduled_dry_run'].includes(campaign.status)) blockers.push('sender_domain_missing_or_defaulted');
+    const warnings = [];
+    if (domainStatus?.status === 'tight') warnings.push('scheduled_day_tight_capacity');
+    if (campaign.status === 'scheduled_dry_run' && domainStatus?.status === 'blocked') warnings.push('scheduled_day_at_full_warmup_capacity');
+    if (campaign.status === 'queued_dry_run') warnings.push('already_queued_dry_run_verify_queue_before_changes');
+    const readiness = blockers.length ? 'blocked' : warnings.length ? 'review' : 'ready';
+    return {
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      senderDomain: domain,
+      scheduledAt: campaign.scheduledAt || null,
+      scheduledDate,
+      plannedCount: campaignPlannedCount(campaign),
+      estimatedAudience: Number(campaign.estimatedAudience || 0),
+      calendarStatus: domainStatus?.status || (scheduledDate ? 'not_in_window' : 'unscheduled'),
+      dailyCap: domainStatus?.dailyCap || null,
+      remainingCap: domainStatus?.remainingCap ?? null,
+      blockers,
+      warnings,
+      readiness,
+      recommendation: readiness === 'blocked'
+        ? 'fix_campaign_approval_schedule_or_warmup_cap_before_enqueue'
+        : readiness === 'review'
+          ? 'operator_review_calendar_capacity_before_enqueue'
+          : 'ready_for_manual_dry_run_enqueue_after_final_operator_review',
+      scheduleMutation: false,
+      queueMutation: false,
+      realDeliveryAllowed: false
+    };
+  }).sort((a, b) => {
+    const rank = { blocked: 0, review: 1, ready: 2 };
+    return rank[a.readiness] - rank[b.readiness] || String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')) || a.name.localeCompare(b.name);
+  });
+  const gateRows = [
+    { key: 'warmup_caps', status: board.totals.overCapDays > 0 ? 'blocked' : ((board.totals.tightDays || 0) > 0 || (board.totals.blockedDays || 0) > 0 || campaignRows.some((row) => row.warnings.includes('scheduled_day_tight_capacity') || row.warnings.includes('scheduled_day_at_full_warmup_capacity'))) ? 'review' : 'ready', blockers: board.totals.overCapDays, warnings: (board.totals.tightDays || 0) + (board.totals.blockedDays || 0), recommendation: board.totals.overCapDays > 0 ? 'resolve_over_cap_days_before_enqueue' : 'review_tight_or_full_days_before_enqueue' },
+    { key: 'calendar_schedule', status: campaignRows.some((row) => row.blockers.includes('campaign_not_scheduled_on_calendar')) ? 'blocked' : 'ready', blockers: campaignRows.filter((row) => row.blockers.includes('campaign_not_scheduled_on_calendar')).length, warnings: 0, recommendation: 'approved_dry_run_campaigns_need_calendar_dates_before_enqueue' },
+    { key: 'dry_run_approval', status: campaignRows.some((row) => row.blockers.includes('campaign_not_approved_for_dry_run')) ? 'blocked' : 'ready', blockers: campaignRows.filter((row) => row.blockers.includes('campaign_not_approved_for_dry_run')).length, warnings: 0, recommendation: 'approve_campaigns_for_dry_run_before_calendar_enqueue' },
+    { key: 'delivery_lock', status: 'ready', blockers: 0, warnings: 0, recommendation: 'real_delivery_stays_locked_until_explicit_human_approval_gate' }
+  ];
+  const recommendations = [];
+  if (campaignRows.some((row) => row.readiness === 'blocked')) recommendations.push('clear_blocked_campaign_rows_before_manual_dry_run_enqueue');
+  if (campaignRows.some((row) => row.readiness === 'review')) recommendations.push('review_tight_or_already_queued_campaign_rows_before_changes');
+  if (board.bestNextSlot) recommendations.push('use_best_next_slot_for_operator_review_only');
+  if (!recommendations.length) recommendations.push('calendar_launch_readiness_clear_for_dry_run_planning_only');
+
+  return {
+    ok: true,
+    mode: 'campaign-calendar-launch-readiness',
+    startDate: board.startDate,
+    windowDays: board.windowDays,
+    targetCount: board.targetCount,
+    totals: {
+      campaigns: campaignRows.length,
+      readyCampaigns: campaignRows.filter((row) => row.readiness === 'ready').length,
+      reviewCampaigns: campaignRows.filter((row) => row.readiness === 'review').length,
+      blockedCampaigns: campaignRows.filter((row) => row.readiness === 'blocked').length,
+      overCapDays: board.totals.overCapDays,
+      tightDays: board.totals.tightDays,
+      automaticScheduleMutationAllowed: 0,
+      automaticQueueMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    gateRows,
+    campaignRows,
+    bestNextSlot: board.bestNextSlot,
+    recommendations,
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      readinessOnly: true,
+      noScheduleMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noDeliveryUnlock: true,
+      automaticScheduleMutationAllowed: false,
+      automaticQueueMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};
