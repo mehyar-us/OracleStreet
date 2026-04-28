@@ -107,6 +107,7 @@ OracleStreet is a private, PostgreSQL-first email marketing CMS and affiliate ca
   - read-only campaign-fit plans that bridge contact quality into ready/review/blocked campaign audience cohorts with no segment mutation
   - read-only campaign handoff CSV previews for ready/review/blocked cohorts with no segment or queue mutation
 - Campaign calendar launch-readiness gates for warm-up caps, approval/schedule state, and delivery locks with no schedule or queue mutation
+- Campaign calendar warm-up cap review board that combines cap rows, campaign readiness, gates, and operator actions without schedule/queue mutation
   - contact timeline stubs from imports, events, and dry-run jobs
   - read-only contact detail drilldowns with suppression, event, queue, timeline, and recommendation metadata
   - source × domain quality matrix with ready/blocked counts, review gates, risk flags, and no audience mutation

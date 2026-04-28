@@ -4,7 +4,7 @@ import { listAuditEventsByActionPrefix, listAuditLog, recordAuditEvent } from '.
 import { backupReadiness } from './lib/backupReadiness.js';
 import { bounceMailboxReadiness } from './lib/bounceMailboxReadiness.js';
 import { ingestBounceMessage, validateBounceMessage } from './lib/bounceParser.js';
-import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarLaunchReadiness, campaignCalendarOperatorActions, campaignCalendarReschedulePlan, campaignCalendarWarmupBoard } from './lib/campaignCalendar.js';
+import { campaignCalendar, campaignCalendarAllocation, campaignCalendarCapacityForecast, campaignCalendarDrilldown, campaignCalendarLaunchReadiness, campaignCalendarOperatorActions, campaignCalendarReschedulePlan, campaignCalendarWarmupBoard, campaignCalendarWarmupCapReview } from './lib/campaignCalendar.js';
 import { approveCampaignDryRun, campaignAffiliateSummary, createCampaign, enqueueCampaignDryRun, estimateCampaign, listCampaigns, scheduleCampaignDryRun } from './lib/campaigns.js';
 import { controlledLiveTestReadiness, listControlledLiveTestProofAudits, planControlledLiveTest, planControlledLiveTestOperatorActions, planControlledLiveTestProofPacket, planSeedInboxObservation, recordControlledLiveTestProofAudit } from './lib/controlledLiveTestReadiness.js';
 import { browseContacts, contactAudienceExclusionPreview, contactAudienceReadinessReview, contactBrowserExportPreview, contactCampaignFitPlan, contactCampaignHandoffPreview, contactConsentProvenanceReview, contactDetailDrilldown, contactDomainRiskPlan, contactEngagementRecencyPlan, contactRepermissionPlan, contactRiskTriageQueue, contactSourceDetailReview, contactSourceQualityRemediationBoard, contactSourceQuarantinePlan, contactSuppressionReviewPlan, sourceHygieneActionPlan, sourceQualityDrilldown, sourceQualityMatrix } from './lib/contactBrowser.js';
@@ -1169,6 +1169,15 @@ export const createHandler = () => {
       if (!session) return;
       const result = campaignCalendarCapacityForecast(Object.fromEntries(url.searchParams.entries()));
       recordAuditEvent({ action: 'campaign_calendar_capacity_forecast_view', actorEmail: session.email, status: 'ok', details: { days: result.days, domains: result.totals.domains, targetCount: result.targetCount, domainsWithTargetCapacity: result.totals.domainsWithTargetCapacity, noScheduleMutation: true, noQueueMutation: true, realDelivery: false } });
+      return jsonResponse(res, 200, result);
+    }
+
+    if (url.pathname === '/api/campaigns/calendar/cap-review' || url.pathname === '/campaigns/calendar/cap-review') {
+      if (!requireMethod(req, res, 'GET')) return;
+      const session = requirePermission(req, res, 'manage_campaigns');
+      if (!session) return;
+      const result = campaignCalendarWarmupCapReview(Object.fromEntries(url.searchParams.entries()));
+      recordAuditEvent({ action: 'campaign_calendar_warmup_cap_review_view', actorEmail: session.email, status: 'ok', details: { capRows: result.totals.capRows, highPriorityCapRows: result.totals.highPriorityCapRows, blockedCampaigns: result.totals.blockedCampaigns, noScheduleMutation: true, noQueueMutation: true, realDeliveryAllowed: false } });
       return jsonResponse(res, 200, result);
     }
 

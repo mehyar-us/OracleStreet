@@ -517,6 +517,105 @@ export const campaignCalendarWarmupBoard = ({ domains = '', startDate = null, da
 };
 
 
+
+export const campaignCalendarWarmupCapReview = ({ domains = '', startDate = null, days = 14, targetCount = 1 } = {}) => {
+  const board = campaignCalendarWarmupBoard({ domains, startDate, days, targetCount });
+  const readiness = campaignCalendarLaunchReadiness({ domains, startDate: board.startDate, days: board.windowDays, targetCount });
+  const operatorActions = campaignCalendarOperatorActions({ domains, startDate: board.startDate, days: board.windowDays, targetCount });
+  const capRows = [];
+  for (const day of board.days || []) {
+    for (const domainStatus of day.domainStatuses || []) {
+      const utilization = (domainStatus.dailyCap || 0) > 0 ? (domainStatus.scheduledCount || 0) / domainStatus.dailyCap : 0;
+      const priority = domainStatus.status === 'over_cap' ? 'high' : ['blocked', 'tight'].includes(domainStatus.status) ? 'medium' : 'low';
+      capRows.push({
+        date: day.date,
+        domain: domainStatus.domain,
+        priority,
+        status: domainStatus.status,
+        dailyCap: domainStatus.dailyCap,
+        scheduledCount: domainStatus.scheduledCount,
+        remainingCap: domainStatus.remainingCap,
+        campaignCount: domainStatus.campaignCount,
+        warmupDay: domainStatus.warmupDay,
+        utilization,
+        recommendation: domainStatus.status === 'over_cap'
+          ? 'move_or_split_campaigns_before_enqueue'
+          : domainStatus.status === 'blocked'
+            ? 'use_later_capacity_or_reduce_audience'
+            : domainStatus.status === 'tight'
+              ? 'operator_review_before_adding_campaigns_to_tight_day'
+              : 'capacity_available_for_dry_run_schedule_review',
+        scheduleMutation: false,
+        queueMutation: false,
+        realDeliveryAllowed: false
+      });
+    }
+  }
+  capRows.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] - { high: 0, medium: 1, low: 2 }[b.priority]) || a.date.localeCompare(b.date) || a.domain.localeCompare(b.domain));
+  const campaignRows = (readiness.campaignRows || []).map((row) => ({
+    campaignId: row.id,
+    campaignName: row.name,
+    status: row.status,
+    readiness: row.readiness,
+    domain: row.senderDomain,
+    scheduledDate: row.scheduledDate,
+    plannedCount: row.plannedCount,
+    calendarStatus: row.calendarStatus,
+    blockers: row.blockers,
+    warnings: row.warnings,
+    recommendation: row.recommendation,
+    scheduleMutation: false,
+    queueMutation: false,
+    realDeliveryAllowed: false
+  }));
+  return {
+    ok: true,
+    mode: 'campaign-calendar-warmup-cap-review',
+    startDate: board.startDate,
+    windowDays: board.windowDays,
+    targetCount: board.targetCount,
+    totals: {
+      domains: board.totals.domains,
+      calendarDays: board.totals.calendarDays,
+      capRows: capRows.length,
+      highPriorityCapRows: capRows.filter((row) => row.priority === 'high').length,
+      mediumPriorityCapRows: capRows.filter((row) => row.priority === 'medium').length,
+      openCapRows: capRows.filter((row) => row.status === 'open').length,
+      campaigns: campaignRows.length,
+      blockedCampaigns: readiness.totals.blockedCampaigns,
+      reviewCampaigns: readiness.totals.reviewCampaigns,
+      operatorActions: operatorActions.totals.actions,
+      automaticScheduleMutationAllowed: 0,
+      automaticQueueMutationAllowed: 0,
+      realDeliveryAllowed: false
+    },
+    capRows,
+    campaignRows,
+    gateRows: readiness.gateRows,
+    operatorActions: operatorActions.actionRows.slice(0, 25),
+    recommendations: [
+      ...(board.recommendations || []),
+      ...(readiness.recommendations || []),
+      ...(operatorActions.recommendations || [])
+    ].filter((value, index, values) => values.indexOf(value) === index),
+    safety: {
+      adminOnly: true,
+      readOnly: true,
+      dryRunOnly: true,
+      capReviewOnly: true,
+      noScheduleMutation: true,
+      noQueueMutation: true,
+      noProviderMutation: true,
+      noNetworkProbe: true,
+      noDeliveryUnlock: true,
+      automaticScheduleMutationAllowed: false,
+      automaticQueueMutationAllowed: false,
+      realDeliveryAllowed: false
+    },
+    realDeliveryAllowed: false
+  };
+};
+
 export const campaignCalendarLaunchReadiness = ({ domains = '', startDate = null, days = 14, targetCount = 1 } = {}) => {
   const board = campaignCalendarWarmupBoard({ domains, startDate, days, targetCount });
   const campaigns = (listCampaigns().campaigns || []).filter((campaign) => ['draft', 'approved_dry_run', 'scheduled_dry_run', 'queued_dry_run'].includes(campaign.status));

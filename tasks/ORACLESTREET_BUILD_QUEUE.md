@@ -122,6 +122,7 @@ Next slices, from `docs/15_FEATURE_INVENTORY_AND_NEXT_FLOWS.md`:
 3. Campaign calendar UX polish for multi-domain allocation views.
 
 Latest shipped slice:
+- Flow B campaign calendar warm-up cap review: read-only cap rows, campaign readiness, gates, and operator actions.
 - Flow A source-quality remediation board: prioritized source hygiene/quarantine/domain action rows with read-only operator guidance.
 - Flow E controlled live-test operator actions: prioritized blocker/proof-gap action plan and manual runbook with no automatic sending.
 - Flow D remote import scheduler preflight: read-only prioritized due/blocker review rows and guardrails before any future remote read worker.

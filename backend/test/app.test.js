@@ -335,6 +335,8 @@ test('frontend exposes visible admin CMS workbench surfaces', () => {
   assert.match(html, /api\/campaigns\/calendar\/capacity-forecast/);
   assert.match(html, /Capacity forecast/);
   assert.match(html, /api\/campaigns\/calendar\/warmup-board/);
+  assert.match(html, /api\/campaigns\/calendar\/cap-review/);
+  assert.match(html, /Campaign calendar warm-up cap review/);
   assert.match(html, /api\/campaigns\/calendar\/launch-readiness/);
   assert.match(html, /api\/campaigns\/calendar\/operator-actions/);
   assert.match(html, /Warm-up calendar operator board/);
@@ -3736,6 +3738,8 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(unauthCapacityForecast.status, 401);
     const unauthWarmupBoard = await request('/api/campaigns/calendar/warmup-board?domains=calendar.test');
     assert.equal(unauthWarmupBoard.status, 401);
+    const unauthCapReview = await request('/api/campaigns/calendar/cap-review?domains=calendar.test');
+    assert.equal(unauthCapReview.status, 401);
     const unauthLaunchReadiness = await request('/api/campaigns/calendar/launch-readiness?domains=calendar.test');
     assert.equal(unauthLaunchReadiness.status, 401);
     const unauthOperatorActions = await request('/api/campaigns/calendar/operator-actions?domains=calendar.test');
@@ -3863,6 +3867,24 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.equal(warmupBoard.body.realDeliveryAllowed, false);
 
 
+    const capReview = await request('/api/campaigns/calendar/cap-review?domains=calendar.test,secondary-calendar.test&days=7&targetCount=1', { headers: { cookie } });
+    assert.equal(capReview.status, 200);
+    assert.equal(capReview.body.mode, 'campaign-calendar-warmup-cap-review');
+    assert.equal(capReview.body.totals.domains, 3);
+    assert.ok(capReview.body.totals.capRows >= 7);
+    assert.ok(capReview.body.totals.mediumPriorityCapRows >= 1);
+    assert.equal(capReview.body.totals.automaticScheduleMutationAllowed, 0);
+    assert.equal(capReview.body.totals.automaticQueueMutationAllowed, 0);
+    assert.ok(capReview.body.capRows.some((row) => row.domain === 'calendar.test' && row.date === startDate && ['tight', 'blocked'].includes(row.status) && row.scheduledCount === 1));
+    assert.ok(capReview.body.campaignRows.some((row) => row.campaignName === 'Calendar dry-run' && row.readiness === 'review'));
+    assert.ok(capReview.body.gateRows.some((row) => row.key === 'warmup_caps'));
+    assert.equal(capReview.body.safety.capReviewOnly, true);
+    assert.equal(capReview.body.safety.noScheduleMutation, true);
+    assert.equal(capReview.body.safety.noQueueMutation, true);
+    assert.equal(capReview.body.safety.noProviderMutation, true);
+    assert.equal(capReview.body.realDeliveryAllowed, false);
+
+
     const launchReadiness = await request('/api/campaigns/calendar/launch-readiness?domains=calendar.test,secondary-calendar.test&days=7&targetCount=1', { headers: { cookie } });
     assert.equal(launchReadiness.status, 200);
     assert.equal(launchReadiness.body.mode, 'campaign-calendar-launch-readiness');
@@ -3925,6 +3947,7 @@ test('campaign calendar shows scheduled dry-runs against warmup caps without que
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_reschedule_plan_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_capacity_forecast_view'));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_warmup_board_view'));
+    assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_warmup_cap_review_view' && event.details?.noScheduleMutation === true));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_launch_readiness_view' && event.details?.automaticQueueMutationAllowed === false));
     assert.ok(audit.body.events.some((event) => event.action === 'campaign_calendar_operator_actions_view' && event.details?.automaticQueueMutationAllowed === false));
   });
